@@ -1,0 +1,44 @@
+best_mape: 999
+best_rmse: 31622.776601683792
+feature_params:
+  atr_period: 11
+  boll_nstd: 2.793058636966784
+  boll_window: 14
+  macd_fast: 8
+  macd_signal: 14
+  macd_slow: 27
+  rsi_period: 7
+  werpi_level: 5
+  werpi_n_states: 2
+  werpi_scale: 0.953957786077923
+  werpi_wavelet: db5
+  wf_size: 26
+range_cat: 8_to_31_days
+submodel_params:
+  lstm_dropout: 0.3359739403877444
+  lstm_lookback: 50
+  lstm_loss_function: huber_loss
+  lstm_lr: 0.0005045059041669769
+  lstm_num_layers: 3
+  lstm_units_layer_0: 16
+  lstm_units_layer_1: 64
+  lstm_units_layer_2: 32
+  rf_mdepth: 10
+  rf_n_est: 211
+  rnn_dropout: 0.3311865729061114
+  rnn_lookback: 62
+  rnn_loss_function: mean_absolute_error
+  rnn_lr: 1.0786144488116651e-05
+  rnn_num_layers: 3
+  rnn_units_layer_0: 64
+  rnn_units_layer_1: 16
+  rnn_units_layer_2: 128
+  xgb_lr: 0.0007436020752613282
+  xgb_n_est: 114
+ticker: ETH-USD
+timeframe: 1d
+weights:
+  lstm: 0.06470617174965237
+  random_forest: 0.5636174104519988
+  rnn: 0.04455548814637995
+  xgboost: 0.3271209296519689
