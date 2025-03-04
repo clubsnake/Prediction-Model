@@ -7,6 +7,32 @@ Used by meta_tuning.py to log current tuning progress.
 import yaml
 import os
 import threading
+from datetime import datetime
+from Scripts.threadsafe import (
+    safe_read_yaml, 
+    safe_write_yaml,
+    safe_read_json,
+    safe_write_json,
+    AtomicFileWriter,
+    convert_to_native_types
+)
+
+# Add thread-safe locks for global variables
+_lock = threading.RLock()
+
+def set_stop_requested(val: bool):
+    """Set or clear the stop request flag in a thread-safe manner"""
+    with _lock:
+        if val:
+            print("Stop requested via progress_helper")
+            stop_event.set()
+        else:
+            stop_event.clear()
+
+def is_stop_requested():
+    """Check if stop has been requested in a thread-safe manner"""
+    with _lock:
+        return stop_event.is_set()
 
 # Data directory structure and file paths
 DATA_DIR = "Data"
@@ -42,34 +68,44 @@ def is_stop_requested():
     """Check if stop has been requested"""
     return stop_event.is_set()
 
-def update_progress_in_yaml(cycle=None, current_trial=None, total_trials=None, current_rmse=None, current_mape=None):
+def update_progress_in_yaml(progress_file, trial_info):
     """
-    Update progress metrics in the progress file.
+    Update the progress tracking YAML file with information from a trial.
     
-    Parameters:
-        cycle (int): Current tuning cycle number
-        current_trial (int): Current trial number
-        total_trials (int): Total number of trials in the current cycle
-        current_rmse (float): The RMSE value from the current trial
-        current_mape (float): The MAPE value from the current trial
+    Args:
+        progress_file: Path to the progress YAML file
+        trial_info: Dictionary containing trial information to log
     """
-    # No need to create directory again since we do it at module level
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(progress_file), exist_ok=True)
     
-    data = {}
-    if cycle is not None:
-        data["cycle"] = int(cycle)
-    if current_trial is not None:
-        data["current_trial"] = int(current_trial)
-    if total_trials is not None:
-        data["total_trials"] = int(total_trials)
-        data["trial_progress"] = (float(current_trial) / float(total_trials)) if total_trials > 0 else 0.0
-    if current_rmse is not None:
-        data["current_rmse"] = float(current_rmse)
-    if current_mape is not None:
-        data["current_mape"] = float(current_mape)
+    # Read existing data
+    try:
+        if os.path.exists(progress_file):
+            with open(progress_file, 'r') as f:
+                data = yaml.safe_load(f) or {}
+        else:
+            data = {}
+    except Exception as e:
+        print(f"Error reading progress file: {e}")
+        data = {}
     
-    with open(PROGRESS_FILE, "w") as f:
-        yaml.safe_dump(data, f)
+    # Add timestamp if not provided
+    if "timestamp" not in trial_info:
+        trial_info["timestamp"] = datetime.now().isoformat()
+    
+    # Add/update trial info
+    trial_number = trial_info.get("number", len(data) + 1)
+    data[f"trial_{trial_number}"] = trial_info
+    
+    # Write updated data
+    try:
+        with open(progress_file, 'w') as f:
+            yaml.dump(data, f, default_flow_style=False)
+            return True
+    except Exception as e:
+        print(f"Error writing progress file: {e}")
+        return False
 
 def read_tuning_status():
     """Read tuning status from file"""

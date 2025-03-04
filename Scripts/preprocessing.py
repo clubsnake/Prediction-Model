@@ -1,14 +1,19 @@
 # preprocessing.py
 """
-Scaling and sequence generation utilities for time-series.
+Data preprocessing utilities with added type hints.
 """
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
+from typing import List, Tuple, Optional, Union
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from config import LOOKBACK, PREDICTION_HORIZON
 
-def scale_data(df: pd.DataFrame, feature_cols: list, target_col: str = "Close"):
+def scale_data(
+    df: pd.DataFrame,
+    feature_cols: List[str],
+    target_col: str = "Close"
+) -> Tuple[pd.DataFrame, MinMaxScaler, MinMaxScaler]:
     """
     Scale feature columns and the target column using MinMaxScaler.
     
@@ -28,10 +33,13 @@ def scale_data(df: pd.DataFrame, feature_cols: list, target_col: str = "Close"):
     scaled_df["date"] = df["date"]
     return scaled_df, feature_scaler, target_scaler
 
-def create_sequences(df: pd.DataFrame, feature_cols: list, 
-                     target_col: str = "Close", 
-                     lookback: int = LOOKBACK, 
-                     horizon: int = PREDICTION_HORIZON):
+def create_sequences(
+    df: pd.DataFrame,
+    feature_cols: List[str], 
+    target_col: str = "Close", 
+    lookback: int = LOOKBACK, 
+    horizon: int = PREDICTION_HORIZON
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Create time-series sequences for supervised learning.
 

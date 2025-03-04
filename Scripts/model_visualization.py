@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from sklearn.metrics import mean_squared_error
-from tensorflow.keras.models import Model
+from tensorflow.keras.models import Model # type: ignore
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -277,3 +277,54 @@ def create_model_visualization_tab():
     with viz_tabs[4]:
         st.subheader("Ensemble Model Analysis")
         st.info("Plot ensemble contribution if 'ensemble_weights' and 'submodel_metrics' exist in session_state.")
+
+def visualize_weight_histograms(model):
+    """
+    Create histograms of model weights for each layer.
+    
+    Args:
+        model: A Keras model
+    """
+    if not isinstance(model, tf.keras.Model):
+        st.error("Not a valid Keras model")
+        return
+        
+    # Get layers that have weights
+    layers_with_weights = [(i, layer) for i, layer in enumerate(model.layers) if layer.weights]
+    
+    if not layers_with_weights:
+        st.info("No weights found in this model.")
+        return
+    
+    # Create a subplot for each layer
+    num_layers = len(layers_with_weights)
+    fig, axes = plt.subplots(num_layers, 1, figsize=(10, num_layers * 3))
+    
+    # Handle case with only one layer
+    if num_layers == 1:
+        axes = [axes]
+    
+    for i, (layer_idx, layer) in enumerate(layers_with_weights):
+        weights = layer.get_weights()
+        if not weights:
+            continue
+            
+        # Get the main weight matrix (usually the first element)
+        weight_matrix = weights[0]
+        
+        # Flatten weights for histogram
+        flat_weights = weight_matrix.flatten()
+        
+        # Plot histogram
+        axes[i].hist(flat_weights, bins=50)
+        axes[i].set_title(f"Layer {layer_idx}: {layer.name}")
+        axes[i].set_xlabel("Weight Value")
+        axes[i].set_ylabel("Frequency")
+        
+        # Add some statistics
+        axes[i].axvline(np.mean(flat_weights), color='r', linestyle='dashed', linewidth=1)
+        axes[i].text(0.95, 0.95, f"Mean: {np.mean(flat_weights):.4f}\nStd: {np.std(flat_weights):.4f}", 
+                    transform=axes[i].transAxes, verticalalignment='top', horizontalalignment='right')
+    
+    plt.tight_layout()
+    st.pyplot(fig)
