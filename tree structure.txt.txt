@@ -1,0 +1,352 @@
+C:.
+├───.streamlit
+├───.vs
+├───.vscode
+├───app
+│   ├───components
+│   └───pages
+├───config
+│   └───__pycache__
+├───data
+│   ├───cache
+│   ├───DB
+│   ├───Hyperparameters
+│   ├───Logs
+│   ├───Models
+│   ├───Prices
+│   ├───Processed
+│   └───Raw
+├───src
+│   ├───dashboard
+│   │   └───dashboard
+│   │       └───__pycache__
+│   ├───data
+│   ├───features
+│   ├───models
+│   ├───tuning
+│   └───utils
+│       └───__pycache__
+├───static
+├───templates
+├───tests
+└───__pycache__
+
+C:\Users\clubs\Desktop\Prediction Model>tree l- 2
+Too many parameters - 2
+
+C:\Users\clubs\Desktop\Prediction Model>tree l
+Folder PATH listing for volume Windows
+Volume serial number is 1C98-F3DE
+C:\USERS\CLUBS\DESKTOP\PREDICTION MODEL\L
+Invalid path - \USERS\CLUBS\DESKTOP\PREDICTION MODEL\L
+No subfolders exist
+
+
+C:\Users\clubs\Desktop\Prediction Model>tree
+Folder PATH listing for volume Windows
+Volume serial number is 1C98-F3DE
+C:.
+├───.streamlit
+├───.vs
+├───.vscode
+├───app
+│   ├───components
+│   └───pages
+├───config
+│   └───__pycache__
+├───data
+│   ├───cache
+│   ├───DB
+│   ├───Hyperparameters
+│   ├───Logs
+│   ├───Models
+│   ├───Prices
+│   ├───Processed
+│   └───Raw
+├───src
+│   ├───dashboard
+│   │   └───dashboard
+│   │       └───__pycache__
+│   ├───data
+│   ├───features
+│   ├───models
+│   ├───tuning
+│   └───utils
+│       └───__pycache__
+├───static
+├───templates
+├───tests
+└───__pycache__
+
+C:\Users\clubs\Desktop\Prediction Model>tree  l
+Folder PATH listing for volume Windows
+Volume serial number is 00000045 1C98:F3DE
+C:\USERS\CLUBS\DESKTOP\PREDICTION MODEL\L
+Invalid path - \USERS\CLUBS\DESKTOP\PREDICTION MODEL\L
+No subfolders exist
+
+
+C:\Users\clubs\Desktop\Prediction Model>tree  -L 2
+Too many parameters - 2
+
+C:\Users\clubs\Desktop\Prediction Model>tree  -L 2
+Too many parameters - 2
+
+C:\Users\clubs\Desktop\Prediction Model>tree  -L
+Folder PATH listing for volume Windows
+Volume serial number is 00000002 1C98:F3DE
+C:\USERS\CLUBS\DESKTOP\PREDICTION MODEL\-L
+Invalid path - \USERS\CLUBS\DESKTOP\PREDICTION MODEL\-L
+No subfolders exist
+
+
+C:\Users\clubs\Desktop\Prediction Model>tree  -L 1
+Too many parameters - 1
+
+C:\Users\clubs\Desktop\Prediction Model>tree
+Folder PATH listing for volume Windows
+Volume serial number is 1C98-F3DE
+C:.
+├───.streamlit
+├───.vs
+├───.vscode
+├───app
+│   ├───components
+│   └───pages
+├───config
+│   └───__pycache__
+├───data
+│   ├───cache
+│   ├───DB
+│   ├───Hyperparameters
+│   ├───Logs
+│   ├───Models
+│   ├───Prices
+│   ├───Processed
+│   └───Raw
+├───src
+│   ├───dashboard
+│   │   └───dashboard
+│   │       └───__pycache__
+│   ├───data
+│   ├───features
+│   ├───models
+│   ├───tuning
+│   └───utils
+│       └───__pycache__
+├───static
+├───templates
+├───tests
+└───__pycache__
+
+C:\Users\clubs\Desktop\Prediction Model>tree /f /a
+Folder PATH listing for volume Windows
+Volume serial number is 1C98-F3DE
+C:.
+|   current_env.txt
+|   launcher.py
+|   main.py
+|   requirements.txt
+|   requirements_12.txt
+|   requirements_ml.txt
+|
++---.streamlit
++---.vs
+|       slnx.sqlite
+|       VSWorkspaceState.json
+|
++---.vscode
+|       settings.json
+|
++---app
+|   |   __init__.py
+|   |
+|   +---components
+|   |       __init__.py
+|   |
+|   \---pages
+|           __init__.py
+|
++---config
+|   |   advanced_loss_config.py
+|   |   config_loader.py
+|   |   hyperparameter_config.py
+|   |   logger_config.py
+|   |   resource_config.py
+|   |   system_config.json
+|   |   user_config.yaml
+|   |   __init__.py
+|   |
+|   \---__pycache__
+|           config_loader.cpython-310.pyc
+|           __init__.cpython-310.pyc
+|
++---data
+|   |   progress.yaml
+|   |   progress.yaml.lock
+|   |   tested_models.yaml
+|   |   tuning_status.txt
+|   |
+|   +---cache
+|   +---DB
+|   |       study_ETH-USD_1d_30.db
+|   |
+|   +---Hyperparameters
+|   +---Logs
+|   |       dashboard.log
+|   |       launcher_20250303_135310.log
+|   |       launcher_20250303_150011.log
+|   |       launcher_20250303_174813.log
+|   |       launcher_20250303_211753.log
+|   |       launcher_20250303_212101.log
+|   |       launcher_20250303_212718.log
+|   |       launcher_20250303_212845.log
+|   |       launcher_20250303_220142.log
+|   |       launcher_20250303_220257.log
+|   |       launcher_20250303_220636.log
+|   |       launcher_20250303_220845.log
+|   |       launcher_20250303_220921.log
+|   |       launcher_20250303_233215.log
+|   |       launcher_20250304_003120.log
+|   |       launcher_20250304_003509.log
+|   |       launcher_20250304_140919.log
+|   |       launcher_20250304_141150.log
+|   |       launcher_20250304_141738.log
+|   |       launcher_20250304_141835.log
+|   |       launcher_20250304_142550.log
+|   |       launcher_20250304_145723.log
+|   |       launcher_20250304_155327.log
+|   |       launcher_20250304_161619.log
+|   |       launcher_20250304_165532.log
+|   |       launcher_20250304_171100.log
+|   |       launcher_20250304_182627.log
+|   |       launcher_20250304_183412.log
+|   |       launcher_20250304_193949.log
+|   |       launcher_20250304_204630.log
+|   |       launcher_20250305_030849.log
+|   |       launcher_20250305_120216.log
+|   |       optimization.log
+|   |       prediction_model.log
+|   |       walkforward.log
+|   |
+|   +---Models
+|   +---Prices
+|   +---Processed
+|   \---Raw
++---src
+|   |   __init__.py
+|   |
+|   +---dashboard
+|   |   |   explainable_ai.py
+|   |   |   hyperparameter_dashboard.py
+|   |   |   loss_config_ui.py
+|   |   |   monitoring.py
+|   |   |   prediction_service.py
+|   |   |   visualization.py
+|   |   |   xai-integration.py
+|   |   |   __init__.py
+|   |   |
+|   |   \---dashboard
+|   |       |   dashboard_core.py
+|   |       |   dashboard_data.py
+|   |       |   dashboard_error.py
+|   |       |   dashboard_model.py
+|   |       |   dashboard_shutdown.py
+|   |       |   dashboard_state.py
+|   |       |   dashboard_ui.py
+|   |       |   dashboard_utils.py
+|   |       |   dashboard_visualization.py
+|   |       |   __init__.py
+|   |       |
+|   |       \---__pycache__
+|   |               dashboard_error.cpython-310.pyc
+|   |               dashboard_state.cpython-310.pyc
+|   |
+|   +---data
+|   |       data.py
+|   |       data_handler.py
+|   |       data_loader.py
+|   |       data_manager.py
+|   |       data_processing.py
+|   |       data_utils.py
+|   |       preprocessing.py
+|   |       __init__.py
+|   |
+|   +---features
+|   |       features.py
+|   |       feature_selection.py
+|   |       vmli_indicator.py
+|   |       __init__.py
+|   |
+|   +---models
+|   |       ltc_model.py
+|   |       model.py
+|   |       model_factory.py
+|   |       model_manager.py
+|   |       model_optimization.py
+|   |       model_trainer.py
+|   |       model_utils.py
+|   |       nbeats_model.py
+|   |       temporal_fusion_transformer.py
+|   |       __init__.py
+|   |
+|   +---tuning
+|   |       callbacks.py
+|   |       ensemble_tuning.py
+|   |       hyperparameter_tuning.py
+|   |       hyperparameter_utils.py
+|   |       incremental_learning.py
+|   |       indicator_tuning.py
+|   |       meta_tuning.py
+|   |       model_evaluation.py
+|   |       optimization_handler.py
+|   |       optimized_params.py
+|   |       optimized_processor.py
+|   |       optuna_logger.py
+|   |       progress_helper.py
+|   |       train.py
+|   |       trainer.py
+|   |       tuning_launcher.py
+|   |       walk_forward.py
+|   |       __init__.py
+|   |
+|   \---utils
+|       |   env_setup.py
+|       |   gpu_memory_management.py
+|       |   gpu_memory_manager.py
+|       |   memory_utils.py
+|       |   robust_handler.py
+|       |   threadsafe.py
+|       |   utils.py
+|       |   vectorized_ops.py
+|       |   __init__.py
+|       |
+|       \---__pycache__
+|               env_setup.cpython-310.pyc
+|               gpu_memory_management.cpython-310.pyc
+|               robust_handler.cpython-310.pyc
+|               __init__.cpython-310.pyc
+|
++---static
+|       style.css
+|
++---templates
+|       index.html
+|
++---tests
+|       detect_parameters.py
+|       test_dashboard_imports.py
+|       test_model_layers.py
+|       test_preprocessing.py
+|       __init__.py
+|
+\---__pycache__
+        config.cpython-310.pyc
+        config.cpython-312.pyc
+        data_loader.cpython-310.pyc
+        logging_config.cpython-310.pyc
+        main.cpython-312.pyc
+        model_trainer.cpython-310.pyc
+        prediction_service.cpython-310.pyc
+        resource_config.cpython-310.pyc
+        resource_config.cpython-312.pyc

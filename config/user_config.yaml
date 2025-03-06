@@ -1,0 +1,192 @@
+#######################
+# Prediction Model Configuration
+# Human-editable parameters
+#######################
+
+#######################
+# Hardware Settings
+#######################
+hardware:
+  # GPU/CPU configuration
+  use_gpu: true                  # Set to false to force CPU usage
+  gpu_memory_fraction: "auto"    # Fraction of GPU memory to use (0.0-1.0) or "auto"
+  omp_num_threads: 4             # Number of CPU threads for parallel operations
+  use_mixed_precision: false     # Use mixed precision when available
+  use_directml: true             # Use DirectML acceleration for Windows
+  enable_xla: true               # Enable XLA compilation for faster execution
+
+#######################
+# API Keys Configuration
+#######################
+api_keys:
+  # API keys are stored in a separate private file
+  file_path: "config/api_keys.yaml"  # Path to private API keys file
+  # If the API keys file is not found, these defaults will be used
+  # (using empty strings or dummy values for security)
+  defaults:
+    finnhub_api_key: ""
+    alphavantage_api_key: ""
+    coingecko_api_key: ""
+  
+  # API rate limiting settings  
+  coingecko_rate_limit_sleep: 1.5  # Sleep between API calls (seconds)
+
+#######################
+# Time Settings
+#######################
+time_series:
+  default_interval: "1d"         # Default time interval
+  prediction_horizon: 30         # Days to predict into the future
+  apply_weekend_gap: true        # Apply gap between trading days for weekends
+  timeframes:                    # Available timeframes
+    - "1d"
+    - "3d"
+    - "1wk"
+    - "1h"
+    - "2h"
+    - "4h"
+    - "6h"
+    - "8h"
+    - "12h"
+    - "1mo"
+    - "1m"
+    - "5m"
+    - "15m"
+    - "30m"
+
+#######################
+# Training Settings
+#######################
+training:
+  # Basic training configuration
+  continue_from_weights: true    # Continue training from saved weights
+  cleanup_old_logs: true         # Remove old log files automatically
+  random_state:
+    mode: "off"               # Options: "fixed", "off", "random"(between 1-100)
+    value: 42                    # Used when mode is "fixed"
+
+#######################
+# Hyperparameter Tuning
+#######################
+hyperparameter:
+  # User-configurable hyperparameter tuning settings
+  auto_run_tuning: false         # Start tuning automatically on startup
+  thresholds:                    # Target performance thresholds
+    rmse: 5                      # Root Mean Squared Error target
+    mape: 5.0                    # Mean Absolute Percentage Error target
+  
+  # Computation multipliers for different tuning modes
+  tuning_modes:
+    quick:                       # Fast tuning with fewer trials
+      trials_multiplier: 0.25    # 25% of normal trials
+      epochs_multiplier: 0.3     # 30% of normal epochs
+      timeout_multiplier: 0.2    # 20% of normal timeout
+      complexity_multiplier: 0.5 # 50% of model complexity (smaller models)
+    normal:                      # Standard tuning (baseline)
+      trials_multiplier: 1.0     # 100% (baseline)
+      epochs_multiplier: 1.0     # 100% (baseline)
+      timeout_multiplier: 1.0    # 100% (baseline)
+      complexity_multiplier: 1.0 # 100% (baseline complexity)
+    thorough:                    # More extensive tuning
+      trials_multiplier: 3.0     # 3x more trials than normal
+      epochs_multiplier: 2.0     # 2x more epochs than normal
+      timeout_multiplier: 4.0    # 4x longer timeout than normal
+      complexity_multiplier: 1.5 # 50% more complex models
+    extreme:                     # Very extensive tuning (overnight)
+      trials_multiplier: 10.0    # 10x more trials than normal
+      epochs_multiplier: 3.0     # 3x more epochs than normal
+      timeout_multiplier: 15.0   # 15x longer timeout than normal
+      complexity_multiplier: 2.0 # 2x more complex models (larger networks)
+  
+  # Default tuning mode
+  default_mode: "normal"        
+
+#######################
+# Dashboard Settings
+#######################
+dashboard:
+  # UI/Dashboard configurations
+  realtime_update: true
+  autorefresh_interval_sec: 60
+  show_prediction_plots: true
+  show_prediction_plots_interval: 5
+  show_training_history: true
+  show_weight_histograms: true
+  use_caching: true
+
+#######################
+# Feature Toggles
+#######################
+features:
+  # Enable/disable technical indicators
+  toggles:
+    rsi: true                    # Relative Strength Index
+    macd: true                   # Moving Average Convergence Divergence
+    bollinger_bands: true        # Bollinger Bands
+    atr: true                    # Average True Range
+    obv: true                    # On-Balance Volume
+    werpi: true                  # Wavelet-based Entropy Rich Process Indicator
+    vmli: true                   # Volume-Momentum Liquidity Indicator
+    sentiment: false             # Sentiment Analysis
+
+#######################
+# Model Settings
+#######################
+model:
+  # Model type settings
+  active_model_types:
+    lstm: true                   # Long Short-Term Memory
+    rnn: true                    # Recurrent Neural Network
+    random_forest: true          # Random Forest
+    xgboost: true                # Extreme Gradient Boosting
+    tft: true                    # Temporal Fusion Transformer
+    ltc: true                    # Liquid Time Constant
+    tabnet: true                 # TabNet model
+    cnn: true                    # Convolutional Neural Network
+  # Model parameters
+  default_lookback: 30
+  default_forecast_horizon: 30
+  ensemble_mode: "weighted_average"  # Options: "weighted_average", "stacking", "voting"
+
+#######################
+# Additional Toggles
+#######################
+toggles:
+  enable_email_alerts: false     # Email notifications
+  apply_weekend_gap: true        # Special handling for weekends in time series
+
+#######################
+# Symbol Settings
+#######################
+tickers:
+  default: "ETH-USD"             # Default ticker symbol
+  symbols:                       # Available symbols
+    - "ETH-USD"
+    - "BTC-USD"
+    - "LINK-USD"
+    - "LTC-USD"
+    - "AAVE-USD"
+    - "AVAX-USD"
+    - "SOL-USD"
+    - "MATIC-USD"
+    - "RVN-USD"
+    - "GOOGL"
+    - "T"
+    - "AMZN"
+    - "NVDA"
+    - "MSFT"
+    - "META"
+    - "STLA"
+    - "AMD"
+    - "INTC"
+    - "SQ"
+    - "NET"
+    - "ZM"
+    - "ROKU"
+    - "AAPL"
+    - "TSLA"
+    - "NFLX"
+    - "SPY"
+    - "ARK"
+    - "KBWB"
+    - "XLC"

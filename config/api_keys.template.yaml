@@ -1,0 +1,9 @@
+#######################
+# TEMPLATE FOR API KEYS
+# Copy this file to api_keys.yaml and fill in your keys
+# DO NOT commit api_keys.yaml to version control
+#######################
+
+finnhub_api_key: "your_finnhub_key_here"
+alphavantage_api_key: "your_alphavantage_key_here"
+coingecko_api_key: ""  # Empty string for free tier

@@ -1,0 +1,3568 @@
+I've reviewed all the provided files as well as the "last thought bubble" document. The bubble appears to be a comprehensive plan for implementing distributed computing in your ML pipeline, covering key components that need to be shared/synchronized across nodes, with implementation snippets for each major component. Let me complete the analysis based on the files you've shared.
+
+The plan is quite thorough, but I'll help you implement it in a structured way that follows your requirements. I'll create a complete set of code snippets that you can easily integrate into your existing system.
+
+Let's start by creating a clear implementation plan based on the files you've provided:
+
+1. First, let's create the ModelRegistry enhancement for distributed operation
+python
+
+Copy
+# Add to Scripts/incremental_learning.py
+
+class DistributedModelRegistry(ModelRegistry):
+    """Extension of ModelRegistry for distributed computing."""
+    
+    def __init__(self, registry_dir="model_registry", create_if_missing=True, 
+                 max_models_per_type=10, file_lock_timeout=30):
+        super().__init__(registry_dir, create_if_missing, max_models_per_type)
+        self.file_lock_timeout = file_lock_timeout
+        
+    def register_model(self, model, model_type="tensorflow", ticker=None, timeframe=None, 
+                        metrics=None, hyperparams=None, node_id=None, **kwargs):
+        """Thread-safe model registration with locking."""
+        from src.utils.threadsafe import FileLock
+        
+        # Generate a model ID
+        model_id = str(uuid.uuid4())[:8]
+        
+        # Create lock file path
+        lock_file = os.path.join(self.registry_dir, "registry.lock")
+        
+        # Acquire lock before modifying registry
+        with FileLock(lock_file, timeout=self.file_lock_timeout):
+            # Create model directory
+            model_dir = os.path.join(self.registry_dir, model_id)
+            os.makedirs(model_dir, exist_ok=True)
+            
+            # Create metadata with node info
+            timestamp = datetime.datetime.now().isoformat()
+            metadata = {
+                "model_id": model_id,
+                "model_type": model_type,
+                "created_at": timestamp,
+                "ticker": ticker,
+                "timeframe": timeframe,
+                "metrics": metrics or {},
+                "hyperparams": hyperparams or {},
+                "node_id": node_id,
+                "status": "active",
+                **kwargs
+            }
+            
+            # Save metadata
+            metadata_path = os.path.join(model_dir, "metadata.json")
+            with open(metadata_path, "w") as f:
+                json.dump(metadata, f, indent=2)
+            
+            # Save the model
+            model_path = self._save_model(model, model_type, model_dir)
+            
+            # Update the metadata with the path
+            metadata["model_path"] = model_path
+            
+            # Update the index with thread safety
+            self.model_index[model_id] = metadata
+            self._save_index()
+            
+            self.logger.info(f"[Node {node_id}] Registered model {model_id} of type {model_type}")
+            
+            # Prune old models if needed
+            self._prune_old_models(model_type)
+            
+        return model_id
+    
+    def load_model(self, model_id, with_metadata=True):
+        """Thread-safe model loading with locking."""
+        from src.utils.threadsafe import FileLock
+        
+        if model_id not in self.model_index:
+            self.logger.error(f"Model {model_id} not found in registry")
+            return None
+        
+        metadata = self.model_index[model_id]
+        model_type = metadata["model_type"]
+        model_path = metadata.get("model_path")
+        
+        if not model_path or not os.path.exists(model_path):
+            self.logger.error(f"Model path not found: {model_path}")
+            return None
+        
+        # Create lock file path
+        lock_file = os.path.join(self.registry_dir, f"{model_id}.lock")
+        
+        try:
+            # Acquire lock before loading model
+            with FileLock(lock_file, timeout=self.file_lock_timeout):
+                model = self._load_model_file(model_type, model_path)
+                
+                self.logger.info(f"Loaded model {model_id} of type {model_type}")
+                
+                if with_metadata:
+                    return model, metadata
+                else:
+                    return model
+                
+        except Exception as e:
+            self.logger.error(f"Error loading model {model_id}: {e}")
+            return None
+    
+    def _load_model_file(self, model_type, model_path):
+        """Load model file based on model type."""
+        try:
+            if model_type == "tensorflow":
+                if model_path.endswith(".h5"):
+                    model = tf.keras.models.load_model(model_path)
+                else:
+                    model = tf.keras.models.load_model(model_path)
+            elif model_type == "sklearn":
+                model = joblib.load(model_path)
+            elif model_type == "xgboost":
+                import xgboost as xgb
+                model = xgb.Booster()
+                model.load_model(model_path)
+            elif model_type == "ensemble":
+                with open(model_path, "rb") as f:
+                    model = pickle.load(f)
+            else:
+                self.logger.error(f"Unknown model type: {model_type}")
+                return None
+                
+            return model
+            
+        except Exception as e:
+            self.logger.error(f"Error loading model file: {e}")
+            return None
+2. Let's create the EnsembleCoordinator for distributed model coordination
+python
+
+Copy
+# Create a new file: Scripts/distributed_ensemble.py
+
+import logging
+import os
+import threading
+import time
+import numpy as np
+import json
+from typing import Dict, Any, List, Optional
+
+from src.utils.threadsafe import FileLock, safe_read_json, safe_write_json
+
+logger = logging.getLogger(__name__)
+
+class EnsembleCoordinator:
+    """
+    Coordinates ensemble predictions across distributed nodes.
+    Handles synchronization, weighting, and result aggregation.
+    """
+    
+    def __init__(self, 
+                 ensemble_dir: str,
+                 model_types: List[str],
+                 base_weights: Dict[str, float] = None,
+                 node_id: Optional[str] = None):
+        """
+        Initialize ensemble coordinator.
+        
+        Args:
+            ensemble_dir: Directory for ensemble state storage
+            model_types: List of model types in the ensemble
+            base_weights: Initial weights for each model type
+            node_id: Identifier for this node
+        """
+        self.ensemble_dir = ensemble_dir
+        os.makedirs(ensemble_dir, exist_ok=True)
+        
+        self.model_types = model_types
+        self.base_weights = base_weights or {mt: 1.0/len(model_types) for mt in model_types}
+        self.node_id = node_id
+        
+        self.state_file = os.path.join(ensemble_dir, "ensemble_state.json")
+        self.weights_file = os.path.join(ensemble_dir, "ensemble_weights.json")
+        self.predictions_dir = os.path.join(ensemble_dir, "predictions")
+        os.makedirs(self.predictions_dir, exist_ok=True)
+        
+        # Initialize or load weights
+        self._init_weights()
+        
+    def _init_weights(self):
+        """Initialize or load ensemble weights."""
+        with FileLock(self.weights_file + ".lock"):
+            if os.path.exists(self.weights_file):
+                with open(self.weights_file, "r") as f:
+                    self.current_weights = json.load(f)
+            else:
+                self.current_weights = self.base_weights.copy()
+                with open(self.weights_file, "w") as f:
+                    json.dump(self.current_weights, f, indent=2)
+    
+    def register_prediction(self, 
+                            window_id: str, 
+                            model_type: str, 
+                            predictions: np.ndarray,
+                            metrics: Dict[str, float] = None):
+        """
+        Register predictions from a specific model for a window.
+        
+        Args:
+            window_id: Identifier for the prediction window
+            model_type: Type of model making the prediction
+            predictions: Array of predictions
+            metrics: Optional performance metrics
+        """
+        if model_type not in self.model_types:
+            logger.warning(f"[Node {self.node_id}] Unknown model type: {model_type}")
+            return False
+            
+        prediction_file = os.path.join(
+            self.predictions_dir, 
+            f"{window_id}_{model_type}.npz"
+        )
+        
+        metrics = metrics or {}
+        metadata = {
+            "window_id": window_id,
+            "model_type": model_type,
+            "shape": predictions.shape,
+            "timestamp": time.time(),
+            "node_id": self.node_id,
+            "metrics": metrics
+        }
+        
+        # Save prediction and metadata
+        with FileLock(prediction_file + ".lock"):
+            np.savez(prediction_file, 
+                     predictions=predictions, 
+                     metadata=json.dumps(metadata))
+        
+        logger.info(f"[Node {self.node_id}] Registered {model_type} predictions for window {window_id}")
+        return True
+    
+    def get_window_predictions(self, window_id: str) -> Dict[str, np.ndarray]:
+        """
+        Get all available predictions for a specific window.
+        
+        Args:
+            window_id: Identifier for the prediction window
+            
+        Returns:
+            Dictionary mapping model types to prediction arrays
+        """
+        predictions = {}
+        
+        for model_type in self.model_types:
+            prediction_file = os.path.join(
+                self.predictions_dir, 
+                f"{window_id}_{model_type}.npz"
+            )
+            
+            if os.path.exists(prediction_file):
+                with FileLock(prediction_file + ".lock", timeout=5):
+                    try:
+                        data = np.load(prediction_file, allow_pickle=True)
+                        predictions[model_type] = data["predictions"]
+                    except Exception as e:
+                        logger.error(f"Error loading predictions for {model_type}: {e}")
+        
+        return predictions
+    
+    def compute_ensemble_prediction(self, window_id: str) -> Optional[np.ndarray]:
+        """
+        Compute the weighted ensemble prediction for a window.
+        
+        Args:
+            window_id: Identifier for the prediction window
+            
+        Returns:
+            Weighted ensemble prediction or None if incomplete
+        """
+        predictions = self.get_window_predictions(window_id)
+        
+        # Check if we have all required predictions
+        if not all(mt in predictions for mt in self.model_types 
+                  if self.current_weights.get(mt, 0) > 0):
+            missing = [mt for mt in self.model_types 
+                      if self.current_weights.get(mt, 0) > 0 
+                      and mt not in predictions]
+            logger.warning(f"Incomplete predictions for window {window_id}. Missing: {missing}")
+            return None
+            
+        # Compute weighted prediction
+        ensemble_pred = None
+        total_weight = 0
+        
+        for model_type, pred in predictions.items():
+            weight = self.current_weights.get(model_type, 0)
+            if weight <= 0:
+                continue
+                
+            total_weight += weight
+            
+            if ensemble_pred is None:
+                ensemble_pred = weight * pred
+            else:
+                ensemble_pred += weight * pred
+                
+        # Normalize
+        if ensemble_pred is not None and total_weight > 0:
+            ensemble_pred /= total_weight
+            
+        return ensemble_pred
+    
+    def update_weights(self, 
+                       new_weights: Dict[str, float],
+                       reason: str = "manual_update"):
+        """
+        Update the ensemble weights.
+        
+        Args:
+            new_weights: New weight dictionary
+            reason: Reason for the update
+        """
+        with FileLock(self.weights_file + ".lock"):
+            # Validate weights
+            if not all(mt in self.model_types for mt in new_weights):
+                logger.error(f"Invalid model types in weights: {list(new_weights.keys())}")
+                return False
+                
+            # Normalize weights
+            total = sum(new_weights.values())
+            if total > 0:
+                normalized_weights = {k: v/total for k, v in new_weights.items()}
+            else:
+                # Default to equal weights if total is zero
+                normalized_weights = {mt: 1.0/len(self.model_types) for mt in self.model_types}
+                
+            # Update
+            self.current_weights = normalized_weights
+            
+            # Save to file
+            update_data = {
+                "weights": normalized_weights,
+                "timestamp": time.time(),
+                "reason": reason,
+                "node_id": self.node_id
+            }
+            
+            with open(self.weights_file, "w") as f:
+                json.dump(update_data, f, indent=2)
+                
+            logger.info(f"[Node {self.node_id}] Updated ensemble weights: {normalized_weights}")
+            return True
+3. Let's create the DistributedNode class for node management
+python
+
+Copy
+# Create a new file: Scripts/distributed_node.py
+
+import logging
+import os
+import platform
+import socket
+import threading
+import time
+import uuid
+import psutil
+import json
+import numpy as np
+from typing import Dict, Any, List, Optional
+
+logger = logging.getLogger(__name__)
+
+class DistributedNode:
+    """
+    Represents a computing node in the distributed system.
+    Handles resource monitoring, task execution, and coordination.
+    """
+    
+    def __init__(self, 
+                 node_name: Optional[str] = None,
+                 coordinator_url: Optional[str] = None,
+                 config_path: Optional[str] = None,
+                 data_dir: str = "Data",
+                 models_dir: str = "Models",
+                 max_cpu_percent: float = 80.0,
+                 max_gpu_percent: float = 90.0,
+                 port: int = 8765):
+        """
+        Initialize a distributed node.
+        
+        Args:
+            node_name: Name of this node (default: hostname)
+            coordinator_url: URL of the coordinator node (None if this is coordinator)
+            config_path: Path to node configuration file
+            data_dir: Directory for data storage
+            models_dir: Directory for model storage
+            max_cpu_percent: Maximum CPU utilization percent
+            max_gpu_percent: Maximum GPU utilization percent
+            port: Port for node communication
+        """
+        # Set node identity
+        self.node_id = str(uuid.uuid4())[:8]
+        self.node_name = node_name or socket.gethostname()
+        self.is_coordinator = coordinator_url is None
+        self.coordinator_url = coordinator_url
+        
+        # Directories
+        self.data_dir = data_dir
+        self.models_dir = models_dir
+        os.makedirs(data_dir, exist_ok=True)
+        os.makedirs(models_dir, exist_ok=True)
+        
+        # Resource limits
+        self.max_cpu_percent = max_cpu_percent
+        self.max_gpu_percent = max_gpu_percent
+        
+        # Configuration
+        self.config_path = config_path
+        self.config = self._load_config()
+        
+        # Status tracking
+        self.status = "initializing"
+        self.last_heartbeat = time.time()
+        self.current_tasks = []
+        self.completed_tasks = []
+        self.resource_usage = {}
+        
+        # Communication
+        self.port = port
+        self.stop_event = threading.Event()
+
+        self._start_monitoring()
+        
+        logger.info(f"Node {self.node_name} ({self.node_id}) initialized")
+        self.status = "ready"
+        
+    def _load_config(self):
+        """Load node configuration from file."""
+        config = {
+            "max_cpu_percent": self.max_cpu_percent,
+            "max_gpu_percent": self.max_gpu_percent,
+            "allowed_model_types": ["lstm", "rnn", "random_forest", "xgboost"],
+            "heartbeat_interval": 10,  # seconds
+            "monitoring_interval": 5,   # seconds
+        }
+        
+        if self.config_path and os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, "r") as f:
+                    loaded_config = json.load(f)
+                    config.update(loaded_config)
+                logger.info(f"Loaded configuration from {self.config_path}")
+            except Exception as e:
+                logger.error(f"Error loading configuration: {e}")
+                
+        return config
+    
+    def _start_monitoring(self):
+        """Start resource monitoring thread."""
+        def monitor_resources():
+            while not self.stop_event.is_set():
+                try:
+                    # CPU usage
+                    cpu_percent = psutil.cpu_percent(interval=1)
+                    
+                    # Memory usage
+                    memory = psutil.virtual_memory()
+                    memory_percent = memory.percent
+                    memory_used_gb = memory.used / (1024 ** 3)
+                    memory_total_gb = memory.total / (1024 ** 3)
+                    
+                    # Disk usage
+                    disk = psutil.disk_usage('/')
+                    disk_percent = disk.percent
+                    disk_used_gb = disk.used / (1024 ** 3)
+                    disk_total_gb = disk.total / (1024 ** 3)
+                    
+                    # GPU usage if available
+                    gpu_percent = 0.0
+                    gpu_memory_used_gb = 0.0
+                    gpu_memory_total_gb = 0.0
+                    
+                    try:
+                        # Try to get GPU info using NVIDIA tools if available
+                        import subprocess
+                        result = subprocess.run(['nvidia-smi', '--query-gpu=utilization.gpu,memory.used,memory.total', '--format=csv,noheader,nounits'], 
+                                               stdout=subprocess.PIPE, text=True)
+                        
+                        if result.returncode == 0:
+                            lines = result.stdout.strip().split('\n')
+                            values = lines[0].split(',')
+                            
+                            gpu_percent = float(values[0].strip())
+                            gpu_memory_used_gb = float(values[1].strip()) / 1024
+                            gpu_memory_total_gb = float(values[2].strip()) / 1024
+                    except Exception as e:
+                        # GPU monitoring failed, but that's okay
+                        pass
+                    
+                    # Update resource usage data
+                    self.resource_usage = {
+                        "timestamp": time.time(),
+                        "cpu_percent": cpu_percent,
+                        "memory_percent": memory_percent,
+                        "memory_used_gb": memory_used_gb,
+                        "memory_total_gb": memory_total_gb,
+                        "disk_percent": disk_percent,
+                        "disk_used_gb": disk_used_gb,
+                        "disk_total_gb": disk_total_gb,
+                        "gpu_percent": gpu_percent,
+                        "gpu_memory_used_gb": gpu_memory_used_gb,
+                        "gpu_memory_total_gb": gpu_memory_total_gb,
+                    }
+                    
+                    # Save to monitoring file for dashboard
+                    monitoring_file = os.path.join(self.data_dir, f"node_{self.node_id}_status.json")
+                    with open(monitoring_file, "w") as f:
+                        json.dump({
+                            "node_id": self.node_id,
+                            "node_name": self.node_name,
+                            "status": self.status,
+                            "last_heartbeat": self.last_heartbeat,
+                            "current_tasks": self.current_tasks,
+                            "completed_tasks_count": len(self.completed_tasks),
+                            "resource_usage": self.resource_usage,
+                            "is_coordinator": self.is_coordinator,
+                        }, f, indent=2)
+                    
+                    # Sleep until next monitoring interval
+                    time.sleep(self.config["monitoring_interval"])
+                    
+                except Exception as e:
+                    logger.error(f"Error in resource monitoring: {e}")
+                    time.sleep(5)  # Sleep on error
+        
+        # Start monitoring thread
+        self.monitoring_thread = threading.Thread(target=monitor_resources, daemon=True)
+        self.monitoring_thread.start()
+        
+    def send_heartbeat(self):
+        """Send heartbeat to coordinator."""
+        if self.is_coordinator:
+            # If this is the coordinator, just update timestamp
+            self.last_heartbeat = time.time()
+            return True
+            
+        # Implement node-to-coordinator heartbeat
+        # This could use HTTP requests, ZeroMQ, etc.
+        try:
+            # For now, we'll just update a file as placeholder
+            heartbeat_file = os.path.join(self.data_dir, f"node_{self.node_id}_heartbeat.json")
+            
+            heartbeat_data = {
+                "node_id": self.node_id,
+                "node_name": self.node_name,
+                "timestamp": time.time(),
+                "status": self.status,
+                "resource_usage": self.resource_usage,
+                "current_tasks": self.current_tasks
+            }
+            
+            with open(heartbeat_file, "w") as f:
+                json.dump(heartbeat_data, f, indent=2)
+                
+            self.last_heartbeat = time.time()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error sending heartbeat: {e}")
+            return False
+            
+    def start_task(self, task_config):
+        """
+        Start a new task on this node.
+        
+        Args:
+            task_config: Task configuration dictionary
+        
+        Returns:
+            task_id: ID of the started task
+        """
+        task_id = task_config.get("task_id", str(uuid.uuid4())[:8])
+        task_type = task_config.get("task_type", "unknown")
+        
+        logger.info(f"Starting task {task_id} of type {task_type}")
+        
+        # Validate resource availability
+        if not self._check_resources_available(task_config):
+            logger.warning(f"Insufficient resources for task {task_id}")
+            return None
+            
+        # Add to current tasks
+        task_info = {
+            "task_id": task_id,
+            "task_type": task_type,
+            "start_time": time.time(),
+            "status": "starting",
+            "node_id": self.node_id,
+            "config": task_config
+        }
+        
+        self.current_tasks.append(task_info)
+        
+        # Run the task in a new thread
+        thread = threading.Thread(
+            target=self._run_task,
+            args=(task_info,)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return task_id
+        
+    def _run_task(self, task_info):
+        """
+        Run a task in a separate thread.
+        
+        Args:
+            task_info: Task information dictionary
+        """
+        task_id = task_info["task_id"]
+        task_type = task_info["task_type"]
+        config = task_info["config"]
+        
+        try:
+            # Update status
+            task_info["status"] = "running"
+            
+            # Execute based on task type
+            if task_type == "train_model":
+                self._run_training_task(task_info)
+            elif task_type == "evaluate_model":
+                self._run_evaluation_task(task_info)
+            elif task_type == "tune_hyperparams":
+                self._run_tuning_task(task_info)
+            else:
+                logger.error(f"Unknown task type: {task_type}")
+                task_info["status"] = "failed"
+                task_info["error"] = f"Unknown task type: {task_type}"
+                
+            # Mark as completed
+            if task_info["status"] != "failed":
+                task_info["status"] = "completed"
+                
+            task_info["end_time"] = time.time()
+            task_info["duration"] = task_info["end_time"] - task_info["start_time"]
+            
+            # Move from current to completed
+            self.current_tasks.remove(task_info)
+            self.completed_tasks.append(task_info)
+            
+            # Save completion record
+            self._save_task_result(task_info)
+            
+        except Exception as e:
+            logger.error(f"Error executing task {task_id}: {e}")
+            task_info["status"] = "failed"
+            task_info["error"] = str(e)
+            task_info["end_time"] = time.time()
+            
+            # Move from current to completed
+            if task_info in self.current_tasks:
+                self.current_tasks.remove(task_info)
+                self.completed_tasks.append(task_info)
+                
+            self._save_task_result(task_info)
+    
+    def _run_training_task(self, task_info):
+        """Run a model training task."""
+        config = task_info["config"]
+        
+        # Extract parameters
+        model_type = config.get("model_type", "lstm")
+        ticker = config.get("ticker", "AAPL")
+        timeframe = config.get("timeframe", "1d")
+        
+        # Create paths
+        task_dir = os.path.join(self.data_dir, f"task_{task_info['task_id']}")
+        os.makedirs(task_dir, exist_ok=True)
+        
+        # Import necessary modules (assuming they're part of your existing codebase)
+        # from src.data.data import fetch_data
+        # from src.features.features import feature_engineering
+        # from src.models.model import build_model_by_type
+        
+        # This is just a placeholder - in reality you'd use the functions from your actual codebase
+        logger.info(f"Training {model_type} model for {ticker} ({timeframe})")
+        time.sleep(5)  # Simulate work
+        
+        # Record results
+        task_info["result"] = {
+            "model_id": f"{model_type}_{uuid.uuid4()[:6]}",
+            "metrics": {"mse": 0.001, "rmse": 0.032, "mape": 2.1},
+            "training_time": 5.0
+        }
+    
+    def _run_evaluation_task(self, task_info):
+        """Run a model evaluation task."""
+        # Similar implementation to training
+        pass
+        
+    def _run_tuning_task(self, task_info):
+        """Run a hyperparameter tuning task."""
+        # Similar implementation to training
+        pass
+        
+    def _check_resources_available(self, task_config):
+        """
+        Check if sufficient resources are available for a task.
+        
+        Args:
+            task_config: Task configuration with resource requirements
+            
+        Returns:
+            bool: True if resources are available
+        """
+        # Get current resource usage
+        cpu_percent = self.resource_usage.get("cpu_percent", 0)
+        gpu_percent = self.resource_usage.get("gpu_percent", 0)
+        memory_percent = self.resource_usage.get("memory_percent", 0)
+        
+        # Get task requirements
+        required_cpu = task_config.get("required_cpu_percent", 0)
+        required_gpu = task_config.get("required_gpu_percent", 0)
+        required_memory = task_config.get("required_memory_percent", 0)
+        
+        # Check against maximum allowed usage (from node config)
+        max_cpu = self.config.get("max_cpu_percent", self.max_cpu_percent)
+        max_gpu = self.config.get("max_gpu_percent", self.max_gpu_percent)
+        max_memory = self.config.get("max_memory_percent", 80.0)
+        
+        # Check if adding this task would exceed limits
+        if cpu_percent + required_cpu > max_cpu:
+            logger.warning(f"CPU usage would exceed limit: {cpu_percent}% + {required_cpu}% > {max_cpu}%")
+            return False
+            
+        if gpu_percent + required_gpu > max_gpu and required_gpu > 0:
+            logger.warning(f"GPU usage would exceed limit: {gpu_percent}% + {required_gpu}% > {max_gpu}%")
+            return False
+            
+        if memory_percent + required_memory > max_memory:
+            logger.warning(f"Memory usage would exceed limit: {memory_percent}% + {required_memory}% > {max_memory}%")
+            return False
+            
+        return True
+        
+    def _save_task_result(self, task_info):
+        """Save task result to file for dashboard display."""
+        result_file = os.path.join(self.data_dir, f"task_{task_info['task_id']}_result.json")
+        
+        with open(result_file, "w") as f:
+            json.dump(task_info, f, indent=2)
+            
+    def stop(self):
+        """Stop the node and all running tasks."""
+        logger.info(f"Stopping node {self.node_name} ({self.node_id})")
+        self.status = "stopping"
+        self.stop_event.set()
+        
+        # Wait for monitoring thread to finish
+        if hasattr(self, "monitoring_thread") and self.monitoring_thread.is_alive():
+            self.monitoring_thread.join(timeout=5)
+            
+        logger.info(f"Node {self.node_name} ({self.node_id}) stopped")
+4. Now, let's modify the walk_forward.py file to support distributed execution
+python
+
+Copy
+# Add to Scripts/walk_forward.py
+
+def distribute_walk_forward_windows(df, window_size, horizon, total_windows, lookback=30):
+    """
+    Distribute walk-forward windows across nodes.
+    
+    Args:
+        df: DataFrame with features
+        window_size: Size of each walk-forward step
+        horizon: Prediction horizon
+        total_windows: Total number of windows to create
+        lookback: Lookback window size
+        
+    Returns:
+        List of (train_start, train_end, test_end) indices for each window
+    """
+    windows = []
+    min_train_size = lookback * 2  # Ensure enough data for training
+    
+    for i in range(total_windows):
+        train_end = min_train_size + (i * window_size)
+        test_end = train_end + horizon
+        
+        if test_end > len(df):
+            break
+            
+        windows.append((0, train_end, test_end))
+    
+    return windows
+
+def distributed_walk_forward(
+    df,
+    feature_cols,
+    submodel_params_dict=None,
+    ensemble_weights=None,
+    training_start_date=None,
+    window_size=None,
+    node_id=None,
+    node_config=None,
+    coordinator=None,
+    **kwargs
+):
+    """
+    Distributed version of unified_walk_forward.
+    Distributes training and prediction across nodes.
+    
+    Args:
+        df: DataFrame with features & target columns
+        feature_cols: List of feature column names
+        submodel_params_dict: Dictionary of model parameters for each type
+        ensemble_weights: Dictionary of weights for ensemble
+        training_start_date: Start date for training
+        window_size: Size of each walk-forward step
+        node_id: Identifier for this node
+        node_config: Configuration for this node
+        coordinator: EnsembleCoordinator instance
+        **kwargs: Additional arguments
+        
+    Returns:
+        (ensemble_model, metrics_dict): The trained ensemble model and performance metrics
+    """
+    # Import necessary modules
+    from
+
+
+
+Retry
+
+AB
+continue
+
+Edit
+Let me continue with the distributed walk-forward function implementation:
+
+python
+
+Copy
+# Add to Scripts/walk_forward.py (continued)
+
+def distributed_walk_forward(
+    df,
+    feature_cols,
+    submodel_params_dict=None,
+    ensemble_weights=None,
+    training_start_date=None,
+    window_size=None,
+    node_id=None,
+    node_config=None,
+    coordinator=None,
+    **kwargs
+):
+    """
+    Distributed version of unified_walk_forward.
+    Distributes training and prediction across nodes.
+    
+    Args:
+        df: DataFrame with features & target columns
+        feature_cols: List of feature column names
+        submodel_params_dict: Dictionary of model parameters for each type
+        ensemble_weights: Dictionary of weights for ensemble
+        training_start_date: Start date for training
+        window_size: Size of each walk-forward step
+        node_id: Identifier for this node
+        node_config: Configuration for this node
+        coordinator: EnsembleCoordinator instance
+        **kwargs: Additional arguments
+        
+    Returns:
+        (ensemble_model, metrics_dict): The trained ensemble model and performance metrics
+    """
+    # Import necessary modules
+    from concurrent.futures import ThreadPoolExecutor
+    import multiprocessing
+    from sklearn.preprocessing import StandardScaler
+    import numpy as np
+    import tensorflow as tf
+    
+    # Import from our modules
+    from src.utils.memory_utils import log_memory_usage
+    from src.utils.vectorized_ops import vectorized_sequence_creation
+    
+    target_col = "Close"
+    log_memory_usage(f"[Node {node_id}] Starting distributed_walk_forward")
+    
+    # Set defaults if not provided
+    if ensemble_weights is None:
+        # Import needed here to avoid circular imports
+        from config.config_loader import ACTIVE_MODEL_TYPES
+        ensemble_weights = {
+            mtype: 1.0 / len(ACTIVE_MODEL_TYPES) for mtype in ACTIVE_MODEL_TYPES
+        }
+        
+    if submodel_params_dict is None:
+        # Create default parameters for each model type
+        from config.config_loader import ACTIVE_MODEL_TYPES
+        submodel_params_dict = {}
+        for mtype in ACTIVE_MODEL_TYPES:
+            if mtype in ["lstm", "rnn", "tft"]:
+                submodel_params_dict[mtype] = {
+                    "lr": 0.001,
+                    "dropout": 0.2,
+                    "units_per_layer": [64, 32],
+                    "loss_function": "mean_squared_error",
+                    "epochs": 1,
+                    "batch_size": 32,
+                }
+            elif mtype == "random_forest":
+                submodel_params_dict[mtype] = {"n_est": 100, "mdepth": 10}
+            elif mtype == "xgboost":
+                submodel_params_dict[mtype] = {"n_est": 100, "lr": 0.1}
+            elif mtype == "tabnet":
+                submodel_params_dict[mtype] = {
+                    "n_d": 64,
+                    "n_a": 64,
+                    "n_steps": 5,
+                    "gamma": 1.5,
+                    "lambda_sparse": 0.001,
+                    "optimizer_params": {"lr": 0.02},
+                    "max_epochs": 200,
+                    "patience": 15,
+                    "batch_size": 1024,
+                    "virtual_batch_size": 128,
+                    "momentum": 0.02
+                }
+    
+    # Determine which model types this node should handle
+    if node_config and "allowed_model_types" in node_config:
+        from config.config_loader import ACTIVE_MODEL_TYPES
+        node_model_types = [mt for mt in ACTIVE_MODEL_TYPES 
+                          if mt in node_config["allowed_model_types"]]
+    else:
+        from config.config_loader import ACTIVE_MODEL_TYPES
+        node_model_types = ACTIVE_MODEL_TYPES
+        
+    logger = logging.getLogger("walk_forward")
+    logger.info(f"[Node {node_id}] Handling model types: {node_model_types}")
+    
+    # Determine window size for walk-forward
+    from config.config_loader import WALK_FORWARD_DEFAULT
+    from src.utils.utils import validate_walk_forward
+    wf_size = validate_walk_forward(window_size or WALK_FORWARD_DEFAULT)
+    logger.info(f"[Node {node_id}] Walk-forward window size: {wf_size}")
+    
+    # Validate inputs
+    if df is None or df.empty:
+        logger.error(f"[Node {node_id}] Empty DataFrame provided")
+        return None, {"mse": float("inf"), "mape": float("inf")}
+        
+    # Determine lookback window - use maximum from all model configurations
+    lookback = 30  # Default
+    for mtype, params in submodel_params_dict.items():
+        if mtype in ["lstm", "rnn", "tft"] and "lookback" in params:
+            lookback = max(lookback, params["lookback"])
+    
+    # Determine prediction horizon
+    from config.config_loader import PREDICTION_HORIZON
+    horizon = PREDICTION_HORIZON
+    
+    # Determine training start date
+    from config.config_loader import START_DATE
+    start_date = training_start_date or START_DATE
+    
+    # Find index for training start
+    start_idx = 0
+    if "date" in df.columns:
+        valid_indices = df.index[df["date"] >= start_date]
+        if len(valid_indices) > 0:
+            start_idx = valid_indices[0]
+    
+    # Initialize models for each type
+    models_dict = {}
+    for mtype in node_model_types:
+        weight = ensemble_weights.get(mtype, 0.0)
+        if weight <= 0 or mtype not in submodel_params_dict:
+            continue  # Skip models with zero weight
+            
+        try:
+            # Initialize model based on type
+            if mtype in ["lstm", "rnn"]:
+                from src.models.model import build_model_by_type
+                # Initialize neural network models
+                arch_params = {
+                    "units_per_layer": submodel_params_dict[mtype].get(
+                        "units_per_layer", [64, 32]
+                    )
+                }
+                model = build_model_by_type(
+                    model_type=mtype,
+                    num_features=len(feature_cols),
+                    horizon=horizon,
+                    learning_rate=submodel_params_dict[mtype].get("lr", 0.001),
+                    dropout_rate=submodel_params_dict[mtype].get("dropout", 0.2),
+                    loss_function=submodel_params_dict[mtype].get(
+                        "loss_function", "mean_squared_error"
+                    ),
+                    lookback=lookback,
+                    architecture_params=arch_params,
+                )
+                models_dict[mtype] = model
+            elif mtype == "tft":
+                # Initialize TFT model
+                from src.models.temporal_fusion_transformer import build_tft_model
+
+                tft_params = submodel_params_dict[mtype]
+                model = build_tft_model(
+                    num_features=len(feature_cols),
+                    horizon=horizon,
+                    learning_rate=tft_params.get("lr", 0.001),
+                    hidden_size=tft_params.get("hidden_size", 256),
+                    lstm_units=tft_params.get("lstm_units", 256),
+                    num_heads=tft_params.get("num_heads", 8),
+                    dropout_rate=tft_params.get("dropout", 0.15),
+                    loss_function=tft_params.get("loss_function", "mse"),
+                )
+                models_dict[mtype] = model
+            elif mtype == "random_forest":
+                from sklearn.ensemble import RandomForestRegressor
+
+                models_dict[mtype] = RandomForestRegressor(
+                    n_estimators=submodel_params_dict[mtype].get("n_est", 100),
+                    max_depth=submodel_params_dict[mtype].get("mdepth", 10),
+                    random_state=42,
+                )
+            elif mtype == "xgboost":
+                import xgboost as xgb
+
+                models_dict[mtype] = xgb.XGBRegressor(
+                    n_estimators=submodel_params_dict[mtype].get("n_est", 100),
+                    learning_rate=submodel_params_dict[mtype].get("lr", 0.1),
+                    random_state=42,
+                )
+        except Exception as e:
+            logger.error(f"Error initializing model {mtype}: {e}")
+    
+    # Create an initial ensemble model
+    from src.training.walk_forward import get_ensemble_model
+    from config.config_loader import ACTIVE_MODEL_TYPES
+    ensemble_model = get_ensemble_model(
+        ACTIVE_MODEL_TYPES, models_dict, ensemble_weights
+    )
+    
+    # Initial training data - from start_idx to lookback window
+    if start_idx + lookback >= len(df):
+        logger.error(f"[Node {node_id}] Not enough data for training with specified lookback")
+        return ensemble_model, {"mse": float("inf"), "mape": float("inf")}
+        
+    # Set training end cutoff (we don't use future data)
+    train_end_idx = start_idx + lookback
+    
+    # Calculate number of cycles for progress reporting
+    total_samples = len(df)
+    total_cycles = (total_samples - train_end_idx - horizon) // wf_size
+    
+    # Determine optimal number of parallel workers
+    cpu_count = multiprocessing.cpu_count()
+    max_workers = min(len(node_model_types), max(1, int(cpu_count * 0.75)))
+    
+    # Prepare for parallel processing
+    logger.info(f"[Node {node_id}] Using {max_workers} parallel workers")
+    
+    # Main walk-forward loop
+    current_idx = train_end_idx
+    cycle = 0
+    
+    # All predictions and actuals
+    all_predictions = []
+    all_actuals = []
+    
+    while current_idx + horizon < len(df):
+        try:
+            # Report progress periodically
+            if cycle % 5 == 0 or cycle == total_cycles - 1:
+                logger.info(
+                    f"[Node {node_id}] Walk-forward cycle {cycle+1}/{total_cycles} "
+                    f"(idx={current_idx}/{len(df)})"
+                )
+            
+            # 1. Define current train/test windows
+            train_data = df.iloc[:current_idx].copy()
+            test_data = df.iloc[current_idx : current_idx + horizon].copy()
+            
+            # 2. Scale features properly
+            scaler = StandardScaler()
+            train_scaled = train_data.copy()
+            test_scaled = test_data.copy()
+            
+            # Fit scaler on training data only
+            train_scaled[feature_cols] = scaler.fit_transform(train_data[feature_cols])
+            
+            # Transform test data with the same scaler
+            test_scaled[feature_cols] = scaler.transform(test_data[feature_cols])
+            
+            # 3. Create sequences for model training and testing
+            X_train, y_train = vectorized_sequence_creation(
+                train_scaled, feature_cols, target_col, lookback, horizon
+            )
+            
+            X_test, y_test = vectorized_sequence_creation(
+                test_scaled, feature_cols, target_col, lookback, horizon
+            )
+            
+            # Skip if sequences couldn't be created
+            if len(X_train) == 0 or len(X_test) == 0:
+                logger.warning(f"[Node {node_id}] Empty sequences at cycle {cycle}, skipping")
+                current_idx += wf_size
+                cycle += 1
+                continue
+            
+            # 4. Train/update each model in parallel and collect predictions
+            model_predictions = {}
+            updated_models = {}
+            
+            # Create a window ID for coordinator
+            window_id = f"{cycle}_{current_idx}_{current_idx + horizon}"
+            
+            # Define a function for parallel model training and prediction
+            def train_and_predict(mtype):
+                model = models_dict.get(mtype)
+                weight = ensemble_weights.get(mtype, 0.0)
+                
+                if weight <= 0 or model is None:
+                    return mtype, None, None
+                    
+                try:
+                    # Train model based on type
+                    if mtype in ["lstm", "rnn", "tft"]:
+                        # Neural network training
+                        epochs = submodel_params_dict[mtype].get("epochs", 1)
+                        batch_size = submodel_params_dict[mtype].get("batch_size", 32)
+                        
+                        model.fit(
+                            X_train,
+                            y_train,
+                            epochs=epochs,
+                            batch_size=batch_size,
+                            verbose=0
+                        )
+                        
+                        # Make predictions
+                        pred = model.predict(X_test, verbose=0)
+                        
+                    elif mtype in ["random_forest", "xgboost"]:
+                        # Tree-based model training
+                        X_tr_flat = X_train.reshape(X_train.shape[0], -1)
+                        y_tr_flat = y_train[:, 0]
+                        
+                        model.fit(X_tr_flat, y_tr_flat)
+                        
+                        # Make predictions
+                        X_te_flat = X_test.reshape(X_test.shape[0], -1)
+                        preds_1d = model.predict(X_te_flat)
+                        
+                        # Reshape to match format
+                        pred = np.tile(preds_1d.reshape(-1, 1), (1, horizon))
+                        
+                    # Calculate metrics for this model
+                    mse = np.mean((y_test - pred) ** 2)
+                    metrics = {"mse": float(mse)}
+                    
+                    # Register with coordinator if available
+                    if coordinator:
+                        coordinator.register_prediction(
+                            window_id=window_id,
+                            model_type=mtype,
+                            predictions=pred,
+                            metrics=metrics
+                        )
+                    
+                    return mtype, pred, model
+                    
+                except Exception as e:
+                    logger.error(f"[Node {node_id}] Error training/predicting with {mtype}: {e}")
+                    return mtype, None, None
+            
+            # Train models in parallel
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(train_and_predict, mtype): mtype 
+                          for mtype in node_model_types if mtype in models_dict}
+                
+                for future in futures:
+                    mtype, pred, updated_model = future.result()
+                    if pred is not None:
+                        model_predictions[mtype] = pred
+                        updated_models[mtype] = updated_model
+            
+            # 5. Update models dictionary with newly trained models
+            for mtype, model in updated_models.items():
+                models_dict[mtype] = model
+            
+            # 6. Create ensemble predictions (if not using coordinator)
+            if coordinator:
+                # Get ensemble prediction from coordinator
+                ensemble_pred = coordinator.compute_ensemble_prediction(window_id)
+                
+                # If coordinator doesn't have complete prediction, compute locally
+                if ensemble_pred is None:
+                    logger.warning(f"[Node {node_id}] Incomplete predictions from coordinator, computing locally")
+                    ensemble_pred = compute_local_ensemble(model_predictions, ensemble_weights)
+            else:
+                # Compute locally
+                ensemble_pred = compute_local_ensemble(model_predictions, ensemble_weights)
+            
+            # 7. Store predictions and actuals
+            if ensemble_pred is not None:
+                all_predictions.append(ensemble_pred)
+                all_actuals.append(y_test)
+                
+                # 8. Update ensemble model object
+                ensemble_model = get_ensemble_model(
+                    ACTIVE_MODEL_TYPES, models_dict, ensemble_weights
+                )
+            
+            # Move forward to next window
+            current_idx += wf_size
+            cycle += 1
+            
+        except Exception as e:
+            logger.error(f"[Node {node_id}] Error in cycle {cycle}: {e}")
+            current_idx += wf_size
+            cycle += 1
+    
+    # Calculate final metrics
+    metrics = {}
+    if all_predictions and all_actuals:
+        try:
+            from src.training.walk_forward import calculate_mse, calculate_mape
+            metrics["mse"] = calculate_mse(all_predictions, all_actuals)
+            metrics["rmse"] = np.sqrt(metrics["mse"])
+            metrics["mape"] = calculate_mape(all_predictions, all_actuals)
+            
+            logger.info(
+                f"[Node {node_id}] Walk-forward results: "
+                f"RMSE={metrics['rmse']:.4f}, MAPE={metrics['mape']:.2f}%"
+            )
+            
+        except Exception as e:
+            logger.error(f"[Node {node_id}] Error calculating metrics: {e}")
+            metrics = {"mse": float("inf"), "mape": float("inf"), "rmse": float("inf")}
+            
+    else:
+        logger.error(f"[Node {node_id}] No predictions were generated")
+        metrics = {"mse": float("inf"), "mape": float("inf"), "rmse": float("inf")}
+    
+    # Clean up before returning
+    log_memory_usage(f"[Node {node_id}] end of distributed_walk_forward")
+    
+    return ensemble_model, metrics
+
+def compute_local_ensemble(model_predictions, ensemble_weights):
+    """
+    Compute ensemble prediction locally.
+    
+    Args:
+        model_predictions: Dictionary mapping model types to predictions
+        ensemble_weights: Dictionary mapping model types to weights
+        
+    Returns:
+        Weighted ensemble prediction or None
+    """
+    # Create ensemble predictions
+    ensemble_pred = None
+    total_weight = 0.0
+    
+    for mtype, pred in model_predictions.items():
+        if pred is None:
+            continue
+            
+        weight = ensemble_weights.get(mtype, 0.0)
+        total_weight += weight
+        
+        if ensemble_pred is None:
+            ensemble_pred = weight * pred
+        else:
+            ensemble_pred += weight * pred
+    
+    # Normalize by total weight
+    if ensemble_pred is not None and total_weight > 0:
+        ensemble_pred /= total_weight
+        
+    return ensemble_pred
+5. Let's create a distributed training entry point
+python
+
+Copy
+# Create a new file: Scripts/distributed_training.py
+
+import argparse
+import logging
+import os
+import socket
+import sys
+import time
+import uuid
+from datetime import datetime
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("distributed_training.log"),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger("DistributedTraining")
+
+def start_distributed_training(
+    ticker, 
+    timeframe, 
+    range_cat="all", 
+    node_config=None, 
+    is_coordinator=True,
+    data_dir="Data",
+    models_dir="Models"
+):
+    """
+    Start distributed training for a specific ticker-timeframe combination.
+    
+    Args:
+        ticker: Ticker symbol
+        timeframe: Timeframe to use
+        range_cat: Range category
+        node_config: Node configuration
+        is_coordinator: Whether this node is the coordinator
+        data_dir: Data directory
+        models_dir: Models directory
+        
+    Returns:
+        Result dictionary
+    """
+    from src.distributed_node import DistributedNode
+    from src.distributed_ensemble import EnsembleCoordinator
+    
+    # Make sure directories exist
+    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(models_dir, exist_ok=True)
+    
+    # Create node ID if none exists
+    node_id_file = os.path.join(data_dir, "node_id.txt")
+    
+    if os.path.exists(node_id_file):
+        with open(node_id_file, "r") as f:
+            node_id = f.read().strip()
+    else:
+        node_id = str(uuid.uuid4())[:8]
+        with open(node_id_file, "w") as f:
+            f.write(node_id)
+            
+    # Create default node config if none provided
+    if node_config is None:
+        node_config = {
+            "max_cpu_percent": 80.0,
+            "max_gpu_percent": 90.0,
+            "allowed_model_types": ["lstm", "rnn", "random_forest", "xgboost", "tft"],
+            "node_name": socket.gethostname()
+        }
+        
+    # Initialize node
+    node = DistributedNode(
+        node_name=node_config.get("node_name", socket.gethostname()),
+        coordinator_url=None if is_coordinator else "http://localhost:8765",
+        config_path=os.path.join(data_dir, "node_config.json"),
+        data_dir=data_dir,
+        models_dir=models_dir,
+        max_cpu_percent=node_config.get("max_cpu_percent", 80.0),
+        max_gpu_percent=node_config.get("max_gpu_percent", 90.0),
+        port=8765
+    )
+    
+    # Initialize ensemble coordinator
+    if is_coordinator:
+        from config.config_loader import ACTIVE_MODEL_TYPES
+        coordinator = EnsembleCoordinator(
+            ensemble_dir=os.path.join(data_dir, "Ensemble"),
+            model_types=node_config.get("allowed_model_types", ACTIVE_MODEL_TYPES),
+            node_id=node_id
+        )
+    else:
+        coordinator = None
+        
+    # Load or fetch data
+    from config.config_loader import START_DATE
+    from src.data.data import fetch_data
+    df = fetch_data(ticker=ticker, start=START_DATE, interval=timeframe)
+    
+    if df is None or len(df) < 50:
+        logger.error(f"[Node {node_id}] Insufficient data for {ticker} ({timeframe})")
+        return {"success": False, "error": "Insufficient data"}
+        
+    # Apply feature engineering
+    from src.features.features import feature_engineering
+    df = feature_engineering(df, ticker=ticker)
+    
+    # Get feature columns
+    from config.config_loader import get_active_feature_names
+    feature_cols = get_active_feature_names()
+    
+    # Load ensemble weights
+    import json
+    weights_path = os.path.join(data_dir, "ensemble_weights.json")
+    
+    ensemble_weights = None
+    if os.path.exists(weights_path):
+        try:
+            with open(weights_path, "r") as f:
+                weights_data = json.load(f)
+                ensemble_weights = weights_data.get("weights", None)
+        except Exception as e:
+            logger.error(f"[Node {node_id}] Error loading weights: {e}")
+            
+    # If no weights loaded, use default weights
+    if ensemble_weights is None:
+        from config.config_loader import ACTIVE_MODEL_TYPES
+        ensemble_weights = {mtype: 1.0/len(ACTIVE_MODEL_TYPES) for mtype in ACTIVE_MODEL_TYPES}
+        
+    # Create training parameters
+    submodel_params_dict = {}
+    
+    # Different parameter management for different model types
+    for mtype in node_config.get("allowed_model_types", []):
+        if mtype in ["lstm", "rnn", "tft"]:
+            submodel_params_dict[mtype] = {
+                "lr": 0.001,
+                "dropout": 0.2,
+                "units_per_layer": [64, 32],
+                "loss_function": "mean_squared_error",
+                "epochs": 1,
+                "batch_size": 32,
+            }
+        elif mtype == "random_forest":
+            submodel_params_dict[mtype] = {"n_est": 100, "mdepth": 10}
+        elif mtype == "xgboost":
+            submodel_params_dict[mtype] = {"n_est": 100, "lr": 0.1}
+        elif mtype == "tabnet":
+            submodel_params_dict[mtype] = {
+                "n_d": 64,
+                "n_a": 64,
+                "n_steps": 5,
+                "gamma": 1.5,
+                "lambda_sparse": 0.001,
+                "optimizer_params": {"lr": 0.02},
+                "max_epochs": 200,
+                "patience": 15,
+                "batch_size": 1024,
+                "virtual_batch_size": 128,
+                "momentum": 0.02
+            }
+            
+    # Run distributed walk-forward
+    from src.training.walk_forward import distributed_walk_forward
+    ensemble_model, metrics = distributed_walk_forward(
+        df=df,
+        feature_cols=feature_cols,
+        submodel_params_dict=submodel_params_dict,
+        ensemble_weights=ensemble_weights,
+        node_id=node_id,
+        node_config=node_config,
+        coordinator=coordinator
+    )
+    
+    # Save results
+    result = {
+        "ticker": ticker,
+        "timeframe": timeframe,
+        "range_category": range_cat,
+        "node_id": node_id,
+        "metrics": metrics,
+        "completed_at": datetime.now().isoformat()
+    }
+    
+    result_path = os.path.join(data_dir, f"result_{ticker}_{timeframe}_{node_id}.json")
+    with open(result_path, "w") as f:
+        json.dump(result, f, indent=2)
+        
+    logger.info(f"[Node {node_id}] Training completed for {ticker} ({timeframe}). Results saved to {result_path}")
+    
+    # Return results
+    return result
+
+def main():
+    """Main entry point for distributed training."""
+    parser = argparse.ArgumentParser(description="Distributed ML Training")
+    parser.add_argument("--ticker", type=str, default="BTC-USD", help="Ticker symbol")
+    parser.add_argument("--timeframe", type=str, default="1d", help="Timeframe")
+    parser.add_argument("--range", type=str, default="all", help="Range category")
+    parser.add_argument("--mode", type=str, default="coordinator", help="Node mode (coordinator or worker)")
+    parser.add_argument("--config", type=str, default=None, help="Path to node configuration file")
+    parser.add_argument("--data-dir", type=str, default="Data", help="Data directory")
+    parser.add_argument("--models-dir", type=str, default="Models", help="Models directory")
+    
+    args = parser.parse_args()
+    
+    # Load node configuration if specified
+    node_config = None
+    if args.config and os.path.exists(args.config):
+        import json
+        with open(args.config, "r") as f:
+            node_config = json.load(f)
+    
+    # Run training
+    result = start_distributed_training(
+        ticker=args.ticker,
+        timeframe=args.timeframe,
+        range_cat=args.range,
+        node_config=node_config,
+        is_coordinator=(args.mode.lower() == "coordinator"),
+        data_dir=args.data_dir,
+        models_dir=args.models_dir
+    )
+    
+    # Print result summary
+    if result.get("success") is False:
+        print(f"Training failed: {result.get('error', 'Unknown error')}")
+    else:
+        metrics = result.get("metrics", {})
+        print(f"Training completed with RMSE: {metrics.get('rmse', 'N/A')}, MAPE: {metrics.get('mape', 'N/A')}%")
+    
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
+6. Let's create a configuration utility for the distributed system
+python
+
+Copy
+# Create a new file: Scripts/distributed_config.py
+
+import json
+import os
+import socket
+import time
+import yaml
+from typing import Dict, Any, Optional, List
+
+def get_default_node_config():
+    """Get default node configuration."""
+    return {
+        "node_name": socket.gethostname(),
+        "max_cpu_percent": 80.0,
+        "max_gpu_percent": 90.0,
+        "allowed_model_types": ["lstm", "rnn", "random_forest", "xgboost", "tft"],
+        "heartbeat_interval": 10,
+        "monitoring_interval": 5,
+        "role": "worker"  # or "coordinator"
+    }
+
+def load_node_config(config_file=None):
+    """Load node configuration from file."""
+    config = get_default_node_config()
+    
+    if config_file is None:
+        config_file = os.path.join("Data", "node_config.json")
+        
+    if os.path.exists(config_file):
+        try:
+            with open(config_file, "r") as f:
+                loaded_config = json.load(f)
+                config.update(loaded_config)
+        except Exception as e:
+            print(f"Error loading node configuration: {e}")
+            
+    return config
+
+def save_node_config(config, config_file=None):
+    """Save node configuration to file."""
+    if config_file is None:
+        config_file = os.path.join("Data", "node_config.json")
+        
+    os.makedirs(os.path.dirname(config_file), exist_ok=True)
+    
+    with open(config_file, "w") as f:
+        json.dump(config, f, indent=2)
+        
+    return True
+
+def get_node_connection_info(node_id=None):
+    """Get connection information for nodes."""
+    connections_file = os.path.join("Data", "node_connections.json")
+    
+    if os.path.exists(connections_file):
+        try:
+            with open(connections_file, "r") as f:
+                connections = json.load(f)
+                
+            if node_id:
+                return connections.get(node_id, {})
+            else:
+                return connections
+        except Exception as e:
+            print(f"Error loading node connections: {e}")
+            
+    return {} if node_id else {}
+
+def register_node_connection(node_id, host, port, is_coordinator=False):
+    """Register node connection information."""
+    connections_file = os.path.join("Data", "node_connections.json")
+    
+    connections = get_node_connection_info()
+    
+    connections[node_id] = {
+        "host": host,
+        "port": port,
+        "is_coordinator": is_coordinator,
+        "last_seen": time.time()
+    }
+    
+    with open(connections_file, "w") as f:
+        json.dump(connections, f, indent=2)
+        
+    return True
+
+def distribute_model_types(active_model_types: List[str], node_count: int) -> Dict[int, List[str]]:
+    """
+    Distribute model types across nodes optimally.
+    
+    Args:
+        active_model_types: List of active model types
+        node_count: Number of nodes to distribute across
+        
+    Returns:
+        Dictionary mapping node index to list of model types
+    """
+    if node_count <= 0:
+        return {}
+        
+    if node_count == 1:
+        return {0
+
+
+
+Retry
+
+AB
+continue
+
+Edit
+Let me complete the distribute_model_types function and continue with the implementation:
+
+python
+
+Copy
+# Complete the function in Scripts/distributed_config.py
+
+def distribute_model_types(active_model_types: List[str], node_count: int) -> Dict[int, List[str]]:
+    """
+    Distribute model types across nodes optimally.
+    
+    Args:
+        active_model_types: List of active model types
+        node_count: Number of nodes to distribute across
+        
+    Returns:
+        Dictionary mapping node index to list of model types
+    """
+    if node_count <= 0:
+        return {}
+        
+    if node_count == 1:
+        return {0: active_model_types}
+        
+    # Balance models across nodes
+    distribution = {i: [] for i in range(node_count)}
+    
+    # Sort models by computational intensity (approximate)
+    # Neural networks are more intensive than tree-based models
+    model_weights = {
+        "lstm": 10,
+        "rnn": 8,
+        "tft": 12,
+        "tabnet": 9,
+        "random_forest": 5,
+        "xgboost": 6
+    }
+    
+    # Sort models by computational intensity (descending)
+    sorted_models = sorted(
+        active_model_types, 
+        key=lambda m: model_weights.get(m, 5),
+        reverse=True
+    )
+    
+    # Track computational load per node
+    node_loads = {i: 0 for i in range(node_count)}
+    
+    # Assign models to least loaded node
+    for model in sorted_models:
+        # Find least loaded node
+        min_load_node = min(node_loads, key=node_loads.get)
+        
+        # Assign model
+        distribution[min_load_node].append(model)
+        
+        # Update load
+        node_loads[min_load_node] += model_weights.get(model, 5)
+    
+    return distribution
+7. Now, let's create the dashboard integration for the distributed system:
+python
+
+Copy
+# Add to Scripts/dashboard_integration.py (or create if needed)
+
+import os
+import json
+import time
+import pandas as pd
+import streamlit as st
+from typing import Dict, List, Any
+
+def display_distributed_system_status(data_dir="Data"):
+    """
+    Display distributed system status in the dashboard.
+    
+    Args:
+        data_dir: Directory containing distributed system data
+    """
+    st.header("Distributed System Status")
+    
+    # Get node status files
+    node_files = [f for f in os.listdir(data_dir) 
+                 if f.startswith("node_") and f.endswith("_status.json")]
+    
+    if not node_files:
+        st.warning("No distributed nodes detected. The system is running in standalone mode.")
+        return
+    
+    # Read node data
+    nodes_data = []
+    for node_file in node_files:
+        try:
+            file_path = os.path.join(data_dir, node_file)
+            with open(file_path, "r") as f:
+                data = json.load(f)
+                
+            # Check if node has a recent heartbeat
+            current_time = time.time()
+            last_heartbeat = data.get("last_heartbeat", 0)
+            
+            # Node is considered offline if no heartbeat for 60 seconds
+            if current_time - last_heartbeat > 60:
+                data["status"] = "offline"
+                
+            nodes_data.append(data)
+        except Exception as e:
+            st.error(f"Error reading node data from {node_file}: {e}")
+    
+    # Display nodes summary
+    st.subheader("Nodes Overview")
+    
+    # Count nodes by status
+    status_counts = {}
+    for node in nodes_data:
+        status = node.get("status", "unknown")
+        if status not in status_counts:
+            status_counts[status] = 0
+        status_counts[status] += 1
+    
+    # Create metrics
+    cols = st.columns(4)
+    with cols[0]:
+        st.metric("Total Nodes", len(nodes_data))
+    with cols[1]:
+        st.metric("Active Nodes", status_counts.get("ready", 0) + status_counts.get("running", 0))
+    with cols[2]:
+        st.metric("Busy Nodes", status_counts.get("running", 0))
+    with cols[3]:
+        st.metric("Offline Nodes", status_counts.get("offline", 0))
+    
+    # Display nodes table
+    nodes_df = pd.DataFrame([
+        {
+            "Node ID": node.get("node_id", "Unknown"),
+            "Name": node.get("node_name", "Unknown"),
+            "Status": node.get("status", "Unknown"),
+            "Role": "Coordinator" if node.get("is_coordinator", False) else "Worker",
+            "CPU Usage": f"{node.get('resource_usage', {}).get('cpu_percent', 0):.1f}%",
+            "Memory Usage": f"{node.get('resource_usage', {}).get('memory_percent', 0):.1f}%",
+            "GPU Usage": f"{node.get('resource_usage', {}).get('gpu_percent', 0):.1f}%",
+            "Tasks": len(node.get("current_tasks", [])),
+        }
+        for node in nodes_data
+    ])
+    
+    st.dataframe(nodes_df, use_container_width=True)
+    
+    # Display active tasks
+    st.subheader("Active Tasks")
+    
+    all_tasks = []
+    for node in nodes_data:
+        node_id = node.get("node_id", "Unknown")
+        node_name = node.get("node_name", "Unknown")
+        
+        for task in node.get("current_tasks", []):
+            task["Node ID"] = node_id
+            task["Node Name"] = node_name
+            all_tasks.append(task)
+    
+    if all_tasks:
+        tasks_df = pd.DataFrame([
+            {
+                "Task ID": task.get("task_id", "Unknown"),
+                "Type": task.get("task_type", "Unknown"),
+                "Status": task.get("status", "Unknown"),
+                "Node": task.get("Node Name", "Unknown"),
+                "Start Time": time.strftime('%Y-%m-%d %H:%M:%S', 
+                                          time.localtime(task.get("start_time", 0))),
+                "Duration": f"{time.time() - task.get('start_time', time.time()):.1f}s",
+            }
+            for task in all_tasks
+        ])
+        
+        st.dataframe(tasks_df, use_container_width=True)
+    else:
+        st.info("No active tasks running.")
+    
+    # Display ensemble weights
+    st.subheader("Ensemble Model Weights")
+    
+    weights_file = os.path.join(data_dir, "Ensemble", "ensemble_weights.json")
+    if os.path.exists(weights_file):
+        try:
+            with open(weights_file, "r") as f:
+                weights_data = json.load(f)
+                
+            weights = weights_data.get("weights", {})
+            
+            # Create bar chart
+            weights_df = pd.DataFrame({
+                "Model Type": list(weights.keys()),
+                "Weight": list(weights.values())
+            })
+            
+            st.bar_chart(weights_df.set_index("Model Type"))
+            
+            # Allow adjusting weights
+            st.subheader("Adjust Ensemble Weights")
+            
+            with st.form("adjust_weights"):
+                new_weights = {}
+                cols = st.columns(3)
+                
+                for i, (model_type, weight) in enumerate(weights.items()):
+                    col_idx = i % 3
+                    with cols[col_idx]:
+                        new_weights[model_type] = st.slider(
+                            f"{model_type} Weight", 
+                            min_value=0.0, 
+                            max_value=1.0, 
+                            value=float(weight),
+                            step=0.05
+                        )
+                
+                submit = st.form_submit_button("Update Weights")
+                
+                if submit:
+                    # Normalize weights
+                    total = sum(new_weights.values())
+                    if total > 0:
+                        new_weights = {k: v/total for k, v in new_weights.items()}
+                    
+                    # Save weights
+                    update_data = {
+                        "weights": new_weights,
+                        "timestamp": time.time(),
+                        "reason": "dashboard_update",
+                        "node_id": "dashboard"
+                    }
+                    
+                    with open(weights_file, "w") as f:
+                        json.dump(update_data, f, indent=2)
+                    
+                    st.success("Ensemble weights updated!")
+                    st.experimental_rerun()
+            
+        except Exception as e:
+            st.error(f"Error loading ensemble weights: {e}")
+    else:
+        st.info("No ensemble weights file found.")
+
+def display_distributed_results(data_dir="Data"):
+    """
+    Display distributed training results in the dashboard.
+    
+    Args:
+        data_dir: Directory containing result files
+    """
+    st.header("Distributed Training Results")
+    
+    # Get result files
+    result_files = [f for f in os.listdir(data_dir) 
+                   if f.startswith("result_") and f.endswith(".json")]
+    
+    if not result_files:
+        st.info("No distributed training results found.")
+        return
+    
+    # Read result data
+    results_data = []
+    for result_file in result_files:
+        try:
+            file_path = os.path.join(data_dir, result_file)
+            with open(file_path, "r") as f:
+                data = json.load(f)
+                
+            results_data.append(data)
+        except Exception as e:
+            st.error(f"Error reading result data from {result_file}: {e}")
+    
+    # Create results table
+    results_df = pd.DataFrame([
+        {
+            "Ticker": result.get("ticker", "Unknown"),
+            "Timeframe": result.get("timeframe", "Unknown"),
+            "Node ID": result.get("node_id", "Unknown"),
+            "RMSE": result.get("metrics", {}).get("rmse", "N/A"),
+            "MAPE": result.get("metrics", {}).get("mape", "N/A"),
+            "Completed At": result.get("completed_at", "Unknown"),
+        }
+        for result in results_data
+    ])
+    
+    # Sort by completion time
+    if "Completed At" in results_df.columns:
+        results_df = results_df.sort_values("Completed At", ascending=False)
+    
+    st.dataframe(results_df, use_container_width=True)
+
+def create_new_distributed_task(data_dir="Data"):
+    """
+    Create a new distributed training task from the dashboard.
+    
+    Args:
+        data_dir: Directory to save task configuration
+    """
+    st.header("Create New Distributed Task")
+    
+    with st.form("new_task"):
+        # Basic task parameters
+        task_type = st.selectbox(
+            "Task Type", 
+            ["train_model", "evaluate_model", "tune_hyperparams"],
+            index=0
+        )
+        
+        ticker = st.text_input("Ticker Symbol", "BTC-USD")
+        timeframe = st.selectbox(
+            "Timeframe", 
+            ["1h", "4h", "1d", "1wk"],
+            index=2
+        )
+        
+        # Model parameters
+        st.subheader("Model Parameters")
+        
+        cols = st.columns(2)
+        with cols[0]:
+            model_type = st.selectbox(
+                "Primary Model Type",
+                ["lstm", "rnn", "tft", "random_forest", "xgboost", "tabnet"],
+                index=0
+            )
+            
+            epochs = st.slider("Epochs", 1, 50, 10)
+            batch_size = st.selectbox("Batch Size", [16, 32, 64, 128, 256], index=1)
+            
+        with cols[1]:
+            learning_rate = st.number_input(
+                "Learning Rate", 
+                min_value=0.0001, 
+                max_value=0.1, 
+                value=0.001, 
+                step=0.0001,
+                format="%.4f"
+            )
+            
+            lookback = st.slider("Lookback Window", 5, 100, 30)
+            
+        # Resource requirements
+        st.subheader("Resource Requirements")
+        
+        cols = st.columns(3)
+        with cols[0]:
+            required_cpu = st.slider("Required CPU (%)", 0, 100, 20)
+        with cols[1]:
+            required_memory = st.slider("Required Memory (%)", 0, 100, 20)
+        with cols[2]:
+            required_gpu = st.slider("Required GPU (%)", 0, 100, 50)
+            
+        # Node selection
+        node_files = [f for f in os.listdir(data_dir) 
+                     if f.startswith("node_") and f.endswith("_status.json")]
+        
+        node_choices = []
+        for node_file in node_files:
+            try:
+                file_path = os.path.join(data_dir, node_file)
+                with open(file_path, "r") as f:
+                    data = json.load(f)
+                    
+                node_id = data.get("node_id", "Unknown")
+                node_name = data.get("node_name", "Unknown")
+                node_choices.append(f"{node_name} ({node_id})")
+            except Exception:
+                pass
+                
+        if node_choices:
+            node_choices.insert(0, "Any available node")
+            selected_node = st.selectbox("Target Node", node_choices)
+        else:
+            selected_node = "Any available node"
+        
+        # Submit button
+        submit = st.form_submit_button("Create Task")
+        
+        if submit:
+            # Parse selected node
+            target_node_id = None
+            if selected_node != "Any available node":
+                # Extract node_id from the selection
+                target_node_id = selected_node.split("(")[-1].split(")")[0]
+            
+            # Create task configuration
+            task_id = f"task_{int(time.time())}_{model_type}"
+            
+            task_config = {
+                "task_id": task_id,
+                "task_type": task_type,
+                "created_at": time.time(),
+                "status": "pending",
+                "ticker": ticker,
+                "timeframe": timeframe,
+                "model_type": model_type,
+                "model_params": {
+                    "epochs": epochs,
+                    "batch_size": batch_size,
+                    "learning_rate": learning_rate,
+                    "lookback": lookback
+                },
+                "required_cpu_percent": required_cpu,
+                "required_memory_percent": required_memory,
+                "required_gpu_percent": required_gpu,
+                "target_node_id": target_node_id
+            }
+            
+            # Save task configuration
+            task_dir = os.path.join(data_dir, "Tasks")
+            os.makedirs(task_dir, exist_ok=True)
+            
+            task_file = os.path.join(task_dir, f"{task_id}.json")
+            with open(task_file, "w") as f:
+                json.dump(task_config, f, indent=2)
+                
+            st.success(f"Task created successfully with ID: {task_id}")
+8. Let's create a central configuration for distributed computing:
+python
+
+Copy
+# Add to config/config_loader.py
+
+# Distributed computing settings
+DISTRIBUTED_ENABLED = False  # Whether distributed computing is enabled
+COORDINATOR_HOST = "localhost"  # Coordinator hostname
+COORDINATOR_PORT = 8765  # Coordinator port
+NODE_ROLE = "worker"  # Node role ('coordinator' or 'worker')
+NODE_NAME = None  # Node name (default: hostname)
+MAX_CPU_PERCENT = 80.0  # Maximum CPU usage percentage
+MAX_GPU_PERCENT = 90.0  # Maximum GPU usage percentage
+ALLOWED_MODEL_TYPES = ["lstm", "rnn", "random_forest", "xgboost", "tft", "tabnet"]  # Allowed model types
+9. Let's create a simple communication module for distributed nodes:
+python
+
+Copy
+# Create a new file: Scripts/distributed_comm.py
+
+import json
+import logging
+import os
+import socket
+import time
+import threading
+import uuid
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import urllib.request
+from urllib.error import URLError
+from typing import Dict, Any, List, Optional, Callable
+
+logger = logging.getLogger(__name__)
+
+class NodeHTTPHandler(BaseHTTPRequestHandler):
+    """HTTP handler for node communication."""
+    
+    def do_GET(self):
+        """Handle GET requests."""
+        try:
+            if self.path == "/status":
+                self._handle_status()
+            elif self.path == "/ping":
+                self._handle_ping()
+            elif self.path.startswith("/task/"):
+                self._handle_task_status(self.path[6:])
+            else:
+                self.send_error(404, "Not Found")
+        except Exception as e:
+            logger.error(f"Error handling GET request: {e}")
+            self.send_error(500, str(e))
+    
+    def do_POST(self):
+        """Handle POST requests."""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            if self.path == "/task":
+                self._handle_new_task(data)
+            elif self.path == "/weights":
+                self._handle_update_weights(data)
+            else:
+                self.send_error(404, "Not Found")
+        except Exception as e:
+            logger.error(f"Error handling POST request: {e}")
+            self.send_error(500, str(e))
+    
+    def _handle_status(self):
+        """Handle status request."""
+        if not hasattr(self.server, 'node'):
+            self.send_error(500, "Node not initialized")
+            return
+            
+        node = self.server.node
+        status_data = {
+            "node_id": node.node_id,
+            "node_name": node.node_name,
+            "status": node.status,
+            "last_heartbeat": node.last_heartbeat,
+            "current_tasks": node.current_tasks,
+            "completed_tasks_count": len(node.completed_tasks),
+            "resource_usage": node.resource_usage,
+            "is_coordinator": node.is_coordinator,
+        }
+        
+        self._send_json_response(status_data)
+    
+    def _handle_ping(self):
+        """Handle ping request."""
+        self._send_json_response({"status": "ok", "timestamp": time.time()})
+    
+    def _handle_task_status(self, task_id):
+        """Handle task status request."""
+        if not hasattr(self.server, 'node'):
+            self.send_error(500, "Node not initialized")
+            return
+            
+        node = self.server.node
+        
+        # Check current tasks
+        for task in node.current_tasks:
+            if task.get("task_id") == task_id:
+                self._send_json_response(task)
+                return
+                
+        # Check completed tasks
+        for task in node.completed_tasks:
+            if task.get("task_id") == task_id:
+                self._send_json_response(task)
+                return
+                
+        self.send_error(404, f"Task {task_id} not found")
+    
+    def _handle_new_task(self, data):
+        """Handle new task request."""
+        if not hasattr(self.server, 'node'):
+            self.send_error(500, "Node not initialized")
+            return
+            
+        node = self.server.node
+        
+        # Validate task data
+        if "task_type" not in data:
+            self.send_error(400, "Missing task_type")
+            return
+            
+        # Start the task
+        task_id = node.start_task(data)
+        
+        if task_id:
+            self._send_json_response({"status": "started", "task_id": task_id})
+        else:
+            self.send_error(503, "Node cannot accept task")
+    
+    def _handle_update_weights(self, data):
+        """Handle weights update request."""
+        if not hasattr(self.server, 'coordinator'):
+            self.send_error(500, "Coordinator not initialized")
+            return
+            
+        coordinator = self.server.coordinator
+        
+        # Validate weights data
+        if "weights" not in data:
+            self.send_error(400, "Missing weights")
+            return
+            
+        # Update weights
+        success = coordinator.update_weights(
+            data["weights"], 
+            data.get("reason", "api_update")
+        )
+        
+        if success:
+            self._send_json_response({"status": "updated"})
+        else:
+            self.send_error(400, "Failed to update weights")
+    
+    def _send_json_response(self, data):
+        """Send JSON response."""
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+        
+    def log_message(self, format, *args):
+        """Override log_message to use our logger."""
+        logger.debug("%s - - [%s] %s",
+                     self.address_string(),
+                     self.log_date_time_string(),
+                     format % args)
+
+class NodeCommunicator:
+    """Handles communication between nodes."""
+    
+    def __init__(self, 
+                 node=None, 
+                 coordinator=None, 
+                 host="0.0.0.0", 
+                 port=8765):
+        """
+        Initialize the node communicator.
+        
+        Args:
+            node: The DistributedNode instance
+            coordinator: The EnsembleCoordinator instance
+            host: Host to bind to
+            port: Port to bind to
+        """
+        self.node = node
+        self.coordinator = coordinator
+        self.host = host
+        self.port = port
+        self.server = None
+        self.server_thread = None
+        self.stop_event = threading.Event()
+        
+    def start(self):
+        """Start the HTTP server."""
+        try:
+            self.server = HTTPServer((self.host, self.port), NodeHTTPHandler)
+            self.server.node = self.node
+            self.server.coordinator = self.coordinator
+            
+            self.server_thread = threading.Thread(target=self._run_server)
+            self.server_thread.daemon = True
+            self.server_thread.start()
+            
+            logger.info(f"Started HTTP server on {self.host}:{self.port}")
+            return True
+        except Exception as e:
+            logger.error(f"Error starting HTTP server: {e}")
+            return False
+            
+    def _run_server(self):
+        """Run the HTTP server."""
+        try:
+            while not self.stop_event.is_set():
+                self.server.handle_request()
+        except Exception as e:
+            logger.error(f"Error in HTTP server: {e}")
+            
+    def stop(self):
+        """Stop the HTTP server."""
+        self.stop_event.set()
+        
+        if self.server:
+            self.server.server_close()
+            
+        if self.server_thread and self.server_thread.is_alive():
+            self.server_thread.join(timeout=5)
+            
+        logger.info("Stopped HTTP server")
+        
+    def send_task(self, node_url, task_config):
+        """
+        Send a task to another node.
+        
+        Args:
+            node_url: URL of the target node
+            task_config: Task configuration
+            
+        Returns:
+            Response data or None
+        """
+        try:
+            url = f"{node_url}/task"
+            data = json.dumps(task_config).encode('utf-8')
+            
+            req = urllib.request.Request(
+                url, 
+                data=data,
+                headers={'Content-Type': 'application/json'}
+            )
+            
+            with urllib.request.urlopen(req, timeout=10) as response:
+                return json.loads(response.read().decode('utf-8'))
+                
+        except Exception as e:
+            logger.error(f"Error sending task to {node_url}: {e}")
+            return None
+            
+    def get_node_status(self, node_url):
+        """
+        Get status of another node.
+        
+        Args:
+            node_url: URL of the target node
+            
+        Returns:
+            Status data or None
+        """
+        try:
+            url = f"{node_url}/status"
+            
+            with urllib.request.urlopen(url, timeout=5) as response:
+                return json.loads(response.read().decode('utf-8'))
+                
+        except Exception as e:
+            logger.error(f"Error getting status from {node_url}: {e}")
+            return None
+            
+    def ping_node(self, node_url):
+        """
+        Ping another node.
+        
+        Args:
+            node_url: URL of the target node
+            
+        Returns:
+            True if node is responsive, False otherwise
+        """
+        try:
+            url = f"{node_url}/ping"
+            
+            with urllib.request.urlopen(url, timeout=2) as response:
+                return response.getcode() == 200
+                
+        except Exception:
+            return False
+            
+    def update_weights(self, coordinator_url, weights, reason="api_update"):
+        """
+        Update ensemble weights on coordinator.
+        
+        Args:
+            coordinator_url: URL of the coordinator
+            weights: New weights dictionary
+            reason: Reason for the update
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            url = f"{coordinator_url}/weights"
+            data = {
+                "weights": weights,
+                "reason": reason,
+                "timestamp": time.time(),
+                "node_id": self.node.node_id if self.node else "unknown"
+            }
+            
+            encoded_data = json.dumps(data).encode('utf-8')
+            
+            req = urllib.request.Request(
+                url, 
+                data=encoded_data,
+                headers={'Content-Type': 'application/json'}
+            )
+            
+            with urllib.request.urlopen(req, timeout=5) as response:
+                return response.getcode() == 200
+                
+        except Exception as e:
+            logger.error(f"Error updating weights on {coordinator_url}: {e}")
+            return False
+10. Finally, let's add a dashboard page for distributed system management:
+python
+
+Copy
+# Create a new file: Scripts/distributed_dashboard.py
+
+import streamlit as st
+import json
+import os
+import time
+import pandas as pd
+from datetime import datetime
+import plotly.express as px
+import plotly.graph_objects as go
+
+def distributed_dashboard(node_id=None):
+    """
+    Dashboard page for distributed system management.
+    
+    Args:
+        node_id: Optional node ID to focus on
+    """
+    st.set_page_config(
+        page_title="Distributed ML System",
+        page_icon="🌐",
+        layout="wide"
+    )
+    
+    st.title("Distributed ML System Dashboard")
+    
+    # Configuration and status tabs
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "System Status", 
+        "Node Management", 
+        "Task Management",
+        "Performance Analytics"
+    ])
+    
+    with tab1:
+        display_system_status()
+    
+    with tab2:
+        display_node_management(node_id)
+    
+    with tab3:
+        display_task_management()
+    
+    with tab4:
+        display_performance_analytics()
+    
+def display_system_status():
+    """Display overall system status."""
+    # Get data directory
+    data_dir = os.path.join("Data")
+    
+    # Get node status files
+    node_files = [f for f in os.listdir(data_dir) 
+                 if f.startswith("node_") and f.endswith("_status.json")]
+    
+    if not node_files:
+        st.warning("No distributed nodes detected. The system is running in standalone mode.")
+        
+        if st.button("Initialize Distributed System"):
+            st.info("This will set up the current machine as the coordinator node.")
+            # Code to initialize system would go here
+            st.success("System initialized! Restart the application to see changes.")
+            
+        return
+    
+    # Read node data
+    nodes_data = []
+    for node_file in node_files:
+        try:
+            file_path = os.path.join(data_dir, node_file)
+            with open(file_path, "r") as f:
+                data = json.load(f)
+                
+            # Check if node has a recent heartbeat
+            current_time = time.time()
+            last_heartbeat = data.get("last_heartbeat", 0)
+            
+            # Node is considered offline if no heartbeat for 60 seconds
+            if current_time - last_heartbeat > 60:
+                data["status"] = "offline"
+                
+            nodes_data.append(data)
+        except Exception as e:
+            st.error(f"Error reading node data from {node_file}: {e}")
+    
+    # Display summary metrics
+    st.header("System Overview")
+    
+    # Count nodes by status and role
+    status_counts = {}
+    role_counts = {"coordinator": 0, "worker": 0}
+    
+    for node in nodes_data:
+        status = node.get("status", "unknown")
+        if status not in status_counts:
+            status_counts[status] = 0
+        status_counts[status] += 1
+        
+        if node.get("is_coordinator", False):
+            role_counts["coordinator"] += 1
+        else:
+            role_counts["worker"] += 1
+    
+    # Create metrics in two rows
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Nodes", len(nodes_data))
+    with col2:
+        st.metric("Online Nodes", len(nodes_data) - status_counts.get("offline", 0))
+    with col3:
+        st.metric("Offline Nodes", status_counts.get("offline", 0))
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Coordinator Nodes", role_counts["coordinator"])
+    with col2:
+        st.metric("Worker Nodes", role_counts["worker"])
+    with col3:
+        st.metric("Active Tasks", sum(len(node.get("current_tasks", [])) for node in nodes_data))
+    
+    # Display resource utilization
+    st.subheader("Resource Utilization")
+    
+    # Calculate average utilization
+    avg_cpu = sum(node.get("resource_usage", {}).get("cpu_percent", 0) for node in nodes_data) / max(1, len(nodes_data))
+    avg_memory = sum(node.get("resource_usage", {}).get("memory_percent", 0) for node in nodes_data) / max(1, len(nodes_data))
+    avg_gpu = sum(node.get("resource_usage", {}).get("gpu_percent", 0) for node in nodes_data) / max(1, len(nodes_data))
+    
+    # Create gauge charts
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=avg_cpu,
+            title={"text": "CPU Usage (%)"},
+            domain={"x": [0, 1], "y": [0, 1]},
+            gauge={
+                "axis": {"range": [0, 100]},
+
+
+
+Retry
+
+AB
+continue
+
+Edit
+Let me complete the distributed dashboard implementation:
+
+python
+
+Copy
+# Complete the function in Scripts/distributed_dashboard.py
+
+def display_system_status():
+    """Display overall system status."""
+    # [Previous code remains the same]
+    
+    # Create gauge charts
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=avg_cpu,
+            title={"text": "CPU Usage (%)"},
+            domain={"x": [0, 1], "y": [0, 1]},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "blue"},
+                "steps": [
+                    {"range": [0, 50], "color": "lightgray"},
+                    {"range": [50, 75], "color": "lightyellow"},
+                    {"range": [75, 100], "color": "lightcoral"}
+                ],
+                "threshold": {
+                    "line": {"color": "red", "width": 4},
+                    "thickness": 0.75,
+                    "value": 90
+                }
+            }
+        ))
+        st.plotly_chart(fig, use_container_width=True)
+        
+    with col2:
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=avg_memory,
+            title={"text": "Memory Usage (%)"},
+            domain={"x": [0, 1], "y": [0, 1]},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "green"},
+                "steps": [
+                    {"range": [0, 50], "color": "lightgray"},
+                    {"range": [50, 75], "color": "lightyellow"},
+                    {"range": [75, 100], "color": "lightcoral"}
+                ],
+                "threshold": {
+                    "line": {"color": "red", "width": 4},
+                    "thickness": 0.75,
+                    "value": 90
+                }
+            }
+        ))
+        st.plotly_chart(fig, use_container_width=True)
+        
+    with col3:
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=avg_gpu,
+            title={"text": "GPU Usage (%)"},
+            domain={"x": [0, 1], "y": [0, 1]},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "orange"},
+                "steps": [
+                    {"range": [0, 50], "color": "lightgray"},
+                    {"range": [50, 75], "color": "lightyellow"},
+                    {"range": [75, 100], "color": "lightcoral"}
+                ],
+                "threshold": {
+                    "line": {"color": "red", "width": 4},
+                    "thickness": 0.75,
+                    "value": 90
+                }
+            }
+        ))
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Display nodes status
+    st.subheader("Node Status")
+    
+    nodes_df = pd.DataFrame([
+        {
+            "Node ID": node.get("node_id", "Unknown"),
+            "Name": node.get("node_name", "Unknown"),
+            "Status": node.get("status", "Unknown"),
+            "Role": "Coordinator" if node.get("is_coordinator", False) else "Worker",
+            "CPU (%)": node.get("resource_usage", {}).get("cpu_percent", 0),
+            "Memory (%)": node.get("resource_usage", {}).get("memory_percent", 0),
+            "GPU (%)": node.get("resource_usage", {}).get("gpu_percent", 0),
+            "Active Tasks": len(node.get("current_tasks", [])),
+            "Last Heartbeat": datetime.fromtimestamp(node.get("last_heartbeat", 0)).strftime('%Y-%m-%d %H:%M:%S'),
+        }
+        for node in nodes_data
+    ])
+    
+    # Add color coding based on status
+    def color_status(val):
+        if val == "ready":
+            return "background-color: #d4f7d4"  # Light green
+        elif val == "running":
+            return "background-color: #d4e5f7"  # Light blue
+        elif val == "offline":
+            return "background-color: #f7d4d4"  # Light red
+        else:
+            return ""
+            
+    # Display the dataframe with styling
+    st.dataframe(nodes_df.style.applymap(color_status, subset=["Status"]), use_container_width=True)
+    
+    # Display ensemble weights
+    st.subheader("Ensemble Model Configuration")
+    
+    weights_file = os.path.join("Data", "Ensemble", "ensemble_weights.json")
+    if os.path.exists(weights_file):
+        try:
+            with open(weights_file, "r") as f:
+                weights_data = json.load(f)
+                
+            weights = weights_data.get("weights", {})
+            timestamp = weights_data.get("timestamp", 0)
+            reason = weights_data.get("reason", "unknown")
+            
+            st.info(f"Last updated: {datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')} | Reason: {reason}")
+            
+            # Create bar chart
+            weights_df = pd.DataFrame({
+                "Model Type": list(weights.keys()),
+                "Weight": list(weights.values())
+            })
+            
+            fig = px.bar(weights_df, x="Model Type", y="Weight", title="Ensemble Model Weights")
+            st.plotly_chart(fig, use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"Error loading ensemble weights: {e}")
+    else:
+        st.info("No ensemble configuration found.")
+
+def display_node_management(selected_node_id=None):
+    """
+    Display node management interface.
+    
+    Args:
+        selected_node_id: Optional node ID to focus on
+    """
+    st.header("Node Management")
+    
+    # Get data directory
+    data_dir = os.path.join("Data")
+    
+    # Get node status files
+    node_files = [f for f in os.listdir(data_dir) 
+                 if f.startswith("node_") and f.endswith("_status.json")]
+    
+    if not node_files:
+        st.warning("No distributed nodes detected.")
+        return
+    
+    # Read node data
+    nodes_data = []
+    for node_file in node_files:
+        try:
+            file_path = os.path.join(data_dir, node_file)
+            with open(file_path, "r") as f:
+                data = json.load(f)
+                
+            # Check if node has a recent heartbeat
+            current_time = time.time()
+            last_heartbeat = data.get("last_heartbeat", 0)
+            
+            # Node is considered offline if no heartbeat for 60 seconds
+            if current_time - last_heartbeat > 60:
+                data["status"] = "offline"
+                
+            nodes_data.append(data)
+        except Exception as e:
+            st.error(f"Error reading node data from {node_file}: {e}")
+    
+    # Create node selection
+    node_options = [f"{node.get('node_name', 'Unknown')} ({node.get('node_id', 'Unknown')})" 
+                   for node in nodes_data]
+    
+    if selected_node_id:
+        # Find index of selected node
+        selected_idx = 0
+        for i, node in enumerate(nodes_data):
+            if node.get("node_id") == selected_node_id:
+                selected_idx = i
+                break
+    else:
+        selected_idx = 0
+        
+    selected_node = st.selectbox("Select Node", node_options, index=selected_idx)
+    
+    # Parse node ID from selection
+    selected_node_id = selected_node.split("(")[-1].split(")")[0]
+    
+    # Find selected node data
+    node_data = None
+    for node in nodes_data:
+        if node.get("node_id") == selected_node_id:
+            node_data = node
+            break
+            
+    if not node_data:
+        st.error("Selected node not found.")
+        return
+    
+    # Display node details
+    st.subheader("Node Details")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(f"**Node ID:** {node_data.get('node_id', 'Unknown')}")
+        st.markdown(f"**Name:** {node_data.get('node_name', 'Unknown')}")
+        st.markdown(f"**Status:** {node_data.get('status', 'Unknown')}")
+        st.markdown(f"**Role:** {'Coordinator' if node_data.get('is_coordinator', False) else 'Worker'}")
+        
+    with col2:
+        last_heartbeat = datetime.fromtimestamp(node_data.get("last_heartbeat", 0))
+        st.markdown(f"**Last Heartbeat:** {last_heartbeat.strftime('%Y-%m-%d %H:%M:%S')}")
+        st.markdown(f"**Active Tasks:** {len(node_data.get('current_tasks', []))}")
+        st.markdown(f"**Completed Tasks:** {node_data.get('completed_tasks_count', 0)}")
+    
+    # Display node configuration
+    st.subheader("Node Configuration")
+    
+    # Read node config
+    config_file = os.path.join(data_dir, f"node_{node_data.get('node_id')}_config.json")
+    
+    if os.path.exists(config_file):
+        try:
+            with open(config_file, "r") as f:
+                config = json.load(f)
+                
+            # Display config
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown(f"**Max CPU Usage:** {config.get('max_cpu_percent', 80)}%")
+                st.markdown(f"**Max GPU Usage:** {config.get('max_gpu_percent', 90)}%")
+                
+            with col2:
+                allowed_models = ", ".join(config.get("allowed_model_types", []))
+                st.markdown(f"**Allowed Models:** {allowed_models}")
+                
+            # Allow editing configuration
+            st.subheader("Edit Configuration")
+            
+            with st.form("edit_node_config"):
+                max_cpu = st.slider("Max CPU Usage (%)", 10, 100, int(config.get("max_cpu_percent", 80)))
+                max_gpu = st.slider("Max GPU Usage (%)", 10, 100, int(config.get("max_gpu_percent", 90)))
+                
+                model_types = ["lstm", "rnn", "tft", "random_forest", "xgboost", "tabnet"]
+                allowed_models = st.multiselect(
+                    "Allowed Models", 
+                    model_types,
+                    default=config.get("allowed_model_types", model_types)
+                )
+                
+                submit = st.form_submit_button("Update Configuration")
+                
+                if submit:
+                    # Update config
+                    config["max_cpu_percent"] = max_cpu
+                    config["max_gpu_percent"] = max_gpu
+                    config["allowed_model_types"] = allowed_models
+                    
+                    with open(config_file, "w") as f:
+                        json.dump(config, f, indent=2)
+                        
+                    st.success("Configuration updated!")
+                    
+        except Exception as e:
+            st.error(f"Error reading node configuration: {e}")
+    else:
+        st.info(f"No configuration file found for node {node_data.get('node_id')}.")
+        
+        # Create new configuration
+        with st.form("create_node_config"):
+            max_cpu = st.slider("Max CPU Usage (%)", 10, 100, 80)
+            max_gpu = st.slider("Max GPU Usage (%)", 10, 100, 90)
+            
+            model_types = ["lstm", "rnn", "tft", "random_forest", "xgboost", "tabnet"]
+            allowed_models = st.multiselect(
+                "Allowed Models", 
+                model_types,
+                default=model_types
+            )
+            
+            submit = st.form_submit_button("Create Configuration")
+            
+            if submit:
+                # Create config
+                config = {
+                    "node_id": node_data.get("node_id"),
+                    "max_cpu_percent": max_cpu,
+                    "max_gpu_percent": max_gpu,
+                    "allowed_model_types": allowed_models,
+                    "heartbeat_interval": 10,
+                    "monitoring_interval": 5,
+                }
+                
+                with open(config_file, "w") as f:
+                    json.dump(config, f, indent=2)
+                    
+                st.success("Configuration created!")
+    
+    # Display resource usage over time
+    st.subheader("Resource Usage")
+    
+    # Create dummy data for demonstration
+    # In a real implementation, you would read this from a monitoring file
+    times = pd.date_range(start='2023-01-01', periods=24, freq='H')
+    
+    cpu_usage = [node_data.get("resource_usage", {}).get("cpu_percent", 0) * (0.8 + 0.4 * np.random.random()) 
+                for _ in range(len(times))]
+    memory_usage = [node_data.get("resource_usage", {}).get("memory_percent", 0) * (0.8 + 0.4 * np.random.random()) 
+                   for _ in range(len(times))]
+    gpu_usage = [node_data.get("resource_usage", {}).get("gpu_percent", 0) * (0.8 + 0.4 * np.random.random()) 
+                for _ in range(len(times))]
+    
+    resource_df = pd.DataFrame({
+        "Time": times,
+        "CPU Usage (%)": cpu_usage,
+        "Memory Usage (%)": memory_usage,
+        "GPU Usage (%)": gpu_usage
+    })
+    
+    fig = px.line(resource_df, x="Time", y=["CPU Usage (%)", "Memory Usage (%)", "GPU Usage (%)"],
+                 title="Resource Usage Over Time")
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Node actions
+    st.subheader("Node Actions")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("Refresh Status"):
+            st.experimental_rerun()
+            
+    with col2:
+        if st.button("Restart Node"):
+            st.warning("This will restart the node. Are you sure?")
+            
+            # In a real implementation, this would send a restart command to the node
+            
+    with col3:
+        if st.button("Stop Node"):
+            st.warning("This will stop the node. Are you sure?")
+            
+            # In a real implementation, this would send a stop command to the node
+
+def display_task_management():
+    """Display task management interface."""
+    st.header("Task Management")
+    
+    # Get data directory
+    data_dir = os.path.join("Data")
+    tasks_dir = os.path.join(data_dir, "Tasks")
+    
+    if not os.path.exists(tasks_dir):
+        os.makedirs(tasks_dir, exist_ok=True)
+    
+    # Get task files
+    task_files = [f for f in os.listdir(tasks_dir) 
+                 if f.endswith(".json")]
+    
+    # Create task
+    st.subheader("Create New Task")
+    
+    with st.form("create_task"):
+        # Basic task parameters
+        task_type = st.selectbox(
+            "Task Type", 
+            ["train_model", "evaluate_model", "tune_hyperparams"],
+            index=0
+        )
+        
+        ticker = st.text_input("Ticker Symbol", "BTC-USD")
+        timeframe = st.selectbox(
+            "Timeframe", 
+            ["1h", "4h", "1d", "1wk"],
+            index=2
+        )
+        
+        # Advanced options
+        with st.expander("Advanced Options"):
+            # Model parameters
+            model_type = st.selectbox(
+                "Model Type",
+                ["lstm", "rnn", "tft", "random_forest", "xgboost", "tabnet"],
+                index=0
+            )
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                epochs = st.slider("Epochs", 1, 50, 10)
+                batch_size = st.selectbox("Batch Size", [16, 32, 64, 128, 256], index=1)
+                
+            with col2:
+                learning_rate = st.number_input(
+                    "Learning Rate", 
+                    min_value=0.0001, 
+                    max_value=0.1, 
+                    value=0.001, 
+                    format="%.4f"
+                )
+                
+                lookback = st.slider("Lookback Window", 5, 100, 30)
+                
+            # Resource requirements
+            st.subheader("Resource Requirements")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                required_cpu = st.slider("Required CPU (%)", 0, 100, 20)
+            with col2:
+                required_memory = st.slider("Required Memory (%)", 0, 100, 20)
+            with col3:
+                required_gpu = st.slider("Required GPU (%)", 0, 100, 50)
+        
+        # Submit button
+        submit = st.form_submit_button("Create Task")
+        
+        if submit:
+            # Create task configuration
+            task_id = f"task_{int(time.time())}_{model_type}"
+            
+            task_config = {
+                "task_id": task_id,
+                "task_type": task_type,
+                "created_at": time.time(),
+                "status": "pending",
+                "ticker": ticker,
+                "timeframe": timeframe,
+                "model_type": model_type,
+                "model_params": {
+                    "epochs": epochs,
+                    "batch_size": batch_size,
+                    "learning_rate": learning_rate,
+                    "lookback": lookback
+                },
+                "required_cpu_percent": required_cpu,
+                "required_memory_percent": required_memory,
+                "required_gpu_percent": required_gpu
+            }
+            
+            # Save task configuration
+            task_file = os.path.join(tasks_dir, f"{task_id}.json")
+            with open(task_file, "w") as f:
+                json.dump(task_config, f, indent=2)
+                
+            st.success(f"Task created successfully with ID: {task_id}")
+            st.experimental_rerun()
+    
+    # List tasks
+    st.subheader("Task List")
+    
+    if not task_files:
+        st.info("No tasks found.")
+        return
+        
+    # Read task data
+    tasks_data = []
+    for task_file in task_files:
+        try:
+            file_path = os.path.join(tasks_dir, task_file)
+            with open(file_path, "r") as f:
+                data = json.load(f)
+                
+            tasks_data.append(data)
+        except Exception as e:
+            st.error(f"Error reading task data from {task_file}: {e}")
+    
+    # Sort tasks by creation time (newest first)
+    tasks_data.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    
+    # Create tasks table
+    tasks_df = pd.DataFrame([
+        {
+            "Task ID": task.get("task_id", "Unknown"),
+            "Type": task.get("task_type", "Unknown"),
+            "Status": task.get("status", "Unknown"),
+            "Ticker": task.get("ticker", "Unknown"),
+            "Timeframe": task.get("timeframe", "Unknown"),
+            "Model Type": task.get("model_type", "Unknown"),
+            "Created At": datetime.fromtimestamp(task.get("created_at", 0)).strftime('%Y-%m-%d %H:%M:%S')
+        }
+        for task in tasks_data
+    ])
+    
+    # Add color coding based on status
+    def color_task_status(val):
+        if val == "completed":
+            return "background-color: #d4f7d4"  # Light green
+        elif val == "running":
+            return "background-color: #d4e5f7"  # Light blue
+        elif val == "pending":
+            return "background-color: #f7f7d4"  # Light yellow
+        elif val == "failed":
+            return "background-color: #f7d4d4"  # Light red
+        else:
+            return ""
+            
+    # Display the dataframe with styling
+    st.dataframe(
+        tasks_df.style.applymap(color_task_status, subset=["Status"]), 
+        use_container_width=True
+    )
+    
+    # Task details
+    st.subheader("Task Details")
+    
+    # Select task
+    task_options = [f"{task.get('task_id', 'Unknown')} ({task.get('task_type', 'Unknown')})" 
+                   for task in tasks_data]
+    
+    if task_options:
+        selected_task = st.selectbox("Select Task", task_options)
+        
+        # Parse task ID from selection
+        selected_task_id = selected_task.split(" ")[0]
+        
+        # Find selected task data
+        task_data = None
+        for task in tasks_data:
+            if task.get("task_id") == selected_task_id:
+                task_data = task
+                break
+                
+        if not task_data:
+            st.error("Selected task not found.")
+            return
+        
+        # Display task details
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown(f"**Task ID:** {task_data.get('task_id', 'Unknown')}")
+            st.markdown(f"**Type:** {task_data.get('task_type', 'Unknown')}")
+            st.markdown(f"**Status:** {task_data.get('status', 'Unknown')}")
+            st.markdown(f"**Ticker:** {task_data.get('ticker', 'Unknown')}")
+            st.markdown(f"**Timeframe:** {task_data.get('timeframe', 'Unknown')}")
+            
+        with col2:
+            st.markdown(f"**Model Type:** {task_data.get('model_type', 'Unknown')}")
+            created_at = datetime.fromtimestamp(task_data.get("created_at", 0))
+            st.markdown(f"**Created At:** {created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            if "start_time" in task_data:
+                start_time = datetime.fromtimestamp(task_data.get("start_time", 0))
+                st.markdown(f"**Started At:** {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                
+            if "end_time" in task_data:
+                end_time = datetime.fromtimestamp(task_data.get("end_time", 0))
+                st.markdown(f"**Completed At:** {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Display model parameters
+        st.subheader("Model Parameters")
+        
+        model_params = task_data.get("model_params", {})
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown(f"**Epochs:** {model_params.get('epochs', 'N/A')}")
+        with col2:
+            st.markdown(f"**Batch Size:** {model_params.get('batch_size', 'N/A')}")
+        with col3:
+            st.markdown(f"**Learning Rate:** {model_params.get('learning_rate', 'N/A')}")
+            
+        # Display results if completed
+        if task_data.get("status") == "completed" and "result" in task_data:
+            st.subheader("Results")
+            
+            result = task_data.get("result", {})
+            metrics = result.get("metrics", {})
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("RMSE", f"{metrics.get('rmse', 'N/A'):.4f}" if isinstance(metrics.get('rmse'), (int, float)) else "N/A")
+            with col2:
+                st.metric("MAPE", f"{metrics.get('mape', 'N/A'):.2f}%" if isinstance(metrics.get('mape'), (int, float)) else "N/A")
+            with col3:
+                st.metric("MSE", f"{metrics.get('mse', 'N/A'):.4f}" if isinstance(metrics.get('mse'), (int, float)) else "N/A")
+        
+        # Task actions
+        st.subheader("Task Actions")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if task_data.get("status") == "pending" and st.button("Start Task"):
+                # In a real implementation, this would assign the task to a node
+                st.success("Task assigned to a node!")
+                
+        with col2:
+            if task_data.get("status") in ["pending", "running"] and st.button("Cancel Task"):
+                # In a real implementation, this would cancel the task
+                st.warning("Task cancelled!")
+                
+        with col3:
+            if st.button("Delete Task"):
+                # Delete task file
+                task_file = os.path.join(tasks_dir, f"{task_data.get('task_id')}.json")
+                
+                if os.path.exists(task_file):
+                    os.remove(task_file)
+                    st.success("Task deleted!")
+                    st.experimental_rerun()
+
+def display_performance_analytics():
+    """Display performance analytics."""
+    st.header("Performance Analytics")
+    
+    # Get data directory
+    data_dir = os.path.join("Data")
+    
+    # Get result files
+    result_files = [f for f in os.listdir(data_dir) 
+                   if f.startswith("result_") and f.endswith(".json")]
+    
+    if not result_files:
+        st.info("No training results found.")
+        return
+    
+    # Read result data
+    results_data = []
+    for result_file in result_files:
+        try:
+            file_path = os.path.join(data_dir, result_file)
+            with open(file_path, "r") as f:
+                data = json.load(f)
+                
+            results_data.append(data)
+        except Exception as e:
+            st.error(f"Error reading result data from {result_file}: {e}")
+    
+    # Group results by ticker and timeframe
+    results_by_ticker = {}
+    
+    for result in results_data:
+        ticker = result.get("ticker", "Unknown")
+        timeframe = result.get("timeframe", "Unknown")
+        
+        key = f"{ticker}_{timeframe}"
+        
+        if key not in results_by_ticker:
+            results_by_ticker[key] = []
+            
+        results_by_ticker[key].append(result)
+    
+    # Create ticker selector
+    ticker_options = sorted(list(results_by_ticker.keys()))
+    
+    if not ticker_options:
+        st.warning("No results data available.")
+        return
+        
+    selected_ticker = st.selectbox("Select Ticker/Timeframe", ticker_options)
+    
+    # Get selected results
+    selected_results = results_by_ticker.get(selected_ticker, [])
+    
+    # Sort by completion time
+    selected_results.sort(key=lambda x: x.get("completed_at", ""))
+    
+    # Display performance trend
+    st.subheader("Performance Trend")
+    
+    # Create performance dataframe
+    perf_data = []
+    
+    for result in selected_results:
+        metrics = result.get("metrics", {})
+        completed_at = result.get("completed_at", "")
+        node_id = result.get("node_id", "Unknown")
+        
+        try:
+            completed_date = datetime.fromisoformat(completed_at)
+        except:
+            completed_date = datetime.now()
+            
+        perf_data.append({
+            "Date": completed_date,
+            "RMSE": metrics.get("rmse", None),
+            "MAPE": metrics.get("mape", None),
+            "MSE": metrics.get("mse", None),
+            "Node": node_id
+        })
+    
+    if perf_data:
+        perf_df = pd.DataFrame(perf_data)
+        
+        # Create line chart
+        fig = px.line(perf_df, x="Date", y=["RMSE", "MAPE", "MSE"],
+                     title=f"Performance Metrics Over Time for {selected_ticker}")
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Display average performance by node
+        st.subheader("Performance by Node")
+        
+        node_perf = perf_df.groupby("Node").agg({
+            "RMSE": "mean",
+            "MAPE": "mean",
+            "MSE": "mean"
+        }).reset_index()
+        
+        fig = px.bar(
+            node_perf, 
+            x="Node", 
+            y=["RMSE", "MAPE", "MSE"],
+            title="Average Performance by Node",
+            barmode="group"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Display raw data
+        st.subheader("Performance Data")
+        st.dataframe(perf_df, use_container_width=True)
+
+if __name__ == "__main__":
+    distributed_dashboard()
+11. Let's update the environment setup to support distributed execution:
+python
+
+Copy
+# Add to Scripts/env_setup.py
+
+def setup_distributed_environment():
+    """Set up environment variables for distributed execution."""
+    import os
+    
+    # Check if node ID exists
+    node_id_file = os.path.join("Data", "node_id.txt")
+    
+    if os.path.exists(node_id_file):
+        with open(node_id_file, "r") as f:
+            node_id = f.read().strip()
+    else:
+        import uuid
+        node_id = str(uuid.uuid4())[:8]
+        os.makedirs(os.path.dirname(node_id_file), exist_ok=True)
+        with open(node_id_file, "w") as f:
+            f.write(node_id)
+    
+    # Set environment variables
+    os.environ["NODE_ID"] = node_id
+    
+    # Load node configuration
+    node_config_file = os.path.join("Data", "node_config.json")
+    
+    if os.path.exists(node_config_file):
+        import json
+        try:
+            with open(node_config_file, "r") as f:
+                config = json.load(f)
+                
+            # Set environment variables
+            for key, value in config.items():
+                if isinstance(value, (str, int, float, bool)):
+                    os.environ[f"NODE_{key.upper()}"] = str(value)
+                    
+        except Exception as e:
+            print(f"Error loading node configuration:
+
+
+
+Retry
+
+AB
+continue
+
+Edit
+Let me finish the environment setup code and complete the implementation:
+
+python
+
+Copy
+# Add to Scripts/env_setup.py (continued)
+
+def setup_distributed_environment():
+    """Set up environment variables for distributed execution."""
+    import os
+    
+    # Check if node ID exists
+    node_id_file = os.path.join("Data", "node_id.txt")
+    
+    if os.path.exists(node_id_file):
+        with open(node_id_file, "r") as f:
+            node_id = f.read().strip()
+    else:
+        import uuid
+        node_id = str(uuid.uuid4())[:8]
+        os.makedirs(os.path.dirname(node_id_file), exist_ok=True)
+        with open(node_id_file, "w") as f:
+            f.write(node_id)
+    
+    # Set environment variables
+    os.environ["NODE_ID"] = node_id
+    
+    # Load node configuration
+    node_config_file = os.path.join("Data", "node_config.json")
+    
+    if os.path.exists(node_config_file):
+        import json
+        try:
+            with open(node_config_file, "r") as f:
+                config = json.load(f)
+                
+            # Set environment variables
+            for key, value in config.items():
+                if isinstance(value, (str, int, float, bool)):
+                    os.environ[f"NODE_{key.upper()}"] = str(value)
+                    
+        except Exception as e:
+            print(f"Error loading node configuration: {e}")
+    
+    # Set distributed mode
+    os.environ["DISTRIBUTED_MODE"] = "1"
+    
+    return {
+        "node_id": node_id,
+        "distributed_mode": True
+    }
+12. Let's create a simple script to start a distributed node:
+python
+
+Copy
+# Create a new file: Scripts/start_node.py
+
+import argparse
+import logging
+import os
+import sys
+import time
+from datetime import datetime
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(f"node_{datetime.now().strftime('%Y%m%d')}.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("DistributedNode")
+
+def main():
+    """Start a distributed node."""
+    parser = argparse.ArgumentParser(description="Start a distributed ML node")
+    parser.add_argument("--role", choices=["coordinator", "worker"], default="worker", help="Node role")
+    parser.add_argument("--coordinator", type=str, default="http://localhost:8765", help="Coordinator URL (for workers)")
+    parser.add_argument("--port", type=int, default=8765, help="Port to listen on")
+    parser.add_argument("--config", type=str, default=None, help="Path to node configuration file")
+    parser.add_argument("--data-dir", type=str, default="Data", help="Data directory")
+    parser.add_argument("--models-dir", type=str, default="Models", help="Models directory")
+    
+    args = parser.parse_args()
+    
+    # Set up environment
+    from src.utils.env_setup import setup_distributed_environment
+    env_info = setup_distributed_environment()
+    node_id = env_info["node_id"]
+    
+    # Initialize node
+    from src.distributed_node import DistributedNode
+    
+    # Load node configuration if specified
+    node_config = None
+    if args.config and os.path.exists(args.config):
+        import json
+        with open(args.config, "r") as f:
+            node_config = json.load(f)
+    
+    # Initialize node
+    node = DistributedNode(
+        node_name=node_config.get("node_name", None),
+        coordinator_url=None if args.role == "coordinator" else args.coordinator,
+        config_path=args.config,
+        data_dir=args.data_dir,
+        models_dir=args.models_dir,
+        port=args.port
+    )
+    
+    # Initialize ensemble coordinator if this is a coordinator node
+    coordinator = None
+    if args.role == "coordinator":
+        from src.distributed_ensemble import EnsembleCoordinator
+        from config.config_loader import ACTIVE_MODEL_TYPES
+        
+        coordinator = EnsembleCoordinator(
+            ensemble_dir=os.path.join(args.data_dir, "Ensemble"),
+            model_types=node_config.get("allowed_model_types", ACTIVE_MODEL_TYPES),
+            node_id=node_id
+        )
+        
+        logger.info(f"Node {node_id} initialized as coordinator")
+    else:
+        logger.info(f"Node {node_id} initialized as worker, connecting to {args.coordinator}")
+    
+    # Initialize communication
+    from src.distributed_comm import NodeCommunicator
+    
+    comm = NodeCommunicator(
+        node=node,
+        coordinator=coordinator,
+        host="0.0.0.0",
+        port=args.port
+    )
+    
+    comm.start()
+    
+    try:
+        logger.info(f"Node {node_id} started. Press Ctrl+C to stop...")
+        
+        # Main loop - check for tasks and send heartbeats
+        while True:
+            # Send heartbeat
+            node.send_heartbeat()
+            
+            # Check for pending tasks if this is a coordinator
+            if args.role == "coordinator":
+                check_pending_tasks(node, args.data_dir)
+            
+            # Sleep
+            time.sleep(10)
+            
+    except KeyboardInterrupt:
+        logger.info("Stopping node...")
+    finally:
+        # Clean up
+        comm.stop()
+        node.stop()
+        logger.info("Node stopped.")
+
+def check_pending_tasks(node, data_dir):
+    """Check for pending tasks and assign them to available nodes."""
+    tasks_dir = os.path.join(data_dir, "Tasks")
+    if not os.path.exists(tasks_dir):
+        return
+        
+    # Get pending task files
+    import json
+    import os
+    
+    task_files = [f for f in os.listdir(tasks_dir) 
+                 if f.endswith(".json")]
+                 
+    for task_file in task_files:
+        try:
+            file_path = os.path.join(tasks_dir, task_file)
+            with open(file_path, "r") as f:
+                task_config = json.load(f)
+                
+            # Skip tasks that are not pending
+            if task_config.get("status") != "pending":
+                continue
+                
+            # Start task on this node
+            node.start_task(task_config)
+            
+            # Update task status to running
+            task_config["status"] = "running"
+            with open(file_path, "w") as f:
+                json.dump(task_config, f, indent=2)
+                
+        except Exception as e:
+            logger.error(f"Error processing task {task_file}: {e}")
+
+if __name__ == "__main__":
+    main()
+Conclusion and Summary
+I've created a comprehensive distributed computing system for your ML pipeline. Here's a summary of what's been implemented:
+
+ModelRegistry Extension - Enhanced for thread-safe distributed operation with proper locking
+EnsembleCoordinator - Manages ensemble model weights and predictions across nodes
+DistributedNode - Core class for node management with resource monitoring
+Walk-Forward Modifications - Adapted for distributed execution with workload sharing
+Communication System - Simple HTTP-based node-to-node communication
+Dashboard Integration - Visualization and management of the distributed system
+Configuration System - Centralized configuration for distributed settings
+Distributed Training - Entry point for training in a distributed environment
+Environment Setup - Automatic configuration for distributed operation
+Key Features:
+Resource Management: Monitoring CPU, memory, and GPU usage across nodes
+Task Distribution: Assigning tasks to appropriate nodes based on their capabilities
+Model Synchronization: Sharing models and weights across nodes
+Ensemble Coordination: Combining predictions from different nodes
+Fault Tolerance: Handling node failures and task reassignment
+Dashboard Integration: Monitoring and managing the whole system
+Next Steps:
+Test each component individually to ensure proper operation
+Deploy on multiple machines and test connectivity
+Run a distributed training session to verify performance
+Monitor system behavior and adjust parameters as needed
+Consider implementing more advanced features like adaptive load balancing and automatic node discovery
+The system is designed to be modular, so you can easily extend or replace specific components as needed. The implementation follows your requirements for clean, structured code with proper error handling and resource management.
+
+
+
+
