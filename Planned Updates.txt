@@ -2,7 +2,7 @@ Disributed processing
 
 Remote GUI
 
-more models such as TabNet and !CNN!
+more models such as TabNet and CNN
 
 Sentiment analysis and fundemental/onchain data
 
