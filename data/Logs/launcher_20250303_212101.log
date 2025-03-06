@@ -1,0 +1,25 @@
+2025-03-03 21:21:01,403 - INFO - launcher - Logs will be saved to: c:\Users\clubs\Desktop\Prediction Model\Data\logs\launcher_20250303_212101.log
+2025-03-03 21:21:04,897 - INFO - Scripts.dashboard_shutdown - Dashboard shutdown handlers initialized
+2025-03-03 21:21:04,901 - INFO - launcher - Launcher initialized
+2025-03-03 21:21:11,104 - INFO - launcher - Starting dashboard on port 8501...
+2025-03-03 21:21:11,118 - INFO - launcher - Starting log monitor for dashboard
+2025-03-03 21:21:14,464 - INFO - launcher - dashboard | 
+2025-03-03 21:21:14,464 - INFO - launcher - dashboard | You can now view your Streamlit app in your browser.
+2025-03-03 21:21:14,466 - INFO - launcher - dashboard | 
+2025-03-03 21:21:14,466 - INFO - launcher - dashboard | URL: http://localhost:8501
+2025-03-03 21:21:14,467 - INFO - launcher - dashboard | 
+2025-03-03 21:21:15,331 - INFO - launcher - Dashboard started on http://localhost:8501
+2025-03-03 21:27:12,810 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 21:27:12,810 - INFO - Scripts.robust_handler - Initiating graceful shutdown (source: Signal SIGINT)
+2025-03-03 21:27:12,811 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup_dashboard_components
+2025-03-03 21:27:12,812 - INFO - Scripts.dashboard_shutdown - Dashboard cleanup completed
+2025-03-03 21:27:12,813 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup
+2025-03-03 21:27:12,813 - INFO - launcher - Cleaning up launcher resources...
+2025-03-03 21:27:12,814 - INFO - launcher - Terminating process: dashboard
+2025-03-03 21:27:12,850 - INFO - launcher - Log monitor for dashboard stopped
+2025-03-03 21:27:12,902 - INFO - launcher - Launcher cleanup completed
+2025-03-03 21:27:12,903 - INFO - Scripts.robust_handler - Graceful shutdown completed
+2025-03-03 21:27:14,662 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 21:27:14,662 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 21:27:15,373 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 21:27:15,374 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT

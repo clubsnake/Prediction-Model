@@ -1,0 +1,8 @@
+#######################
+# PRIVATE API KEYS
+# Do not commit this file to version control
+#######################
+
+finnhub_api_key: "cv2lrk1r01qhefsl3gm0cv2lrk1r01qhefsl3gmg"
+alphavantage_api_key: "4S361Y7KXRYY914J"
+coingecko_api_key: ""  # Empty string for free tier

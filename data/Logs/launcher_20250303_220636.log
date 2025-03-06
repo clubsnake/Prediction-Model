@@ -1,0 +1,33 @@
+2025-03-03 22:06:36,678 - INFO - launcher - Logs will be saved to: c:\Users\clubs\Desktop\Prediction Model\Data\logs\launcher_20250303_220636.log
+2025-03-03 22:06:39,104 - INFO - Scripts.dashboard_shutdown - Dashboard shutdown handlers initialized
+2025-03-03 22:06:39,108 - INFO - launcher - Launcher initialized
+2025-03-03 22:06:57,696 - INFO - launcher - Starting model training...
+2025-03-03 22:06:57,708 - INFO - launcher - Starting log monitor for model_training
+2025-03-03 22:06:57,708 - INFO - launcher - Model training started
+2025-03-03 22:06:57,773 - ERROR - launcher - model_training stderr | C:\Users\clubs\anaconda3\envs\ml_env\python.exe: can't open file 'C:\\Users\\clubs\\Desktop\\Prediction Model\\optimization_handler.py': [Errno 2] No such file or directory
+2025-03-03 22:06:57,775 - INFO - launcher - Log monitor for model_training stopped
+2025-03-03 22:07:59,887 - INFO - launcher - Starting model training...
+2025-03-03 22:07:59,900 - INFO - launcher - Starting log monitor for model_training
+2025-03-03 22:07:59,900 - INFO - launcher - Model training started
+2025-03-03 22:07:59,964 - ERROR - launcher - model_training stderr | C:\Users\clubs\anaconda3\envs\ml_env\python.exe: can't open file 'C:\\Users\\clubs\\Desktop\\Prediction Model\\optimization_handler.py': [Errno 2] No such file or directory
+2025-03-03 22:07:59,966 - INFO - launcher - Log monitor for model_training stopped
+2025-03-03 22:08:02,530 - INFO - launcher - Starting model training...
+2025-03-03 22:08:02,542 - INFO - launcher - Starting log monitor for model_training
+2025-03-03 22:08:02,542 - INFO - launcher - Model training started
+2025-03-03 22:08:02,609 - ERROR - launcher - model_training stderr | C:\Users\clubs\anaconda3\envs\ml_env\python.exe: can't open file 'C:\\Users\\clubs\\Desktop\\Prediction Model\\optimization_handler.py': [Errno 2] No such file or directory
+2025-03-03 22:08:02,610 - INFO - launcher - Log monitor for model_training stopped
+2025-03-03 22:08:16,983 - INFO - launcher - Starting model training...
+2025-03-03 22:08:16,997 - INFO - launcher - Starting log monitor for model_training
+2025-03-03 22:08:16,997 - INFO - launcher - Model training started
+2025-03-03 22:08:17,060 - ERROR - launcher - model_training stderr | C:\Users\clubs\anaconda3\envs\ml_env\python.exe: can't open file 'C:\\Users\\clubs\\Desktop\\Prediction Model\\optimization_handler.py': [Errno 2] No such file or directory
+2025-03-03 22:08:17,062 - INFO - launcher - Log monitor for model_training stopped
+2025-03-03 22:08:38,042 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 22:08:38,043 - INFO - Scripts.robust_handler - Initiating graceful shutdown (source: Signal SIGINT)
+2025-03-03 22:08:38,044 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup_dashboard_components
+2025-03-03 22:08:38,045 - INFO - Scripts.dashboard_shutdown - Dashboard cleanup completed
+2025-03-03 22:08:38,046 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup
+2025-03-03 22:08:38,046 - INFO - launcher - Cleaning up launcher resources...
+2025-03-03 22:08:38,047 - INFO - launcher - Launcher cleanup completed
+2025-03-03 22:08:38,048 - INFO - Scripts.robust_handler - Graceful shutdown completed
+2025-03-03 22:08:42,207 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Interactive mode exit
+2025-03-03 22:08:42,208 - INFO - Scripts.dashboard_shutdown - Dashboard cleanup completed

@@ -1,0 +1,49 @@
+2025-03-05 20:56:46,715 - prediction_model - INFO - Logging to file: C:\Users\clubs\Desktop\Prediction Model\data\Logs\prediction_model_20250305_205646.log
+2025-03-05 20:56:47,610 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 20:56:48,614 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 215, in main_dashboard
+    st.metric("Current Price", f"${df_vis['Close'].iloc[-1]:.2f}")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 20:59:53,697 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 20:59:53,746 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 215, in main_dashboard
+    st.metric("Current Price", f"${df_vis['Close'].iloc[-1]:.2f}")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 20:59:54,202 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 20:59:54,244 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 215, in main_dashboard
+    st.metric("Current Price", f"${df_vis['Close'].iloc[-1]:.2f}")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 21:00:37,457 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:00:37,541 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 215, in main_dashboard
+    st.metric("Current Price", f"${df_vis['Close'].iloc[-1]:.2f}")
+TypeError: unsupported format string passed to Series.__format__

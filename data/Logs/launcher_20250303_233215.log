@@ -1,0 +1,12 @@
+2025-03-03 23:32:15,241 - INFO - launcher - Logs will be saved to: c:\Users\clubs\Desktop\Prediction Model\Data\logs\launcher_20250303_233215.log
+2025-03-03 23:32:17,919 - INFO - Scripts.dashboard_shutdown - Dashboard shutdown handlers initialized
+2025-03-03 23:32:17,923 - INFO - launcher - Launcher initialized
+2025-03-03 23:35:49,407 - INFO - Scripts.robust_handler - Initiating graceful shutdown (source: Interactive mode exit)
+2025-03-03 23:35:49,408 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup_dashboard_components
+2025-03-03 23:35:49,409 - INFO - Scripts.dashboard_shutdown - Dashboard cleanup completed
+2025-03-03 23:35:49,411 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup
+2025-03-03 23:35:49,412 - INFO - launcher - Cleaning up launcher resources...
+2025-03-03 23:35:49,413 - INFO - launcher - Launcher cleanup completed
+2025-03-03 23:35:49,413 - INFO - Scripts.robust_handler - Graceful shutdown completed
+2025-03-03 23:35:49,414 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from atexit
+2025-03-03 23:35:49,415 - INFO - Scripts.dashboard_shutdown - Dashboard cleanup completed

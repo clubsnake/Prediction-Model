@@ -1,0 +1,987 @@
+2025-03-05 21:06:35,949 - prediction_model - INFO - Logging to file: C:\Users\clubs\Desktop\Prediction Model\data\Logs\prediction_model_20250305_210635.log
+2025-03-05 21:06:37,011 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:06:37,824 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 219, in main_dashboard
+    st.metric("Last Change", f"${change:.2f}", f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 21:06:39,038 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:06:39,083 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 219, in main_dashboard
+    st.metric("Last Change", f"${change:.2f}", f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 21:06:47,232 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:06:47,306 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 219, in main_dashboard
+    st.metric("Last Change", f"${change:.2f}", f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 21:06:54,081 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:06:54,134 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 219, in main_dashboard
+    st.metric("Last Change", f"${change:.2f}", f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 21:07:25,794 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:07:25,955 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 219, in main_dashboard
+    st.metric("Last Change", f"${change:.2f}", f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 21:08:48,727 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:08:48,879 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 219, in main_dashboard
+    st.metric("Last Change", f"${change:.2f}", f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 21:10:37,286 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:10:37,348 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 219, in main_dashboard
+    st.metric("Last Change", f"${change:.2f}", f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 21:12:39,274 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:12:39,337 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 219, in main_dashboard
+    st.metric("Last Change", f"${change:.2f}", f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 21:12:40,795 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:12:40,845 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 219, in main_dashboard
+    st.metric("Last Change", f"${change:.2f}", f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 21:13:42,038 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 301, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:13:42,118 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 219, in main_dashboard
+    st.metric("Last Change", f"${change:.2f}", f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 21:36:20,399 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 285, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:36:20,415 - prediction_model - ERROR - Error in create_control_panel: unsupported operand type(s) for -: 'datetime.datetime' and 'datetime.date'
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 152, in create_control_panel
+    historical_window = (datetime.now() - start_date).days
+TypeError: unsupported operand type(s) for -: 'datetime.datetime' and 'datetime.date'
+2025-03-05 21:36:20,420 - prediction_model - ERROR - Critical error in main dashboard: 'NoneType' object is not subscriptable
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 162, in main_dashboard
+    ticker = params["ticker"]
+TypeError: 'NoneType' object is not subscriptable
+2025-03-05 21:41:00,274 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 285, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:41:00,295 - prediction_model - ERROR - Error in create_control_panel: unsupported operand type(s) for -: 'datetime.datetime' and 'datetime.date'
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 152, in create_control_panel
+    historical_window = (datetime.now() - start_date).days
+TypeError: unsupported operand type(s) for -: 'datetime.datetime' and 'datetime.date'
+2025-03-05 21:41:00,305 - prediction_model - ERROR - Critical error in main dashboard: 'NoneType' object is not subscriptable
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 162, in main_dashboard
+    ticker = params["ticker"]
+TypeError: 'NoneType' object is not subscriptable
+2025-03-05 21:50:00,078 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 290, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:50:00,092 - prediction_model - ERROR - Error in create_control_panel: unsupported operand type(s) for -: 'datetime.datetime' and 'datetime.date'
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 157, in create_control_panel
+    historical_window = (datetime.now() - start_date).days
+TypeError: unsupported operand type(s) for -: 'datetime.datetime' and 'datetime.date'
+2025-03-05 21:50:00,101 - prediction_model - ERROR - Critical error in main dashboard: 'NoneType' object is not subscriptable
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 162, in main_dashboard
+    ticker = params["ticker"]
+TypeError: 'NoneType' object is not subscriptable
+2025-03-05 21:51:40,495 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 290, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:51:40,515 - prediction_model - ERROR - Error in create_control_panel: unsupported operand type(s) for -: 'datetime.datetime' and 'datetime.date'
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 157, in create_control_panel
+    historical_window = (datetime.now() - start_date).days
+TypeError: unsupported operand type(s) for -: 'datetime.datetime' and 'datetime.date'
+2025-03-05 21:51:40,525 - prediction_model - ERROR - Critical error in main dashboard: 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 165, in main_dashboard
+    end_date = params.get("end_date")
+AttributeError: 'NoneType' object has no attribute 'get'
+2025-03-05 21:51:43,171 - prediction_model - ERROR - Error in create_metrics_cards: unsupported format string passed to NoneType.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 290, in create_metrics_cards
+    st.markdown(f'''
+TypeError: unsupported format string passed to NoneType.__format__
+2025-03-05 21:51:43,197 - prediction_model - ERROR - Error in create_control_panel: unsupported operand type(s) for -: 'datetime.datetime' and 'datetime.date'
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 157, in create_control_panel
+    historical_window = (datetime.now() - start_date).days
+TypeError: unsupported operand type(s) for -: 'datetime.datetime' and 'datetime.date'
+2025-03-05 21:51:43,207 - prediction_model - ERROR - Critical error in main dashboard: 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 165, in main_dashboard
+    end_date = params.get("end_date")
+AttributeError: 'NoneType' object has no attribute 'get'
+2025-03-05 21:56:14,914 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 170, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 21:56:15,402 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 256, in main_dashboard
+    st.metric("Last Change", f"${change:.2f}", f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:00:29,634 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:00:29,730 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 254, in main_dashboard
+    st.metric("Last Change", f"${change:.2f}", f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:14:40,147 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:14:40,633 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 274, in main_dashboard
+    st.metric("Current Price", "${:.2f}".format(df_vis['Close'].iloc[-1]))
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:23:39,113 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:23:39,166 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 274, in main_dashboard
+    st.metric("Current Price", "${:.2f}".format(df_vis['Close'].iloc[-1]))
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:25:46,126 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:25:46,641 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 279, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:26:20,299 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:26:20,601 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 279, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:29:00,810 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:29:00,861 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:31:31,861 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:31:31,931 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:31:55,104 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:31:55,161 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:31:56,714 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:31:56,759 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:33:16,364 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:33:16,427 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:33:38,298 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:33:38,912 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:34:30,892 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:34:30,983 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:34:36,579 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:34:36,631 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:34:39,550 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:34:39,598 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:34:46,472 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:34:46,516 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:34:51,054 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:34:51,100 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:34:55,054 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:34:55,106 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:34:58,784 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:34:58,825 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:35:29,099 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:35:29,131 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:35:34,487 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:35:34,527 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:35:41,222 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:35:41,354 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, f"{pct_change:.2f}%")
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:38:55,330 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 164, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:38:55,453 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, "{:.2f}%".format(pct_change))
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:43:38,128 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:43:38,603 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, "{:.2f}%".format(pct_change))
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:44:00,823 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:44:00,865 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, "{:.2f}%".format(pct_change))
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:44:02,720 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:44:02,761 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, "{:.2f}%".format(pct_change))
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:44:04,545 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:44:04,584 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, "{:.2f}%".format(pct_change))
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:44:08,471 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:44:08,519 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, "{:.2f}%".format(pct_change))
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:44:09,512 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:44:09,558 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, "{:.2f}%".format(pct_change))
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:44:15,082 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:44:15,114 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, "{:.2f}%".format(pct_change))
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:44:33,861 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:44:33,895 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, "{:.2f}%".format(pct_change))
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:44:39,225 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:44:39,267 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, "{:.2f}%".format(pct_change))
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:46:29,044 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:46:29,106 - prediction_model - ERROR - Critical error in main dashboard: unsupported format string passed to Series.__format__
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 301, in main_dashboard
+    st.metric("Last Change", change, "{:.2f}%".format(pct_change))
+TypeError: unsupported format string passed to Series.__format__
+2025-03-05 22:52:46,009 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:52:46,231 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 22:52:46,233 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 372, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 22:55:52,674 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:55:53,364 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 22:55:53,366 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 372, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 22:57:05,620 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:57:05,925 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 22:57:05,927 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 372, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 22:57:13,569 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:57:13,724 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 22:57:13,727 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 372, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 22:57:17,018 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:57:17,157 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 22:57:17,159 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 372, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 22:57:19,426 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:57:19,562 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 22:57:19,564 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 372, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 22:57:26,748 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:57:26,904 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 22:57:26,905 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 372, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 22:57:34,068 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 22:57:34,201 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 22:57:34,203 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 372, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 23:08:27,013 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 23:08:27,695 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:08:27,696 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 371, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 23:11:19,949 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 23:11:20,154 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:11:20,156 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 371, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 23:11:32,409 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 23:11:33,057 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:11:33,059 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 371, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 23:11:40,984 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 23:11:41,130 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:11:41,132 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 371, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 23:13:19,228 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 167, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 23:13:19,430 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:13:19,433 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 371, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 23:13:23,748 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 167, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 23:13:23,885 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:13:23,887 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 371, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 23:13:39,976 - prediction_model - ERROR - Error in create_control_panel: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py", line 166, in create_control_panel
+    from config.config_loader import TUNING_TRIALS_PER_CYCLE_min, TUNING_TRIALS_PER_CYCLE_max
+ImportError: cannot import name 'TUNING_TRIALS_PER_CYCLE_min' from 'config.config_loader' (C:\Users\clubs\Desktop\Prediction Model\config\config_loader.py)
+2025-03-05 23:13:40,218 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:13:40,221 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 371, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 23:16:00,297 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:16:00,298 - prediction_model - ERROR - Critical error in main dashboard: local variable 'future_forecast' referenced before assignment
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 376, in main_dashboard
+    create_interactive_price_chart(df_vis_indicators, params, future_forecast=future_forecast)
+UnboundLocalError: local variable 'future_forecast' referenced before assignment
+2025-03-05 23:18:09,740 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:18:09,796 - prediction_model - ERROR - Error in create_interactive_price_chart: ['date']
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_visualization.py", line 96, in create_interactive_price_chart
+    df = df.dropna(subset=[date_col])
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\util\_decorators.py", line 331, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\core\frame.py", line 6561, in dropna
+    raise KeyError(np.array(subset)[check].tolist())
+KeyError: ['date']
+2025-03-05 23:18:09,816 - prediction_model - ERROR - Critical error in main dashboard: Columns may not be nested inside other columns.
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 382, in main_dashboard
+    metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in columns
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in <listcomp>
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\delta_generator.py", line 552, in _block
+    raise StreamlitAPIException(
+streamlit.errors.StreamlitAPIException: Columns may not be nested inside other columns.
+2025-03-05 23:19:51,034 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:19:51,039 - prediction_model - ERROR - Error in create_interactive_price_chart: ['date']
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_visualization.py", line 96, in create_interactive_price_chart
+    df = df.dropna(subset=[date_col])
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\util\_decorators.py", line 331, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\core\frame.py", line 6561, in dropna
+    raise KeyError(np.array(subset)[check].tolist())
+KeyError: ['date']
+2025-03-05 23:19:51,050 - prediction_model - ERROR - Critical error in main dashboard: Columns may not be nested inside other columns.
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 382, in main_dashboard
+    metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in columns
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in <listcomp>
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\delta_generator.py", line 552, in _block
+    raise StreamlitAPIException(
+streamlit.errors.StreamlitAPIException: Columns may not be nested inside other columns.
+2025-03-05 23:19:51,464 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:19:51,470 - prediction_model - ERROR - Error in create_interactive_price_chart: ['date']
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_visualization.py", line 96, in create_interactive_price_chart
+    df = df.dropna(subset=[date_col])
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\util\_decorators.py", line 331, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\core\frame.py", line 6561, in dropna
+    raise KeyError(np.array(subset)[check].tolist())
+KeyError: ['date']
+2025-03-05 23:19:51,480 - prediction_model - ERROR - Critical error in main dashboard: Columns may not be nested inside other columns.
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 382, in main_dashboard
+    metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in columns
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in <listcomp>
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\delta_generator.py", line 552, in _block
+    raise StreamlitAPIException(
+streamlit.errors.StreamlitAPIException: Columns may not be nested inside other columns.
+2025-03-05 23:19:51,861 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:19:51,866 - prediction_model - ERROR - Error in create_interactive_price_chart: ['date']
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_visualization.py", line 96, in create_interactive_price_chart
+    df = df.dropna(subset=[date_col])
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\util\_decorators.py", line 331, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\core\frame.py", line 6561, in dropna
+    raise KeyError(np.array(subset)[check].tolist())
+KeyError: ['date']
+2025-03-05 23:19:51,873 - prediction_model - ERROR - Critical error in main dashboard: Columns may not be nested inside other columns.
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 382, in main_dashboard
+    metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in columns
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in <listcomp>
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\delta_generator.py", line 552, in _block
+    raise StreamlitAPIException(
+streamlit.errors.StreamlitAPIException: Columns may not be nested inside other columns.
+2025-03-05 23:19:52,337 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:19:52,341 - prediction_model - ERROR - Error in create_interactive_price_chart: ['date']
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_visualization.py", line 96, in create_interactive_price_chart
+    df = df.dropna(subset=[date_col])
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\util\_decorators.py", line 331, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\core\frame.py", line 6561, in dropna
+    raise KeyError(np.array(subset)[check].tolist())
+KeyError: ['date']
+2025-03-05 23:19:52,350 - prediction_model - ERROR - Critical error in main dashboard: Columns may not be nested inside other columns.
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 382, in main_dashboard
+    metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in columns
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in <listcomp>
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\delta_generator.py", line 552, in _block
+    raise StreamlitAPIException(
+streamlit.errors.StreamlitAPIException: Columns may not be nested inside other columns.
+2025-03-05 23:19:52,841 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:19:52,845 - prediction_model - ERROR - Error in create_interactive_price_chart: ['date']
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_visualization.py", line 96, in create_interactive_price_chart
+    df = df.dropna(subset=[date_col])
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\util\_decorators.py", line 331, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\core\frame.py", line 6561, in dropna
+    raise KeyError(np.array(subset)[check].tolist())
+KeyError: ['date']
+2025-03-05 23:19:52,853 - prediction_model - ERROR - Critical error in main dashboard: Columns may not be nested inside other columns.
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 382, in main_dashboard
+    metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in columns
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in <listcomp>
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\delta_generator.py", line 552, in _block
+    raise StreamlitAPIException(
+streamlit.errors.StreamlitAPIException: Columns may not be nested inside other columns.
+2025-03-05 23:19:53,563 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:19:53,567 - prediction_model - ERROR - Error in create_interactive_price_chart: ['date']
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_visualization.py", line 96, in create_interactive_price_chart
+    df = df.dropna(subset=[date_col])
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\util\_decorators.py", line 331, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\core\frame.py", line 6561, in dropna
+    raise KeyError(np.array(subset)[check].tolist())
+KeyError: ['date']
+2025-03-05 23:19:53,577 - prediction_model - ERROR - Critical error in main dashboard: Columns may not be nested inside other columns.
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 382, in main_dashboard
+    metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in columns
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\elements\layouts.py", line 194, in <listcomp>
+    return [row._block(column_proto(w / total_weight)) for w in weights]
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\streamlit\delta_generator.py", line 552, in _block
+    raise StreamlitAPIException(
+streamlit.errors.StreamlitAPIException: Columns may not be nested inside other columns.
+2025-03-05 23:22:22,571 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio
+2025-03-05 23:22:22,574 - prediction_model - ERROR - Error in create_interactive_price_chart: ['date']
+Traceback (most recent call last):
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py", line 52, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_visualization.py", line 96, in create_interactive_price_chart
+    df = df.dropna(subset=[date_col])
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\util\_decorators.py", line 331, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\clubs\anaconda3\envs\ml_env\lib\site-packages\pandas\core\frame.py", line 6561, in dropna
+    raise KeyError(np.array(subset)[check].tolist())
+KeyError: ['date']
+2025-03-05 23:22:22,649 - prediction_model - ERROR - Error calculating indicators: Cannot set a DataFrame with multiple columns to the single column Volume_Ratio

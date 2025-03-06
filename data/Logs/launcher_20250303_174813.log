@@ -1,0 +1,31 @@
+2025-03-03 17:48:13,919 - INFO - launcher - Logs will be saved to: c:\Users\clubs\Desktop\Prediction Model\Data\logs\launcher_20250303_174813.log
+2025-03-03 17:48:17,622 - INFO - Scripts.dashboard_shutdown - Dashboard shutdown handlers initialized
+2025-03-03 17:48:17,625 - INFO - launcher - Launcher initialized
+2025-03-03 17:48:38,215 - INFO - launcher - Starting dashboard on port 8501...
+2025-03-03 17:48:38,225 - INFO - launcher - Starting log monitor for dashboard
+2025-03-03 17:48:41,040 - INFO - launcher - dashboard | 
+2025-03-03 17:48:41,041 - INFO - launcher - dashboard | You can now view your Streamlit app in your browser.
+2025-03-03 17:48:41,042 - INFO - launcher - dashboard | 
+2025-03-03 17:48:41,043 - INFO - launcher - dashboard | URL: http://localhost:8501
+2025-03-03 17:48:41,044 - INFO - launcher - dashboard | 
+2025-03-03 17:48:42,225 - INFO - launcher - Dashboard started on http://localhost:8501
+2025-03-03 18:01:45,929 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 18:01:45,930 - INFO - Scripts.robust_handler - Initiating graceful shutdown (source: Signal SIGINT)
+2025-03-03 18:01:45,932 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup_dashboard_components
+2025-03-03 18:01:45,933 - INFO - Scripts.dashboard_shutdown - Dashboard cleanup completed
+2025-03-03 18:01:45,933 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup
+2025-03-03 18:01:45,934 - INFO - launcher - Cleaning up launcher resources...
+2025-03-03 18:01:45,935 - INFO - launcher - Terminating process: dashboard
+2025-03-03 18:01:45,965 - INFO - launcher - Log monitor for dashboard stopped
+2025-03-03 18:01:46,014 - INFO - launcher - Launcher cleanup completed
+2025-03-03 18:01:46,014 - INFO - Scripts.robust_handler - Graceful shutdown completed
+2025-03-03 18:02:22,579 - INFO - launcher - Starting dashboard on port 8501...
+2025-03-03 18:02:22,592 - INFO - launcher - Starting log monitor for dashboard
+2025-03-03 18:02:25,660 - INFO - launcher - Dashboard started on http://localhost:8501
+2025-03-03 18:02:25,756 - INFO - launcher - Log monitor for dashboard stopped
+2025-03-03 18:05:10,337 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 18:05:10,338 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 18:11:13,092 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 18:11:13,093 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 19:18:54,788 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 19:18:54,788 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT

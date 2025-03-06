@@ -1,0 +1,1504 @@
+2025-03-03 15:00:11,957 - INFO - launcher - Logs will be saved to: c:\Users\clubs\Desktop\Prediction Model\Data\logs\launcher_20250303_150011.log
+2025-03-03 15:00:14,384 - INFO - Scripts.dashboard_shutdown - Dashboard shutdown handlers initialized
+2025-03-03 15:00:14,386 - INFO - launcher - Launcher initialized
+2025-03-03 15:00:24,884 - INFO - launcher - Starting data processor...
+2025-03-03 15:00:26,191 - INFO - Scripts.data_manager - Starting data processor for tickers: ['ETH-USD', 'BTC-USD', 'LINK-USD', 'LTC-USD', 'AAVE-USD', 'AVAX-USD', 'SOL-USD', 'MATIC-USD', 'RVN-USD', 'GOOGL', 'T', 'AMZN', 'NVDA', 'MSFT', 'META', 'STLA', 'AMD', 'INTC', 'SQ', 'NET', 'ZM', 'ROKU', 'AAPL', 'TSLA', 'NFLX', 'SPY', 'ARK', 'KBWB', 'XLC']
+2025-03-03 15:00:26,191 - INFO - launcher - Data processor started for tickers: ['ETH-USD', 'BTC-USD', 'LINK-USD', 'LTC-USD', 'AAVE-USD', 'AVAX-USD', 'SOL-USD', 'MATIC-USD', 'RVN-USD', 'GOOGL', 'T', 'AMZN', 'NVDA', 'MSFT', 'META', 'STLA', 'AMD', 'INTC', 'SQ', 'NET', 'ZM', 'ROKU', 'AAPL', 'TSLA', 'NFLX', 'SPY', 'ARK', 'KBWB', 'XLC']
+2025-03-03 15:00:26,193 - INFO - Scripts.data_manager - Beginning data refresh cycle for 29 tickers
+2025-03-03 15:00:26,196 - INFO - Scripts.data_manager - Processing ETH-USD (1/29)
+2025-03-03 15:00:26,197 - INFO - Scripts.data_manager - Fetching data from Finnhub for ETH-USD with interval 1d
+2025-03-03 15:00:26,907 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for ETH-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:00:26,910 - INFO - Scripts.data_manager - Falling back to YFinance for ETH-USD
+2025-03-03 15:00:26,910 - INFO - Scripts.data_manager - Fetching data from YFinance for ETH-USD with interval 1d
+2025-03-03 15:00:27,611 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ETH-USD: YFinance returned empty data for ETH-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ETH-USD
+
+2025-03-03 15:00:27,614 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for ETH-USD: Failed to fetch data from YFinance for ETH-USD: YFinance returned empty data for ETH-USD
+2025-03-03 15:00:27,615 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:00:29,618 - INFO - Scripts.data_manager - Fetching data from Finnhub for ETH-USD with interval 1d
+2025-03-03 15:00:30,232 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for ETH-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:00:30,235 - INFO - Scripts.data_manager - Falling back to YFinance for ETH-USD
+2025-03-03 15:00:30,236 - INFO - Scripts.data_manager - Fetching data from YFinance for ETH-USD with interval 1d
+2025-03-03 15:00:30,890 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ETH-USD: YFinance returned empty data for ETH-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ETH-USD
+
+2025-03-03 15:00:30,893 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for ETH-USD: Failed to fetch data from YFinance for ETH-USD: YFinance returned empty data for ETH-USD
+2025-03-03 15:00:30,895 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:00:34,901 - INFO - Scripts.data_manager - Fetching data from Finnhub for ETH-USD with interval 1d
+2025-03-03 15:00:35,500 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for ETH-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:00:35,502 - INFO - Scripts.data_manager - Falling back to YFinance for ETH-USD
+2025-03-03 15:00:35,503 - INFO - Scripts.data_manager - Fetching data from YFinance for ETH-USD with interval 1d
+2025-03-03 15:00:36,138 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ETH-USD: YFinance returned empty data for ETH-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ETH-USD
+
+2025-03-03 15:00:36,141 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for ETH-USD: Failed to fetch data from YFinance for ETH-USD: YFinance returned empty data for ETH-USD
+2025-03-03 15:00:36,143 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:00:44,145 - INFO - Scripts.data_manager - Fetching data from Finnhub for ETH-USD with interval 1d
+2025-03-03 15:00:44,778 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for ETH-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:00:44,781 - INFO - Scripts.data_manager - Falling back to YFinance for ETH-USD
+2025-03-03 15:00:44,782 - INFO - Scripts.data_manager - Fetching data from YFinance for ETH-USD with interval 1d
+2025-03-03 15:00:45,392 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ETH-USD: YFinance returned empty data for ETH-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ETH-USD
+
+2025-03-03 15:00:45,395 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for ETH-USD: Failed to fetch data from YFinance for ETH-USD: YFinance returned empty data for ETH-USD
+2025-03-03 15:00:45,396 - ERROR - Scripts.data_manager - All 4 attempts failed for ETH-USD
+2025-03-03 15:00:45,397 - ERROR - Scripts.data_manager - Error processing ticker ETH-USD: Failed to fetch data after 4 attempts
+2025-03-03 15:00:45,398 - INFO - Scripts.data_manager - Processing BTC-USD (2/29)
+2025-03-03 15:00:45,399 - INFO - Scripts.data_manager - Fetching data from Finnhub for BTC-USD with interval 1d
+2025-03-03 15:00:46,024 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for BTC-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:00:46,026 - INFO - Scripts.data_manager - Falling back to YFinance for BTC-USD
+2025-03-03 15:00:46,027 - INFO - Scripts.data_manager - Fetching data from YFinance for BTC-USD with interval 1d
+2025-03-03 15:00:46,693 - ERROR - Scripts.data_manager - Error fetching data from YFinance for BTC-USD: YFinance returned empty data for BTC-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for BTC-USD
+
+2025-03-03 15:00:46,696 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for BTC-USD: Failed to fetch data from YFinance for BTC-USD: YFinance returned empty data for BTC-USD
+2025-03-03 15:00:46,697 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:00:48,594 - INFO - launcher - Starting dashboard on port 8508501...
+2025-03-03 15:00:48,606 - INFO - launcher - Starting log monitor for dashboard
+2025-03-03 15:00:48,713 - INFO - Scripts.data_manager - Fetching data from Finnhub for BTC-USD with interval 1d
+2025-03-03 15:00:49,378 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for BTC-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:00:49,380 - INFO - Scripts.data_manager - Falling back to YFinance for BTC-USD
+2025-03-03 15:00:49,381 - INFO - Scripts.data_manager - Fetching data from YFinance for BTC-USD with interval 1d
+2025-03-03 15:00:50,064 - ERROR - Scripts.data_manager - Error fetching data from YFinance for BTC-USD: YFinance returned empty data for BTC-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for BTC-USD
+
+2025-03-03 15:00:50,067 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for BTC-USD: Failed to fetch data from YFinance for BTC-USD: YFinance returned empty data for BTC-USD
+2025-03-03 15:00:50,068 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:00:51,533 - INFO - launcher - dashboard | 
+2025-03-03 15:00:51,534 - INFO - launcher - dashboard | You can now view your Streamlit app in your browser.
+2025-03-03 15:00:51,535 - INFO - launcher - dashboard | 
+2025-03-03 15:00:51,535 - INFO - launcher - dashboard | URL: http://localhost:8508501
+2025-03-03 15:00:51,536 - INFO - launcher - dashboard | 
+2025-03-03 15:00:51,793 - INFO - launcher - Dashboard started on http://localhost:8508501
+2025-03-03 15:00:54,072 - INFO - Scripts.data_manager - Fetching data from Finnhub for BTC-USD with interval 1d
+2025-03-03 15:00:54,667 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for BTC-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:00:54,670 - INFO - Scripts.data_manager - Falling back to YFinance for BTC-USD
+2025-03-03 15:00:54,670 - INFO - Scripts.data_manager - Fetching data from YFinance for BTC-USD with interval 1d
+2025-03-03 15:00:55,279 - ERROR - Scripts.data_manager - Error fetching data from YFinance for BTC-USD: YFinance returned empty data for BTC-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for BTC-USD
+
+2025-03-03 15:00:55,282 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for BTC-USD: Failed to fetch data from YFinance for BTC-USD: YFinance returned empty data for BTC-USD
+2025-03-03 15:00:55,283 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:01:03,288 - INFO - Scripts.data_manager - Fetching data from Finnhub for BTC-USD with interval 1d
+2025-03-03 15:01:03,920 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for BTC-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:01:03,922 - INFO - Scripts.data_manager - Falling back to YFinance for BTC-USD
+2025-03-03 15:01:03,923 - INFO - Scripts.data_manager - Fetching data from YFinance for BTC-USD with interval 1d
+2025-03-03 15:01:04,640 - ERROR - Scripts.data_manager - Error fetching data from YFinance for BTC-USD: YFinance returned empty data for BTC-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for BTC-USD
+
+2025-03-03 15:01:04,646 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for BTC-USD: Failed to fetch data from YFinance for BTC-USD: YFinance returned empty data for BTC-USD
+2025-03-03 15:01:04,651 - ERROR - Scripts.data_manager - All 4 attempts failed for BTC-USD
+2025-03-03 15:01:04,652 - ERROR - Scripts.data_manager - Error processing ticker BTC-USD: Failed to fetch data after 4 attempts
+2025-03-03 15:01:04,654 - INFO - Scripts.data_manager - Processing LINK-USD (3/29)
+2025-03-03 15:01:04,656 - INFO - Scripts.data_manager - Fetching data from Finnhub for LINK-USD with interval 1d
+2025-03-03 15:01:05,328 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for LINK-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:01:05,331 - INFO - Scripts.data_manager - Falling back to YFinance for LINK-USD
+2025-03-03 15:01:05,332 - INFO - Scripts.data_manager - Fetching data from YFinance for LINK-USD with interval 1d
+2025-03-03 15:01:06,016 - ERROR - Scripts.data_manager - Error fetching data from YFinance for LINK-USD: YFinance returned empty data for LINK-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for LINK-USD
+
+2025-03-03 15:01:06,019 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for LINK-USD: Failed to fetch data from YFinance for LINK-USD: YFinance returned empty data for LINK-USD
+2025-03-03 15:01:06,020 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:01:08,031 - INFO - Scripts.data_manager - Fetching data from Finnhub for LINK-USD with interval 1d
+2025-03-03 15:01:08,617 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for LINK-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:01:08,620 - INFO - Scripts.data_manager - Falling back to YFinance for LINK-USD
+2025-03-03 15:01:08,621 - INFO - Scripts.data_manager - Fetching data from YFinance for LINK-USD with interval 1d
+2025-03-03 15:01:09,322 - ERROR - Scripts.data_manager - Error fetching data from YFinance for LINK-USD: YFinance returned empty data for LINK-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for LINK-USD
+
+2025-03-03 15:01:09,326 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for LINK-USD: Failed to fetch data from YFinance for LINK-USD: YFinance returned empty data for LINK-USD
+2025-03-03 15:01:09,327 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:01:13,330 - INFO - Scripts.data_manager - Fetching data from Finnhub for LINK-USD with interval 1d
+2025-03-03 15:01:13,522 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:13,523 - INFO - Scripts.robust_handler - Initiating graceful shutdown (source: Signal SIGINT)
+2025-03-03 15:01:13,524 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup_dashboard_components
+2025-03-03 15:01:13,525 - INFO - Scripts.dashboard_shutdown - Dashboard cleanup completed
+2025-03-03 15:01:13,526 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup
+2025-03-03 15:01:13,526 - INFO - launcher - Cleaning up launcher resources...
+2025-03-03 15:01:13,527 - INFO - launcher - Terminating process: dashboard
+2025-03-03 15:01:13,531 - INFO - launcher - Log monitor for dashboard stopped
+2025-03-03 15:01:13,543 - INFO - launcher - Waiting for thread to finish: data_processor
+2025-03-03 15:01:13,940 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for LINK-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:01:13,943 - INFO - Scripts.data_manager - Falling back to YFinance for LINK-USD
+2025-03-03 15:01:13,944 - INFO - Scripts.data_manager - Fetching data from YFinance for LINK-USD with interval 1d
+2025-03-03 15:01:14,565 - ERROR - Scripts.data_manager - Error fetching data from YFinance for LINK-USD: YFinance returned empty data for LINK-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for LINK-USD
+
+2025-03-03 15:01:14,568 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for LINK-USD: Failed to fetch data from YFinance for LINK-USD: YFinance returned empty data for LINK-USD
+2025-03-03 15:01:14,569 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:01:15,556 - INFO - launcher - Launcher cleanup completed
+2025-03-03 15:01:15,557 - INFO - Scripts.robust_handler - Running shutdown callback: stop_processing
+2025-03-03 15:01:15,558 - INFO - Scripts.data_manager - Data processing job stop requested
+2025-03-03 15:01:15,558 - INFO - Scripts.robust_handler - Waiting for thread to finish: DataProcessor
+2025-03-03 15:01:20,561 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:20,562 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:20,563 - INFO - Scripts.robust_handler - Graceful shutdown completed
+2025-03-03 15:01:22,574 - INFO - Scripts.data_manager - Fetching data from Finnhub for LINK-USD with interval 1d
+2025-03-03 15:01:23,193 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for LINK-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:01:23,196 - INFO - Scripts.data_manager - Falling back to YFinance for LINK-USD
+2025-03-03 15:01:23,196 - INFO - Scripts.data_manager - Fetching data from YFinance for LINK-USD with interval 1d
+2025-03-03 15:01:23,829 - ERROR - Scripts.data_manager - Error fetching data from YFinance for LINK-USD: YFinance returned empty data for LINK-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for LINK-USD
+
+2025-03-03 15:01:23,832 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for LINK-USD: Failed to fetch data from YFinance for LINK-USD: YFinance returned empty data for LINK-USD
+2025-03-03 15:01:23,833 - ERROR - Scripts.data_manager - All 4 attempts failed for LINK-USD
+2025-03-03 15:01:23,834 - ERROR - Scripts.data_manager - Error processing ticker LINK-USD: Failed to fetch data after 4 attempts
+2025-03-03 15:01:23,835 - INFO - Scripts.data_manager - Processing LTC-USD (4/29)
+2025-03-03 15:01:23,836 - INFO - Scripts.data_manager - Fetching data from Finnhub for LTC-USD with interval 1d
+2025-03-03 15:01:24,434 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for LTC-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:01:24,437 - INFO - Scripts.data_manager - Falling back to YFinance for LTC-USD
+2025-03-03 15:01:24,437 - INFO - Scripts.data_manager - Fetching data from YFinance for LTC-USD with interval 1d
+2025-03-03 15:01:25,033 - ERROR - Scripts.data_manager - Error fetching data from YFinance for LTC-USD: YFinance returned empty data for LTC-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for LTC-USD
+
+2025-03-03 15:01:25,036 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for LTC-USD: Failed to fetch data from YFinance for LTC-USD: YFinance returned empty data for LTC-USD
+2025-03-03 15:01:25,038 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:01:25,461 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:25,462 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:25,473 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:25,863 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:25,865 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:25,879 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:26,577 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,578 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,589 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:26,655 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,656 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,664 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:26,718 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,719 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,726 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:26,779 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,780 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,789 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:26,843 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,843 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,849 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:26,920 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,921 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,929 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:26,984 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,984 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:26,985 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:26,986 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:27,043 - INFO - Scripts.data_manager - Fetching data from Finnhub for LTC-USD with interval 1d
+2025-03-03 15:01:27,044 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,045 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,054 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:27,107 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,108 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,117 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:27,184 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,185 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,193 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:27,216 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,217 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:27,278 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,279 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,288 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:27,314 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,315 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:27,373 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,374 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,382 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:27,436 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,436 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:27,437 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,438 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:27,515 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:01:27,532 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 15:01:27,697 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for LTC-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:01:27,700 - INFO - Scripts.data_manager - Falling back to YFinance for LTC-USD
+2025-03-03 15:01:27,701 - INFO - Scripts.data_manager - Fetching data from YFinance for LTC-USD with interval 1d
+2025-03-03 15:01:28,341 - ERROR - Scripts.data_manager - Error fetching data from YFinance for LTC-USD: YFinance returned empty data for LTC-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for LTC-USD
+
+2025-03-03 15:01:28,344 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for LTC-USD: Failed to fetch data from YFinance for LTC-USD: YFinance returned empty data for LTC-USD
+2025-03-03 15:01:28,345 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:01:32,352 - INFO - Scripts.data_manager - Fetching data from Finnhub for LTC-USD with interval 1d
+2025-03-03 15:01:32,918 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for LTC-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:01:32,920 - INFO - Scripts.data_manager - Falling back to YFinance for LTC-USD
+2025-03-03 15:01:32,921 - INFO - Scripts.data_manager - Fetching data from YFinance for LTC-USD with interval 1d
+2025-03-03 15:01:33,542 - ERROR - Scripts.data_manager - Error fetching data from YFinance for LTC-USD: YFinance returned empty data for LTC-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for LTC-USD
+
+2025-03-03 15:01:33,544 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for LTC-USD: Failed to fetch data from YFinance for LTC-USD: YFinance returned empty data for LTC-USD
+2025-03-03 15:01:33,545 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:01:41,548 - INFO - Scripts.data_manager - Fetching data from Finnhub for LTC-USD with interval 1d
+2025-03-03 15:01:42,130 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for LTC-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:01:42,133 - INFO - Scripts.data_manager - Falling back to YFinance for LTC-USD
+2025-03-03 15:01:42,135 - INFO - Scripts.data_manager - Fetching data from YFinance for LTC-USD with interval 1d
+2025-03-03 15:01:42,796 - ERROR - Scripts.data_manager - Error fetching data from YFinance for LTC-USD: YFinance returned empty data for LTC-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for LTC-USD
+
+2025-03-03 15:01:42,799 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for LTC-USD: Failed to fetch data from YFinance for LTC-USD: YFinance returned empty data for LTC-USD
+2025-03-03 15:01:42,800 - ERROR - Scripts.data_manager - All 4 attempts failed for LTC-USD
+2025-03-03 15:01:42,800 - ERROR - Scripts.data_manager - Error processing ticker LTC-USD: Failed to fetch data after 4 attempts
+2025-03-03 15:01:42,801 - INFO - Scripts.data_manager - Processing AAVE-USD (5/29)
+2025-03-03 15:01:42,802 - INFO - Scripts.data_manager - Fetching data from Finnhub for AAVE-USD with interval 1d
+2025-03-03 15:01:43,379 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for AAVE-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:01:43,382 - INFO - Scripts.data_manager - Falling back to YFinance for AAVE-USD
+2025-03-03 15:01:43,383 - INFO - Scripts.data_manager - Fetching data from YFinance for AAVE-USD with interval 1d
+2025-03-03 15:01:43,962 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AAVE-USD: YFinance returned empty data for AAVE-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AAVE-USD
+
+2025-03-03 15:01:43,965 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for AAVE-USD: Failed to fetch data from YFinance for AAVE-USD: YFinance returned empty data for AAVE-USD
+2025-03-03 15:01:43,966 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:01:45,982 - INFO - Scripts.data_manager - Fetching data from Finnhub for AAVE-USD with interval 1d
+2025-03-03 15:01:46,559 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for AAVE-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:01:46,561 - INFO - Scripts.data_manager - Falling back to YFinance for AAVE-USD
+2025-03-03 15:01:46,562 - INFO - Scripts.data_manager - Fetching data from YFinance for AAVE-USD with interval 1d
+2025-03-03 15:01:47,269 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AAVE-USD: YFinance returned empty data for AAVE-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AAVE-USD
+
+2025-03-03 15:01:47,272 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for AAVE-USD: Failed to fetch data from YFinance for AAVE-USD: YFinance returned empty data for AAVE-USD
+2025-03-03 15:01:47,273 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:01:51,286 - INFO - Scripts.data_manager - Fetching data from Finnhub for AAVE-USD with interval 1d
+2025-03-03 15:01:51,933 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for AAVE-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:01:51,935 - INFO - Scripts.data_manager - Falling back to YFinance for AAVE-USD
+2025-03-03 15:01:51,936 - INFO - Scripts.data_manager - Fetching data from YFinance for AAVE-USD with interval 1d
+2025-03-03 15:01:52,596 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AAVE-USD: YFinance returned empty data for AAVE-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AAVE-USD
+
+2025-03-03 15:01:52,599 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for AAVE-USD: Failed to fetch data from YFinance for AAVE-USD: YFinance returned empty data for AAVE-USD
+2025-03-03 15:01:52,600 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:02:00,607 - INFO - Scripts.data_manager - Fetching data from Finnhub for AAVE-USD with interval 1d
+2025-03-03 15:02:01,272 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for AAVE-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:02:01,275 - INFO - Scripts.data_manager - Falling back to YFinance for AAVE-USD
+2025-03-03 15:02:01,276 - INFO - Scripts.data_manager - Fetching data from YFinance for AAVE-USD with interval 1d
+2025-03-03 15:02:01,926 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AAVE-USD: YFinance returned empty data for AAVE-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AAVE-USD
+
+2025-03-03 15:02:01,929 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for AAVE-USD: Failed to fetch data from YFinance for AAVE-USD: YFinance returned empty data for AAVE-USD
+2025-03-03 15:02:01,930 - ERROR - Scripts.data_manager - All 4 attempts failed for AAVE-USD
+2025-03-03 15:02:01,930 - ERROR - Scripts.data_manager - Error processing ticker AAVE-USD: Failed to fetch data after 4 attempts
+2025-03-03 15:02:01,931 - INFO - Scripts.data_manager - Processing AVAX-USD (6/29)
+2025-03-03 15:02:01,932 - INFO - Scripts.data_manager - Fetching data from Finnhub for AVAX-USD with interval 1d
+2025-03-03 15:02:02,535 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for AVAX-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:02:02,538 - INFO - Scripts.data_manager - Falling back to YFinance for AVAX-USD
+2025-03-03 15:02:02,539 - INFO - Scripts.data_manager - Fetching data from YFinance for AVAX-USD with interval 1d
+2025-03-03 15:02:03,255 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AVAX-USD: YFinance returned empty data for AVAX-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AVAX-USD
+
+2025-03-03 15:02:03,258 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for AVAX-USD: Failed to fetch data from YFinance for AVAX-USD: YFinance returned empty data for AVAX-USD
+2025-03-03 15:02:03,259 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:02:05,262 - INFO - Scripts.data_manager - Fetching data from Finnhub for AVAX-USD with interval 1d
+2025-03-03 15:02:05,933 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for AVAX-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:02:05,935 - INFO - Scripts.data_manager - Falling back to YFinance for AVAX-USD
+2025-03-03 15:02:05,935 - INFO - Scripts.data_manager - Fetching data from YFinance for AVAX-USD with interval 1d
+2025-03-03 15:02:06,596 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AVAX-USD: YFinance returned empty data for AVAX-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AVAX-USD
+
+2025-03-03 15:02:06,598 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for AVAX-USD: Failed to fetch data from YFinance for AVAX-USD: YFinance returned empty data for AVAX-USD
+2025-03-03 15:02:06,599 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:02:10,602 - INFO - Scripts.data_manager - Fetching data from Finnhub for AVAX-USD with interval 1d
+2025-03-03 15:02:11,191 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for AVAX-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:02:11,194 - INFO - Scripts.data_manager - Falling back to YFinance for AVAX-USD
+2025-03-03 15:02:11,195 - INFO - Scripts.data_manager - Fetching data from YFinance for AVAX-USD with interval 1d
+2025-03-03 15:02:11,972 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AVAX-USD: YFinance returned empty data for AVAX-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AVAX-USD
+
+2025-03-03 15:02:11,975 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for AVAX-USD: Failed to fetch data from YFinance for AVAX-USD: YFinance returned empty data for AVAX-USD
+2025-03-03 15:02:11,976 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:02:19,986 - INFO - Scripts.data_manager - Fetching data from Finnhub for AVAX-USD with interval 1d
+2025-03-03 15:02:20,604 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for AVAX-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:02:20,607 - INFO - Scripts.data_manager - Falling back to YFinance for AVAX-USD
+2025-03-03 15:02:20,608 - INFO - Scripts.data_manager - Fetching data from YFinance for AVAX-USD with interval 1d
+2025-03-03 15:02:21,267 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AVAX-USD: YFinance returned empty data for AVAX-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AVAX-USD
+
+2025-03-03 15:02:21,270 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for AVAX-USD: Failed to fetch data from YFinance for AVAX-USD: YFinance returned empty data for AVAX-USD
+2025-03-03 15:02:21,271 - ERROR - Scripts.data_manager - All 4 attempts failed for AVAX-USD
+2025-03-03 15:02:21,271 - ERROR - Scripts.data_manager - Error processing ticker AVAX-USD: Failed to fetch data after 4 attempts
+2025-03-03 15:02:21,273 - INFO - Scripts.data_manager - Processing SOL-USD (7/29)
+2025-03-03 15:02:21,274 - INFO - Scripts.data_manager - Fetching data from Finnhub for SOL-USD with interval 1d
+2025-03-03 15:02:21,882 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for SOL-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:02:21,884 - INFO - Scripts.data_manager - Falling back to YFinance for SOL-USD
+2025-03-03 15:02:21,886 - INFO - Scripts.data_manager - Fetching data from YFinance for SOL-USD with interval 1d
+2025-03-03 15:02:22,528 - ERROR - Scripts.data_manager - Error fetching data from YFinance for SOL-USD: YFinance returned empty data for SOL-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for SOL-USD
+
+2025-03-03 15:02:22,530 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for SOL-USD: Failed to fetch data from YFinance for SOL-USD: YFinance returned empty data for SOL-USD
+2025-03-03 15:02:22,531 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:02:24,537 - INFO - Scripts.data_manager - Fetching data from Finnhub for SOL-USD with interval 1d
+2025-03-03 15:02:25,146 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for SOL-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:02:25,148 - INFO - Scripts.data_manager - Falling back to YFinance for SOL-USD
+2025-03-03 15:02:25,149 - INFO - Scripts.data_manager - Fetching data from YFinance for SOL-USD with interval 1d
+2025-03-03 15:02:25,798 - ERROR - Scripts.data_manager - Error fetching data from YFinance for SOL-USD: YFinance returned empty data for SOL-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for SOL-USD
+
+2025-03-03 15:02:25,801 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for SOL-USD: Failed to fetch data from YFinance for SOL-USD: YFinance returned empty data for SOL-USD
+2025-03-03 15:02:25,802 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:02:25,920 - INFO - launcher - Starting dashboard on port 8501...
+2025-03-03 15:02:25,931 - INFO - launcher - Starting log monitor for dashboard
+2025-03-03 15:02:28,859 - INFO - launcher - Log monitor for dashboard stopped
+2025-03-03 15:02:29,178 - INFO - launcher - Dashboard started on http://localhost:8501
+2025-03-03 15:02:29,819 - INFO - Scripts.data_manager - Fetching data from Finnhub for SOL-USD with interval 1d
+2025-03-03 15:02:30,637 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for SOL-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:02:30,639 - INFO - Scripts.data_manager - Falling back to YFinance for SOL-USD
+2025-03-03 15:02:30,640 - INFO - Scripts.data_manager - Fetching data from YFinance for SOL-USD with interval 1d
+2025-03-03 15:02:31,487 - ERROR - Scripts.data_manager - Error fetching data from YFinance for SOL-USD: YFinance returned empty data for SOL-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for SOL-USD
+
+2025-03-03 15:02:31,492 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for SOL-USD: Failed to fetch data from YFinance for SOL-USD: YFinance returned empty data for SOL-USD
+2025-03-03 15:02:31,494 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:02:39,498 - INFO - Scripts.data_manager - Fetching data from Finnhub for SOL-USD with interval 1d
+2025-03-03 15:02:40,193 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for SOL-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:02:40,195 - INFO - Scripts.data_manager - Falling back to YFinance for SOL-USD
+2025-03-03 15:02:40,196 - INFO - Scripts.data_manager - Fetching data from YFinance for SOL-USD with interval 1d
+2025-03-03 15:02:40,889 - ERROR - Scripts.data_manager - Error fetching data from YFinance for SOL-USD: YFinance returned empty data for SOL-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for SOL-USD
+
+2025-03-03 15:02:40,892 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for SOL-USD: Failed to fetch data from YFinance for SOL-USD: YFinance returned empty data for SOL-USD
+2025-03-03 15:02:40,893 - ERROR - Scripts.data_manager - All 4 attempts failed for SOL-USD
+2025-03-03 15:02:40,893 - ERROR - Scripts.data_manager - Error processing ticker SOL-USD: Failed to fetch data after 4 attempts
+2025-03-03 15:02:40,894 - INFO - Scripts.data_manager - Processing MATIC-USD (8/29)
+2025-03-03 15:02:40,895 - INFO - Scripts.data_manager - Fetching data from Finnhub for MATIC-USD with interval 1d
+2025-03-03 15:02:41,565 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for MATIC-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:02:41,568 - INFO - Scripts.data_manager - Falling back to YFinance for MATIC-USD
+2025-03-03 15:02:41,569 - INFO - Scripts.data_manager - Fetching data from YFinance for MATIC-USD with interval 1d
+2025-03-03 15:02:42,272 - ERROR - Scripts.data_manager - Error fetching data from YFinance for MATIC-USD: YFinance returned empty data for MATIC-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for MATIC-USD
+
+2025-03-03 15:02:42,274 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for MATIC-USD: Failed to fetch data from YFinance for MATIC-USD: YFinance returned empty data for MATIC-USD
+2025-03-03 15:02:42,275 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:02:44,290 - INFO - Scripts.data_manager - Fetching data from Finnhub for MATIC-USD with interval 1d
+2025-03-03 15:02:44,968 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for MATIC-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:02:44,970 - INFO - Scripts.data_manager - Falling back to YFinance for MATIC-USD
+2025-03-03 15:02:44,970 - INFO - Scripts.data_manager - Fetching data from YFinance for MATIC-USD with interval 1d
+2025-03-03 15:02:45,675 - ERROR - Scripts.data_manager - Error fetching data from YFinance for MATIC-USD: YFinance returned empty data for MATIC-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for MATIC-USD
+
+2025-03-03 15:02:45,677 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for MATIC-USD: Failed to fetch data from YFinance for MATIC-USD: YFinance returned empty data for MATIC-USD
+2025-03-03 15:02:45,678 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:02:49,694 - INFO - Scripts.data_manager - Fetching data from Finnhub for MATIC-USD with interval 1d
+2025-03-03 15:02:50,324 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for MATIC-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:02:50,328 - INFO - Scripts.data_manager - Falling back to YFinance for MATIC-USD
+2025-03-03 15:02:50,329 - INFO - Scripts.data_manager - Fetching data from YFinance for MATIC-USD with interval 1d
+2025-03-03 15:02:51,098 - ERROR - Scripts.data_manager - Error fetching data from YFinance for MATIC-USD: YFinance returned empty data for MATIC-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for MATIC-USD
+
+2025-03-03 15:02:51,101 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for MATIC-USD: Failed to fetch data from YFinance for MATIC-USD: YFinance returned empty data for MATIC-USD
+2025-03-03 15:02:51,102 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:02:59,116 - INFO - Scripts.data_manager - Fetching data from Finnhub for MATIC-USD with interval 1d
+2025-03-03 15:02:59,859 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for MATIC-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:02:59,862 - INFO - Scripts.data_manager - Falling back to YFinance for MATIC-USD
+2025-03-03 15:02:59,862 - INFO - Scripts.data_manager - Fetching data from YFinance for MATIC-USD with interval 1d
+2025-03-03 15:03:00,866 - ERROR - Scripts.data_manager - Error fetching data from YFinance for MATIC-USD: YFinance returned empty data for MATIC-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for MATIC-USD
+
+2025-03-03 15:03:00,868 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for MATIC-USD: Failed to fetch data from YFinance for MATIC-USD: YFinance returned empty data for MATIC-USD
+2025-03-03 15:03:00,868 - ERROR - Scripts.data_manager - All 4 attempts failed for MATIC-USD
+2025-03-03 15:03:00,869 - ERROR - Scripts.data_manager - Error processing ticker MATIC-USD: Failed to fetch data after 4 attempts
+2025-03-03 15:03:00,870 - INFO - Scripts.data_manager - Processing RVN-USD (9/29)
+2025-03-03 15:03:00,871 - INFO - Scripts.data_manager - Fetching data from Finnhub for RVN-USD with interval 1d
+2025-03-03 15:03:01,499 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for RVN-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:03:01,501 - INFO - Scripts.data_manager - Falling back to YFinance for RVN-USD
+2025-03-03 15:03:01,502 - INFO - Scripts.data_manager - Fetching data from YFinance for RVN-USD with interval 1d
+2025-03-03 15:03:02,213 - ERROR - Scripts.data_manager - Error fetching data from YFinance for RVN-USD: YFinance returned empty data for RVN-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for RVN-USD
+
+2025-03-03 15:03:02,216 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for RVN-USD: Failed to fetch data from YFinance for RVN-USD: YFinance returned empty data for RVN-USD
+2025-03-03 15:03:02,217 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:03:04,232 - INFO - Scripts.data_manager - Fetching data from Finnhub for RVN-USD with interval 1d
+2025-03-03 15:03:04,823 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for RVN-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:03:04,826 - INFO - Scripts.data_manager - Falling back to YFinance for RVN-USD
+2025-03-03 15:03:04,827 - INFO - Scripts.data_manager - Fetching data from YFinance for RVN-USD with interval 1d
+2025-03-03 15:03:05,507 - ERROR - Scripts.data_manager - Error fetching data from YFinance for RVN-USD: YFinance returned empty data for RVN-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for RVN-USD
+
+2025-03-03 15:03:05,510 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for RVN-USD: Failed to fetch data from YFinance for RVN-USD: YFinance returned empty data for RVN-USD
+2025-03-03 15:03:05,511 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:03:09,518 - INFO - Scripts.data_manager - Fetching data from Finnhub for RVN-USD with interval 1d
+2025-03-03 15:03:10,107 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for RVN-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:03:10,110 - INFO - Scripts.data_manager - Falling back to YFinance for RVN-USD
+2025-03-03 15:03:10,110 - INFO - Scripts.data_manager - Fetching data from YFinance for RVN-USD with interval 1d
+2025-03-03 15:03:10,878 - ERROR - Scripts.data_manager - Error fetching data from YFinance for RVN-USD: YFinance returned empty data for RVN-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for RVN-USD
+
+2025-03-03 15:03:10,881 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for RVN-USD: Failed to fetch data from YFinance for RVN-USD: YFinance returned empty data for RVN-USD
+2025-03-03 15:03:10,882 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:03:18,888 - INFO - Scripts.data_manager - Fetching data from Finnhub for RVN-USD with interval 1d
+2025-03-03 15:03:19,533 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for RVN-USD: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:03:19,536 - INFO - Scripts.data_manager - Falling back to YFinance for RVN-USD
+2025-03-03 15:03:19,536 - INFO - Scripts.data_manager - Fetching data from YFinance for RVN-USD with interval 1d
+2025-03-03 15:03:20,176 - ERROR - Scripts.data_manager - Error fetching data from YFinance for RVN-USD: YFinance returned empty data for RVN-USD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for RVN-USD
+
+2025-03-03 15:03:20,179 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for RVN-USD: Failed to fetch data from YFinance for RVN-USD: YFinance returned empty data for RVN-USD
+2025-03-03 15:03:20,180 - ERROR - Scripts.data_manager - All 4 attempts failed for RVN-USD
+2025-03-03 15:03:20,181 - ERROR - Scripts.data_manager - Error processing ticker RVN-USD: Failed to fetch data after 4 attempts
+2025-03-03 15:03:20,182 - INFO - Scripts.data_manager - Processing GOOGL (10/29)
+2025-03-03 15:03:20,183 - INFO - Scripts.data_manager - Fetching data from Finnhub for GOOGL with interval 1d
+2025-03-03 15:03:20,820 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for GOOGL: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:03:20,824 - INFO - Scripts.data_manager - Falling back to YFinance for GOOGL
+2025-03-03 15:03:20,825 - INFO - Scripts.data_manager - Fetching data from YFinance for GOOGL with interval 1d
+2025-03-03 15:03:21,493 - ERROR - Scripts.data_manager - Error fetching data from YFinance for GOOGL: YFinance returned empty data for GOOGL
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for GOOGL
+
+2025-03-03 15:03:21,496 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for GOOGL: Failed to fetch data from YFinance for GOOGL: YFinance returned empty data for GOOGL
+2025-03-03 15:03:21,497 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:03:23,500 - INFO - Scripts.data_manager - Fetching data from Finnhub for GOOGL with interval 1d
+2025-03-03 15:03:25,441 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for GOOGL: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:03:25,446 - INFO - Scripts.data_manager - Falling back to YFinance for GOOGL
+2025-03-03 15:03:25,447 - INFO - Scripts.data_manager - Fetching data from YFinance for GOOGL with interval 1d
+2025-03-03 15:03:27,173 - ERROR - Scripts.data_manager - Error fetching data from YFinance for GOOGL: YFinance returned empty data for GOOGL
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for GOOGL
+
+2025-03-03 15:03:27,176 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for GOOGL: Failed to fetch data from YFinance for GOOGL: YFinance returned empty data for GOOGL
+2025-03-03 15:03:27,177 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:03:31,191 - INFO - Scripts.data_manager - Fetching data from Finnhub for GOOGL with interval 1d
+2025-03-03 15:03:35,911 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for GOOGL: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:03:35,915 - INFO - Scripts.data_manager - Falling back to YFinance for GOOGL
+2025-03-03 15:03:35,916 - INFO - Scripts.data_manager - Fetching data from YFinance for GOOGL with interval 1d
+2025-03-03 15:03:38,297 - ERROR - Scripts.data_manager - Error fetching data from YFinance for GOOGL: YFinance returned empty data for GOOGL
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for GOOGL
+
+2025-03-03 15:03:38,336 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for GOOGL: Failed to fetch data from YFinance for GOOGL: YFinance returned empty data for GOOGL
+2025-03-03 15:03:38,345 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:03:46,389 - INFO - Scripts.data_manager - Fetching data from Finnhub for GOOGL with interval 1d
+2025-03-03 15:03:47,047 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for GOOGL: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:03:47,050 - INFO - Scripts.data_manager - Falling back to YFinance for GOOGL
+2025-03-03 15:03:47,051 - INFO - Scripts.data_manager - Fetching data from YFinance for GOOGL with interval 1d
+2025-03-03 15:03:47,739 - ERROR - Scripts.data_manager - Error fetching data from YFinance for GOOGL: YFinance returned empty data for GOOGL
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for GOOGL
+
+2025-03-03 15:03:47,742 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for GOOGL: Failed to fetch data from YFinance for GOOGL: YFinance returned empty data for GOOGL
+2025-03-03 15:03:47,743 - ERROR - Scripts.data_manager - All 4 attempts failed for GOOGL
+2025-03-03 15:03:47,743 - ERROR - Scripts.data_manager - Error processing ticker GOOGL: Failed to fetch data after 4 attempts
+2025-03-03 15:03:47,744 - INFO - Scripts.data_manager - Processing T (11/29)
+2025-03-03 15:03:47,745 - INFO - Scripts.data_manager - Fetching data from Finnhub for T with interval 1d
+2025-03-03 15:03:48,328 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for T: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:03:48,330 - INFO - Scripts.data_manager - Falling back to YFinance for T
+2025-03-03 15:03:48,330 - INFO - Scripts.data_manager - Fetching data from YFinance for T with interval 1d
+2025-03-03 15:03:48,956 - ERROR - Scripts.data_manager - Error fetching data from YFinance for T: YFinance returned empty data for T
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for T
+
+2025-03-03 15:03:48,959 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for T: Failed to fetch data from YFinance for T: YFinance returned empty data for T
+2025-03-03 15:03:48,960 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:03:50,977 - INFO - Scripts.data_manager - Fetching data from Finnhub for T with interval 1d
+2025-03-03 15:03:51,574 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for T: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:03:51,577 - INFO - Scripts.data_manager - Falling back to YFinance for T
+2025-03-03 15:03:51,578 - INFO - Scripts.data_manager - Fetching data from YFinance for T with interval 1d
+2025-03-03 15:03:52,293 - ERROR - Scripts.data_manager - Error fetching data from YFinance for T: YFinance returned empty data for T
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for T
+
+2025-03-03 15:03:52,295 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for T: Failed to fetch data from YFinance for T: YFinance returned empty data for T
+2025-03-03 15:03:52,296 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:03:56,305 - INFO - Scripts.data_manager - Fetching data from Finnhub for T with interval 1d
+2025-03-03 15:03:56,977 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for T: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:03:56,980 - INFO - Scripts.data_manager - Falling back to YFinance for T
+2025-03-03 15:03:56,981 - INFO - Scripts.data_manager - Fetching data from YFinance for T with interval 1d
+2025-03-03 15:03:57,658 - ERROR - Scripts.data_manager - Error fetching data from YFinance for T: YFinance returned empty data for T
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for T
+
+2025-03-03 15:03:57,661 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for T: Failed to fetch data from YFinance for T: YFinance returned empty data for T
+2025-03-03 15:03:57,661 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:04:05,677 - INFO - Scripts.data_manager - Fetching data from Finnhub for T with interval 1d
+2025-03-03 15:04:06,407 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for T: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:04:06,410 - INFO - Scripts.data_manager - Falling back to YFinance for T
+2025-03-03 15:04:06,411 - INFO - Scripts.data_manager - Fetching data from YFinance for T with interval 1d
+2025-03-03 15:04:08,172 - ERROR - Scripts.data_manager - Error fetching data from YFinance for T: YFinance returned empty data for T
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for T
+
+2025-03-03 15:04:08,176 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for T: Failed to fetch data from YFinance for T: YFinance returned empty data for T
+2025-03-03 15:04:08,178 - ERROR - Scripts.data_manager - All 4 attempts failed for T
+2025-03-03 15:04:08,179 - ERROR - Scripts.data_manager - Error processing ticker T: Failed to fetch data after 4 attempts
+2025-03-03 15:04:08,182 - INFO - Scripts.data_manager - Processing AMZN (12/29)
+2025-03-03 15:04:08,195 - INFO - Scripts.data_manager - Fetching data from Finnhub for AMZN with interval 1d
+2025-03-03 15:04:09,365 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for AMZN: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:04:09,367 - INFO - Scripts.data_manager - Falling back to YFinance for AMZN
+2025-03-03 15:04:09,368 - INFO - Scripts.data_manager - Fetching data from YFinance for AMZN with interval 1d
+2025-03-03 15:04:10,004 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AMZN: YFinance returned empty data for AMZN
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AMZN
+
+2025-03-03 15:04:10,007 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for AMZN: Failed to fetch data from YFinance for AMZN: YFinance returned empty data for AMZN
+2025-03-03 15:04:10,008 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:04:12,013 - INFO - Scripts.data_manager - Fetching data from Finnhub for AMZN with interval 1d
+2025-03-03 15:04:14,615 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for AMZN: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:04:14,619 - INFO - Scripts.data_manager - Falling back to YFinance for AMZN
+2025-03-03 15:04:14,619 - INFO - Scripts.data_manager - Fetching data from YFinance for AMZN with interval 1d
+2025-03-03 15:04:15,580 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AMZN: YFinance returned empty data for AMZN
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AMZN
+
+2025-03-03 15:04:15,584 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for AMZN: Failed to fetch data from YFinance for AMZN: YFinance returned empty data for AMZN
+2025-03-03 15:04:15,585 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:04:19,594 - INFO - Scripts.data_manager - Fetching data from Finnhub for AMZN with interval 1d
+2025-03-03 15:04:20,197 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for AMZN: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:04:20,199 - INFO - Scripts.data_manager - Falling back to YFinance for AMZN
+2025-03-03 15:04:20,200 - INFO - Scripts.data_manager - Fetching data from YFinance for AMZN with interval 1d
+2025-03-03 15:04:20,860 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AMZN: YFinance returned empty data for AMZN
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AMZN
+
+2025-03-03 15:04:20,863 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for AMZN: Failed to fetch data from YFinance for AMZN: YFinance returned empty data for AMZN
+2025-03-03 15:04:20,864 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:04:28,871 - INFO - Scripts.data_manager - Fetching data from Finnhub for AMZN with interval 1d
+2025-03-03 15:04:29,500 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for AMZN: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:04:29,503 - INFO - Scripts.data_manager - Falling back to YFinance for AMZN
+2025-03-03 15:04:29,504 - INFO - Scripts.data_manager - Fetching data from YFinance for AMZN with interval 1d
+2025-03-03 15:04:30,175 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AMZN: YFinance returned empty data for AMZN
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AMZN
+
+2025-03-03 15:04:30,178 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for AMZN: Failed to fetch data from YFinance for AMZN: YFinance returned empty data for AMZN
+2025-03-03 15:04:30,179 - ERROR - Scripts.data_manager - All 4 attempts failed for AMZN
+2025-03-03 15:04:30,180 - ERROR - Scripts.data_manager - Error processing ticker AMZN: Failed to fetch data after 4 attempts
+2025-03-03 15:04:30,181 - INFO - Scripts.data_manager - Processing NVDA (13/29)
+2025-03-03 15:04:30,182 - INFO - Scripts.data_manager - Fetching data from Finnhub for NVDA with interval 1d
+2025-03-03 15:04:30,864 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for NVDA: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:04:30,866 - INFO - Scripts.data_manager - Falling back to YFinance for NVDA
+2025-03-03 15:04:30,867 - INFO - Scripts.data_manager - Fetching data from YFinance for NVDA with interval 1d
+2025-03-03 15:04:31,508 - ERROR - Scripts.data_manager - Error fetching data from YFinance for NVDA: YFinance returned empty data for NVDA
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for NVDA
+
+2025-03-03 15:04:31,511 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for NVDA: Failed to fetch data from YFinance for NVDA: YFinance returned empty data for NVDA
+2025-03-03 15:04:31,512 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:04:33,526 - INFO - Scripts.data_manager - Fetching data from Finnhub for NVDA with interval 1d
+2025-03-03 15:04:34,137 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for NVDA: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:04:34,139 - INFO - Scripts.data_manager - Falling back to YFinance for NVDA
+2025-03-03 15:04:34,140 - INFO - Scripts.data_manager - Fetching data from YFinance for NVDA with interval 1d
+2025-03-03 15:04:34,844 - ERROR - Scripts.data_manager - Error fetching data from YFinance for NVDA: YFinance returned empty data for NVDA
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for NVDA
+
+2025-03-03 15:04:34,846 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for NVDA: Failed to fetch data from YFinance for NVDA: YFinance returned empty data for NVDA
+2025-03-03 15:04:34,847 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:04:38,849 - INFO - Scripts.data_manager - Fetching data from Finnhub for NVDA with interval 1d
+2025-03-03 15:04:39,490 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for NVDA: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:04:39,493 - INFO - Scripts.data_manager - Falling back to YFinance for NVDA
+2025-03-03 15:04:39,494 - INFO - Scripts.data_manager - Fetching data from YFinance for NVDA with interval 1d
+2025-03-03 15:04:40,148 - ERROR - Scripts.data_manager - Error fetching data from YFinance for NVDA: YFinance returned empty data for NVDA
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for NVDA
+
+2025-03-03 15:04:40,151 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for NVDA: Failed to fetch data from YFinance for NVDA: YFinance returned empty data for NVDA
+2025-03-03 15:04:40,152 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:04:48,160 - INFO - Scripts.data_manager - Fetching data from Finnhub for NVDA with interval 1d
+2025-03-03 15:04:48,781 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for NVDA: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:04:48,783 - INFO - Scripts.data_manager - Falling back to YFinance for NVDA
+2025-03-03 15:04:48,784 - INFO - Scripts.data_manager - Fetching data from YFinance for NVDA with interval 1d
+2025-03-03 15:04:51,963 - ERROR - Scripts.data_manager - Error fetching data from YFinance for NVDA: YFinance returned empty data for NVDA
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for NVDA
+
+2025-03-03 15:04:51,974 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for NVDA: Failed to fetch data from YFinance for NVDA: YFinance returned empty data for NVDA
+2025-03-03 15:04:52,010 - ERROR - Scripts.data_manager - All 4 attempts failed for NVDA
+2025-03-03 15:04:52,048 - ERROR - Scripts.data_manager - Error processing ticker NVDA: Failed to fetch data after 4 attempts
+2025-03-03 15:04:52,050 - INFO - Scripts.data_manager - Processing MSFT (14/29)
+2025-03-03 15:04:52,076 - INFO - Scripts.data_manager - Fetching data from Finnhub for MSFT with interval 1d
+2025-03-03 15:04:52,866 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for MSFT: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:04:52,870 - INFO - Scripts.data_manager - Falling back to YFinance for MSFT
+2025-03-03 15:04:52,870 - INFO - Scripts.data_manager - Fetching data from YFinance for MSFT with interval 1d
+2025-03-03 15:04:53,548 - ERROR - Scripts.data_manager - Error fetching data from YFinance for MSFT: YFinance returned empty data for MSFT
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for MSFT
+
+2025-03-03 15:04:53,551 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for MSFT: Failed to fetch data from YFinance for MSFT: YFinance returned empty data for MSFT
+2025-03-03 15:04:53,551 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:04:55,555 - INFO - Scripts.data_manager - Fetching data from Finnhub for MSFT with interval 1d
+2025-03-03 15:04:57,121 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for MSFT: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:04:57,124 - INFO - Scripts.data_manager - Falling back to YFinance for MSFT
+2025-03-03 15:04:57,125 - INFO - Scripts.data_manager - Fetching data from YFinance for MSFT with interval 1d
+2025-03-03 15:04:57,755 - ERROR - Scripts.data_manager - Error fetching data from YFinance for MSFT: YFinance returned empty data for MSFT
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for MSFT
+
+2025-03-03 15:04:57,757 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for MSFT: Failed to fetch data from YFinance for MSFT: YFinance returned empty data for MSFT
+2025-03-03 15:04:57,758 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:05:01,766 - INFO - Scripts.data_manager - Fetching data from Finnhub for MSFT with interval 1d
+2025-03-03 15:05:02,337 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for MSFT: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:05:02,339 - INFO - Scripts.data_manager - Falling back to YFinance for MSFT
+2025-03-03 15:05:02,340 - INFO - Scripts.data_manager - Fetching data from YFinance for MSFT with interval 1d
+2025-03-03 15:05:02,954 - ERROR - Scripts.data_manager - Error fetching data from YFinance for MSFT: YFinance returned empty data for MSFT
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for MSFT
+
+2025-03-03 15:05:02,958 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for MSFT: Failed to fetch data from YFinance for MSFT: YFinance returned empty data for MSFT
+2025-03-03 15:05:02,959 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:05:10,970 - INFO - Scripts.data_manager - Fetching data from Finnhub for MSFT with interval 1d
+2025-03-03 15:05:11,599 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for MSFT: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:05:11,602 - INFO - Scripts.data_manager - Falling back to YFinance for MSFT
+2025-03-03 15:05:11,602 - INFO - Scripts.data_manager - Fetching data from YFinance for MSFT with interval 1d
+2025-03-03 15:05:12,287 - ERROR - Scripts.data_manager - Error fetching data from YFinance for MSFT: YFinance returned empty data for MSFT
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for MSFT
+
+2025-03-03 15:05:12,290 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for MSFT: Failed to fetch data from YFinance for MSFT: YFinance returned empty data for MSFT
+2025-03-03 15:05:12,291 - ERROR - Scripts.data_manager - All 4 attempts failed for MSFT
+2025-03-03 15:05:12,291 - ERROR - Scripts.data_manager - Error processing ticker MSFT: Failed to fetch data after 4 attempts
+2025-03-03 15:05:12,292 - INFO - Scripts.data_manager - Processing META (15/29)
+2025-03-03 15:05:12,293 - INFO - Scripts.data_manager - Fetching data from Finnhub for META with interval 1d
+2025-03-03 15:05:12,873 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for META: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:05:12,876 - INFO - Scripts.data_manager - Falling back to YFinance for META
+2025-03-03 15:05:12,877 - INFO - Scripts.data_manager - Fetching data from YFinance for META with interval 1d
+2025-03-03 15:05:13,591 - ERROR - Scripts.data_manager - Error fetching data from YFinance for META: YFinance returned empty data for META
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for META
+
+2025-03-03 15:05:13,594 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for META: Failed to fetch data from YFinance for META: YFinance returned empty data for META
+2025-03-03 15:05:13,595 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:05:15,605 - INFO - Scripts.data_manager - Fetching data from Finnhub for META with interval 1d
+2025-03-03 15:05:16,427 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for META: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:05:16,430 - INFO - Scripts.data_manager - Falling back to YFinance for META
+2025-03-03 15:05:16,431 - INFO - Scripts.data_manager - Fetching data from YFinance for META with interval 1d
+2025-03-03 15:05:17,087 - ERROR - Scripts.data_manager - Error fetching data from YFinance for META: YFinance returned empty data for META
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for META
+
+2025-03-03 15:05:17,090 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for META: Failed to fetch data from YFinance for META: YFinance returned empty data for META
+2025-03-03 15:05:17,091 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:05:21,107 - INFO - Scripts.data_manager - Fetching data from Finnhub for META with interval 1d
+2025-03-03 15:05:21,730 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for META: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:05:21,733 - INFO - Scripts.data_manager - Falling back to YFinance for META
+2025-03-03 15:05:21,734 - INFO - Scripts.data_manager - Fetching data from YFinance for META with interval 1d
+2025-03-03 15:05:22,426 - ERROR - Scripts.data_manager - Error fetching data from YFinance for META: YFinance returned empty data for META
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for META
+
+2025-03-03 15:05:22,428 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for META: Failed to fetch data from YFinance for META: YFinance returned empty data for META
+2025-03-03 15:05:22,429 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:05:30,439 - INFO - Scripts.data_manager - Fetching data from Finnhub for META with interval 1d
+2025-03-03 15:05:31,125 - ERROR - Scripts.data_manager - Error fetching data from Finnhub for META: FinnhubAPIException(status_code: 403): You don't have access to this resource.
+2025-03-03 15:05:31,128 - INFO - Scripts.data_manager - Falling back to YFinance for META
+2025-03-03 15:05:31,129 - INFO - Scripts.data_manager - Fetching data from YFinance for META with interval 1d
+2025-03-03 15:05:31,805 - ERROR - Scripts.data_manager - Error fetching data from YFinance for META: YFinance returned empty data for META
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for META
+
+2025-03-03 15:05:31,808 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for META: Failed to fetch data from YFinance for META: YFinance returned empty data for META
+2025-03-03 15:05:31,809 - ERROR - Scripts.data_manager - All 4 attempts failed for META
+2025-03-03 15:05:31,810 - ERROR - Scripts.data_manager - Error processing ticker META: Failed to fetch data after 4 attempts
+2025-03-03 15:05:31,811 - INFO - Scripts.data_manager - Processing STLA (16/29)
+2025-03-03 15:05:31,812 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3294 seconds.
+2025-03-03 15:05:31,813 - INFO - Scripts.data_manager - Falling back to YFinance for STLA
+2025-03-03 15:05:31,813 - INFO - Scripts.data_manager - Fetching data from YFinance for STLA with interval 1d
+2025-03-03 15:05:32,616 - ERROR - Scripts.data_manager - Error fetching data from YFinance for STLA: YFinance returned empty data for STLA
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for STLA
+
+2025-03-03 15:05:32,619 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for STLA: Failed to fetch data from YFinance for STLA: YFinance returned empty data for STLA
+2025-03-03 15:05:32,619 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:05:34,622 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3292 seconds.
+2025-03-03 15:05:34,623 - INFO - Scripts.data_manager - Falling back to YFinance for STLA
+2025-03-03 15:05:34,624 - INFO - Scripts.data_manager - Fetching data from YFinance for STLA with interval 1d
+2025-03-03 15:05:35,329 - ERROR - Scripts.data_manager - Error fetching data from YFinance for STLA: YFinance returned empty data for STLA
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for STLA
+
+2025-03-03 15:05:35,332 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for STLA: Failed to fetch data from YFinance for STLA: YFinance returned empty data for STLA
+2025-03-03 15:05:35,333 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:05:39,335 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3287 seconds.
+2025-03-03 15:05:39,336 - INFO - Scripts.data_manager - Falling back to YFinance for STLA
+2025-03-03 15:05:39,336 - INFO - Scripts.data_manager - Fetching data from YFinance for STLA with interval 1d
+2025-03-03 15:05:40,062 - ERROR - Scripts.data_manager - Error fetching data from YFinance for STLA: YFinance returned empty data for STLA
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for STLA
+
+2025-03-03 15:05:40,065 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for STLA: Failed to fetch data from YFinance for STLA: YFinance returned empty data for STLA
+2025-03-03 15:05:40,066 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:05:48,070 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3278 seconds.
+2025-03-03 15:05:48,071 - INFO - Scripts.data_manager - Falling back to YFinance for STLA
+2025-03-03 15:05:48,072 - INFO - Scripts.data_manager - Fetching data from YFinance for STLA with interval 1d
+2025-03-03 15:05:49,297 - ERROR - Scripts.data_manager - Error fetching data from YFinance for STLA: YFinance returned empty data for STLA
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for STLA
+
+2025-03-03 15:05:49,299 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for STLA: Failed to fetch data from YFinance for STLA: YFinance returned empty data for STLA
+2025-03-03 15:05:49,301 - ERROR - Scripts.data_manager - All 4 attempts failed for STLA
+2025-03-03 15:05:49,302 - ERROR - Scripts.data_manager - Error processing ticker STLA: Failed to fetch data after 4 attempts
+2025-03-03 15:05:49,303 - INFO - Scripts.data_manager - Processing AMD (17/29)
+2025-03-03 15:05:49,303 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3277 seconds.
+2025-03-03 15:05:49,305 - INFO - Scripts.data_manager - Falling back to YFinance for AMD
+2025-03-03 15:05:49,305 - INFO - Scripts.data_manager - Fetching data from YFinance for AMD with interval 1d
+2025-03-03 15:05:50,472 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AMD: YFinance returned empty data for AMD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AMD
+
+2025-03-03 15:05:50,475 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for AMD: Failed to fetch data from YFinance for AMD: YFinance returned empty data for AMD
+2025-03-03 15:05:50,476 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:05:52,484 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3274 seconds.
+2025-03-03 15:05:52,485 - INFO - Scripts.data_manager - Falling back to YFinance for AMD
+2025-03-03 15:05:52,486 - INFO - Scripts.data_manager - Fetching data from YFinance for AMD with interval 1d
+2025-03-03 15:05:53,634 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AMD: YFinance returned empty data for AMD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AMD
+
+2025-03-03 15:05:53,637 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for AMD: Failed to fetch data from YFinance for AMD: YFinance returned empty data for AMD
+2025-03-03 15:05:53,638 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:05:57,647 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3268 seconds.
+2025-03-03 15:05:57,648 - INFO - Scripts.data_manager - Falling back to YFinance for AMD
+2025-03-03 15:05:57,648 - INFO - Scripts.data_manager - Fetching data from YFinance for AMD with interval 1d
+2025-03-03 15:05:58,804 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AMD: YFinance returned empty data for AMD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AMD
+
+2025-03-03 15:05:58,807 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for AMD: Failed to fetch data from YFinance for AMD: YFinance returned empty data for AMD
+2025-03-03 15:05:58,808 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:06:06,825 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3259 seconds.
+2025-03-03 15:06:06,826 - INFO - Scripts.data_manager - Falling back to YFinance for AMD
+2025-03-03 15:06:06,827 - INFO - Scripts.data_manager - Fetching data from YFinance for AMD with interval 1d
+2025-03-03 15:06:07,521 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AMD: YFinance returned empty data for AMD
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AMD
+
+2025-03-03 15:06:07,524 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for AMD: Failed to fetch data from YFinance for AMD: YFinance returned empty data for AMD
+2025-03-03 15:06:07,525 - ERROR - Scripts.data_manager - All 4 attempts failed for AMD
+2025-03-03 15:06:07,526 - ERROR - Scripts.data_manager - Error processing ticker AMD: Failed to fetch data after 4 attempts
+2025-03-03 15:06:07,527 - INFO - Scripts.data_manager - Processing INTC (18/29)
+2025-03-03 15:06:07,527 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3259 seconds.
+2025-03-03 15:06:07,528 - INFO - Scripts.data_manager - Falling back to YFinance for INTC
+2025-03-03 15:06:07,529 - INFO - Scripts.data_manager - Fetching data from YFinance for INTC with interval 1d
+2025-03-03 15:06:08,178 - ERROR - Scripts.data_manager - Error fetching data from YFinance for INTC: YFinance returned empty data for INTC
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for INTC
+
+2025-03-03 15:06:08,181 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for INTC: Failed to fetch data from YFinance for INTC: YFinance returned empty data for INTC
+2025-03-03 15:06:08,182 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:06:10,186 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3256 seconds.
+2025-03-03 15:06:10,187 - INFO - Scripts.data_manager - Falling back to YFinance for INTC
+2025-03-03 15:06:10,188 - INFO - Scripts.data_manager - Fetching data from YFinance for INTC with interval 1d
+2025-03-03 15:06:10,872 - ERROR - Scripts.data_manager - Error fetching data from YFinance for INTC: YFinance returned empty data for INTC
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for INTC
+
+2025-03-03 15:06:10,877 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for INTC: Failed to fetch data from YFinance for INTC: YFinance returned empty data for INTC
+2025-03-03 15:06:10,878 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:06:14,893 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3251 seconds.
+2025-03-03 15:06:14,894 - INFO - Scripts.data_manager - Falling back to YFinance for INTC
+2025-03-03 15:06:14,894 - INFO - Scripts.data_manager - Fetching data from YFinance for INTC with interval 1d
+2025-03-03 15:06:15,613 - ERROR - Scripts.data_manager - Error fetching data from YFinance for INTC: YFinance returned empty data for INTC
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for INTC
+
+2025-03-03 15:06:15,616 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for INTC: Failed to fetch data from YFinance for INTC: YFinance returned empty data for INTC
+2025-03-03 15:06:15,617 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:06:23,632 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3242 seconds.
+2025-03-03 15:06:23,633 - INFO - Scripts.data_manager - Falling back to YFinance for INTC
+2025-03-03 15:06:23,634 - INFO - Scripts.data_manager - Fetching data from YFinance for INTC with interval 1d
+2025-03-03 15:06:24,368 - ERROR - Scripts.data_manager - Error fetching data from YFinance for INTC: YFinance returned empty data for INTC
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for INTC
+
+2025-03-03 15:06:24,371 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for INTC: Failed to fetch data from YFinance for INTC: YFinance returned empty data for INTC
+2025-03-03 15:06:24,372 - ERROR - Scripts.data_manager - All 4 attempts failed for INTC
+2025-03-03 15:06:24,373 - ERROR - Scripts.data_manager - Error processing ticker INTC: Failed to fetch data after 4 attempts
+2025-03-03 15:06:24,374 - INFO - Scripts.data_manager - Processing SQ (19/29)
+2025-03-03 15:06:24,375 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3242 seconds.
+2025-03-03 15:06:24,376 - INFO - Scripts.data_manager - Falling back to YFinance for SQ
+2025-03-03 15:06:24,376 - INFO - Scripts.data_manager - Fetching data from YFinance for SQ with interval 1d
+2025-03-03 15:06:24,997 - ERROR - Scripts.data_manager - Error fetching data from YFinance for SQ: YFinance returned empty data for SQ
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for SQ
+
+2025-03-03 15:06:24,999 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for SQ: Failed to fetch data from YFinance for SQ: YFinance returned empty data for SQ
+2025-03-03 15:06:25,000 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:06:27,002 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3239 seconds.
+2025-03-03 15:06:27,003 - INFO - Scripts.data_manager - Falling back to YFinance for SQ
+2025-03-03 15:06:27,004 - INFO - Scripts.data_manager - Fetching data from YFinance for SQ with interval 1d
+2025-03-03 15:06:27,648 - ERROR - Scripts.data_manager - Error fetching data from YFinance for SQ: YFinance returned empty data for SQ
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for SQ
+
+2025-03-03 15:06:27,651 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for SQ: Failed to fetch data from YFinance for SQ: YFinance returned empty data for SQ
+2025-03-03 15:06:27,652 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:06:31,661 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3234 seconds.
+2025-03-03 15:06:31,662 - INFO - Scripts.data_manager - Falling back to YFinance for SQ
+2025-03-03 15:06:31,663 - INFO - Scripts.data_manager - Fetching data from YFinance for SQ with interval 1d
+2025-03-03 15:06:32,322 - ERROR - Scripts.data_manager - Error fetching data from YFinance for SQ: YFinance returned empty data for SQ
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for SQ
+
+2025-03-03 15:06:32,324 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for SQ: Failed to fetch data from YFinance for SQ: YFinance returned empty data for SQ
+2025-03-03 15:06:32,325 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:06:40,342 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3226 seconds.
+2025-03-03 15:06:40,343 - INFO - Scripts.data_manager - Falling back to YFinance for SQ
+2025-03-03 15:06:40,344 - INFO - Scripts.data_manager - Fetching data from YFinance for SQ with interval 1d
+2025-03-03 15:06:41,030 - ERROR - Scripts.data_manager - Error fetching data from YFinance for SQ: YFinance returned empty data for SQ
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for SQ
+
+2025-03-03 15:06:41,033 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for SQ: Failed to fetch data from YFinance for SQ: YFinance returned empty data for SQ
+2025-03-03 15:06:41,034 - ERROR - Scripts.data_manager - All 4 attempts failed for SQ
+2025-03-03 15:06:41,034 - ERROR - Scripts.data_manager - Error processing ticker SQ: Failed to fetch data after 4 attempts
+2025-03-03 15:06:41,035 - INFO - Scripts.data_manager - Processing NET (20/29)
+2025-03-03 15:06:41,035 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3225 seconds.
+2025-03-03 15:06:41,036 - INFO - Scripts.data_manager - Falling back to YFinance for NET
+2025-03-03 15:06:41,036 - INFO - Scripts.data_manager - Fetching data from YFinance for NET with interval 1d
+2025-03-03 15:06:41,724 - ERROR - Scripts.data_manager - Error fetching data from YFinance for NET: YFinance returned empty data for NET
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for NET
+
+2025-03-03 15:06:41,727 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for NET: Failed to fetch data from YFinance for NET: YFinance returned empty data for NET
+2025-03-03 15:06:41,728 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:06:43,732 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3222 seconds.
+2025-03-03 15:06:43,733 - INFO - Scripts.data_manager - Falling back to YFinance for NET
+2025-03-03 15:06:43,734 - INFO - Scripts.data_manager - Fetching data from YFinance for NET with interval 1d
+2025-03-03 15:06:44,342 - ERROR - Scripts.data_manager - Error fetching data from YFinance for NET: YFinance returned empty data for NET
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for NET
+
+2025-03-03 15:06:44,345 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for NET: Failed to fetch data from YFinance for NET: YFinance returned empty data for NET
+2025-03-03 15:06:44,346 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:06:48,356 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3218 seconds.
+2025-03-03 15:06:48,357 - INFO - Scripts.data_manager - Falling back to YFinance for NET
+2025-03-03 15:06:48,358 - INFO - Scripts.data_manager - Fetching data from YFinance for NET with interval 1d
+2025-03-03 15:06:48,990 - ERROR - Scripts.data_manager - Error fetching data from YFinance for NET: YFinance returned empty data for NET
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for NET
+
+2025-03-03 15:06:48,993 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for NET: Failed to fetch data from YFinance for NET: YFinance returned empty data for NET
+2025-03-03 15:06:48,995 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:06:57,003 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3209 seconds.
+2025-03-03 15:06:57,004 - INFO - Scripts.data_manager - Falling back to YFinance for NET
+2025-03-03 15:06:57,005 - INFO - Scripts.data_manager - Fetching data from YFinance for NET with interval 1d
+2025-03-03 15:06:57,741 - ERROR - Scripts.data_manager - Error fetching data from YFinance for NET: YFinance returned empty data for NET
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for NET
+
+2025-03-03 15:06:57,744 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for NET: Failed to fetch data from YFinance for NET: YFinance returned empty data for NET
+2025-03-03 15:06:57,745 - ERROR - Scripts.data_manager - All 4 attempts failed for NET
+2025-03-03 15:06:57,745 - ERROR - Scripts.data_manager - Error processing ticker NET: Failed to fetch data after 4 attempts
+2025-03-03 15:06:57,747 - INFO - Scripts.data_manager - Processing ZM (21/29)
+2025-03-03 15:06:57,747 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3208 seconds.
+2025-03-03 15:06:57,749 - INFO - Scripts.data_manager - Falling back to YFinance for ZM
+2025-03-03 15:06:57,750 - INFO - Scripts.data_manager - Fetching data from YFinance for ZM with interval 1d
+2025-03-03 15:06:58,371 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ZM: YFinance returned empty data for ZM
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ZM
+
+2025-03-03 15:06:58,374 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for ZM: Failed to fetch data from YFinance for ZM: YFinance returned empty data for ZM
+2025-03-03 15:06:58,375 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:07:00,377 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3206 seconds.
+2025-03-03 15:07:00,378 - INFO - Scripts.data_manager - Falling back to YFinance for ZM
+2025-03-03 15:07:00,379 - INFO - Scripts.data_manager - Fetching data from YFinance for ZM with interval 1d
+2025-03-03 15:07:01,104 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ZM: YFinance returned empty data for ZM
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ZM
+
+2025-03-03 15:07:01,106 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for ZM: Failed to fetch data from YFinance for ZM: YFinance returned empty data for ZM
+2025-03-03 15:07:01,107 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:07:05,109 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3201 seconds.
+2025-03-03 15:07:05,110 - INFO - Scripts.data_manager - Falling back to YFinance for ZM
+2025-03-03 15:07:05,111 - INFO - Scripts.data_manager - Fetching data from YFinance for ZM with interval 1d
+2025-03-03 15:07:05,786 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ZM: YFinance returned empty data for ZM
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ZM
+
+2025-03-03 15:07:05,789 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for ZM: Failed to fetch data from YFinance for ZM: YFinance returned empty data for ZM
+2025-03-03 15:07:05,790 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:07:13,823 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3192 seconds.
+2025-03-03 15:07:13,826 - INFO - Scripts.data_manager - Falling back to YFinance for ZM
+2025-03-03 15:07:13,827 - INFO - Scripts.data_manager - Fetching data from YFinance for ZM with interval 1d
+2025-03-03 15:07:14,478 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ZM: YFinance returned empty data for ZM
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ZM
+
+2025-03-03 15:07:14,481 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for ZM: Failed to fetch data from YFinance for ZM: YFinance returned empty data for ZM
+2025-03-03 15:07:14,482 - ERROR - Scripts.data_manager - All 4 attempts failed for ZM
+2025-03-03 15:07:14,482 - ERROR - Scripts.data_manager - Error processing ticker ZM: Failed to fetch data after 4 attempts
+2025-03-03 15:07:14,483 - INFO - Scripts.data_manager - Processing ROKU (22/29)
+2025-03-03 15:07:14,483 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3192 seconds.
+2025-03-03 15:07:14,484 - INFO - Scripts.data_manager - Falling back to YFinance for ROKU
+2025-03-03 15:07:14,484 - INFO - Scripts.data_manager - Fetching data from YFinance for ROKU with interval 1d
+2025-03-03 15:07:15,121 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ROKU: YFinance returned empty data for ROKU
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ROKU
+
+2025-03-03 15:07:15,124 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for ROKU: Failed to fetch data from YFinance for ROKU: YFinance returned empty data for ROKU
+2025-03-03 15:07:15,125 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:07:17,128 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3189 seconds.
+2025-03-03 15:07:17,129 - INFO - Scripts.data_manager - Falling back to YFinance for ROKU
+2025-03-03 15:07:17,130 - INFO - Scripts.data_manager - Fetching data from YFinance for ROKU with interval 1d
+2025-03-03 15:07:17,805 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ROKU: YFinance returned empty data for ROKU
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ROKU
+
+2025-03-03 15:07:17,808 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for ROKU: Failed to fetch data from YFinance for ROKU: YFinance returned empty data for ROKU
+2025-03-03 15:07:17,809 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:07:21,825 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3184 seconds.
+2025-03-03 15:07:21,826 - INFO - Scripts.data_manager - Falling back to YFinance for ROKU
+2025-03-03 15:07:21,827 - INFO - Scripts.data_manager - Fetching data from YFinance for ROKU with interval 1d
+2025-03-03 15:07:22,518 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ROKU: YFinance returned empty data for ROKU
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ROKU
+
+2025-03-03 15:07:22,522 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for ROKU: Failed to fetch data from YFinance for ROKU: YFinance returned empty data for ROKU
+2025-03-03 15:07:22,522 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:07:30,525 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3176 seconds.
+2025-03-03 15:07:30,526 - INFO - Scripts.data_manager - Falling back to YFinance for ROKU
+2025-03-03 15:07:30,526 - INFO - Scripts.data_manager - Fetching data from YFinance for ROKU with interval 1d
+2025-03-03 15:07:31,278 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ROKU: YFinance returned empty data for ROKU
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ROKU
+
+2025-03-03 15:07:31,281 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for ROKU: Failed to fetch data from YFinance for ROKU: YFinance returned empty data for ROKU
+2025-03-03 15:07:31,282 - ERROR - Scripts.data_manager - All 4 attempts failed for ROKU
+2025-03-03 15:07:31,283 - ERROR - Scripts.data_manager - Error processing ticker ROKU: Failed to fetch data after 4 attempts
+2025-03-03 15:07:31,284 - INFO - Scripts.data_manager - Processing AAPL (23/29)
+2025-03-03 15:07:31,285 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3175 seconds.
+2025-03-03 15:07:31,286 - INFO - Scripts.data_manager - Falling back to YFinance for AAPL
+2025-03-03 15:07:31,287 - INFO - Scripts.data_manager - Fetching data from YFinance for AAPL with interval 1d
+2025-03-03 15:07:32,136 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AAPL: YFinance returned empty data for AAPL
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AAPL
+
+2025-03-03 15:07:32,139 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for AAPL: Failed to fetch data from YFinance for AAPL: YFinance returned empty data for AAPL
+2025-03-03 15:07:32,141 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:07:34,147 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3172 seconds.
+2025-03-03 15:07:34,148 - INFO - Scripts.data_manager - Falling back to YFinance for AAPL
+2025-03-03 15:07:34,148 - INFO - Scripts.data_manager - Fetching data from YFinance for AAPL with interval 1d
+2025-03-03 15:07:34,824 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AAPL: YFinance returned empty data for AAPL
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AAPL
+
+2025-03-03 15:07:34,826 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for AAPL: Failed to fetch data from YFinance for AAPL: YFinance returned empty data for AAPL
+2025-03-03 15:07:34,827 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:07:38,833 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3167 seconds.
+2025-03-03 15:07:38,834 - INFO - Scripts.data_manager - Falling back to YFinance for AAPL
+2025-03-03 15:07:38,835 - INFO - Scripts.data_manager - Fetching data from YFinance for AAPL with interval 1d
+2025-03-03 15:07:39,476 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AAPL: YFinance returned empty data for AAPL
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AAPL
+
+2025-03-03 15:07:39,479 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for AAPL: Failed to fetch data from YFinance for AAPL: YFinance returned empty data for AAPL
+2025-03-03 15:07:39,480 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:07:47,484 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3159 seconds.
+2025-03-03 15:07:47,485 - INFO - Scripts.data_manager - Falling back to YFinance for AAPL
+2025-03-03 15:07:47,486 - INFO - Scripts.data_manager - Fetching data from YFinance for AAPL with interval 1d
+2025-03-03 15:07:48,133 - ERROR - Scripts.data_manager - Error fetching data from YFinance for AAPL: YFinance returned empty data for AAPL
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for AAPL
+
+2025-03-03 15:07:48,135 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for AAPL: Failed to fetch data from YFinance for AAPL: YFinance returned empty data for AAPL
+2025-03-03 15:07:48,136 - ERROR - Scripts.data_manager - All 4 attempts failed for AAPL
+2025-03-03 15:07:48,137 - ERROR - Scripts.data_manager - Error processing ticker AAPL: Failed to fetch data after 4 attempts
+2025-03-03 15:07:48,138 - INFO - Scripts.data_manager - Processing TSLA (24/29)
+2025-03-03 15:07:48,138 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3158 seconds.
+2025-03-03 15:07:48,139 - INFO - Scripts.data_manager - Falling back to YFinance for TSLA
+2025-03-03 15:07:48,140 - INFO - Scripts.data_manager - Fetching data from YFinance for TSLA with interval 1d
+2025-03-03 15:07:48,763 - ERROR - Scripts.data_manager - Error fetching data from YFinance for TSLA: YFinance returned empty data for TSLA
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for TSLA
+
+2025-03-03 15:07:48,766 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for TSLA: Failed to fetch data from YFinance for TSLA: YFinance returned empty data for TSLA
+2025-03-03 15:07:48,767 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:07:50,782 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3155 seconds.
+2025-03-03 15:07:50,783 - INFO - Scripts.data_manager - Falling back to YFinance for TSLA
+2025-03-03 15:07:50,784 - INFO - Scripts.data_manager - Fetching data from YFinance for TSLA with interval 1d
+2025-03-03 15:07:51,398 - ERROR - Scripts.data_manager - Error fetching data from YFinance for TSLA: YFinance returned empty data for TSLA
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for TSLA
+
+2025-03-03 15:07:51,401 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for TSLA: Failed to fetch data from YFinance for TSLA: YFinance returned empty data for TSLA
+2025-03-03 15:07:51,402 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:07:55,416 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3151 seconds.
+2025-03-03 15:07:55,416 - INFO - Scripts.data_manager - Falling back to YFinance for TSLA
+2025-03-03 15:07:55,417 - INFO - Scripts.data_manager - Fetching data from YFinance for TSLA with interval 1d
+2025-03-03 15:07:56,027 - ERROR - Scripts.data_manager - Error fetching data from YFinance for TSLA: YFinance returned empty data for TSLA
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for TSLA
+
+2025-03-03 15:07:56,030 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for TSLA: Failed to fetch data from YFinance for TSLA: YFinance returned empty data for TSLA
+2025-03-03 15:07:56,031 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:08:04,036 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3142 seconds.
+2025-03-03 15:08:04,037 - INFO - Scripts.data_manager - Falling back to YFinance for TSLA
+2025-03-03 15:08:04,038 - INFO - Scripts.data_manager - Fetching data from YFinance for TSLA with interval 1d
+2025-03-03 15:08:04,823 - ERROR - Scripts.data_manager - Error fetching data from YFinance for TSLA: YFinance returned empty data for TSLA
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for TSLA
+
+2025-03-03 15:08:04,825 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for TSLA: Failed to fetch data from YFinance for TSLA: YFinance returned empty data for TSLA
+2025-03-03 15:08:04,827 - ERROR - Scripts.data_manager - All 4 attempts failed for TSLA
+2025-03-03 15:08:04,827 - ERROR - Scripts.data_manager - Error processing ticker TSLA: Failed to fetch data after 4 attempts
+2025-03-03 15:08:04,828 - INFO - Scripts.data_manager - Processing NFLX (25/29)
+2025-03-03 15:08:04,829 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3141 seconds.
+2025-03-03 15:08:04,831 - INFO - Scripts.data_manager - Falling back to YFinance for NFLX
+2025-03-03 15:08:04,831 - INFO - Scripts.data_manager - Fetching data from YFinance for NFLX with interval 1d
+2025-03-03 15:08:05,589 - ERROR - Scripts.data_manager - Error fetching data from YFinance for NFLX: YFinance returned empty data for NFLX
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for NFLX
+
+2025-03-03 15:08:05,592 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for NFLX: Failed to fetch data from YFinance for NFLX: YFinance returned empty data for NFLX
+2025-03-03 15:08:05,593 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:08:07,609 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3139 seconds.
+2025-03-03 15:08:07,610 - INFO - Scripts.data_manager - Falling back to YFinance for NFLX
+2025-03-03 15:08:07,611 - INFO - Scripts.data_manager - Fetching data from YFinance for NFLX with interval 1d
+2025-03-03 15:08:08,253 - ERROR - Scripts.data_manager - Error fetching data from YFinance for NFLX: YFinance returned empty data for NFLX
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for NFLX
+
+2025-03-03 15:08:08,255 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for NFLX: Failed to fetch data from YFinance for NFLX: YFinance returned empty data for NFLX
+2025-03-03 15:08:08,256 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:08:12,272 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3134 seconds.
+2025-03-03 15:08:12,273 - INFO - Scripts.data_manager - Falling back to YFinance for NFLX
+2025-03-03 15:08:12,273 - INFO - Scripts.data_manager - Fetching data from YFinance for NFLX with interval 1d
+2025-03-03 15:08:12,998 - ERROR - Scripts.data_manager - Error fetching data from YFinance for NFLX: YFinance returned empty data for NFLX
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for NFLX
+
+2025-03-03 15:08:13,002 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for NFLX: Failed to fetch data from YFinance for NFLX: YFinance returned empty data for NFLX
+2025-03-03 15:08:13,003 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:08:21,011 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3125 seconds.
+2025-03-03 15:08:21,012 - INFO - Scripts.data_manager - Falling back to YFinance for NFLX
+2025-03-03 15:08:21,013 - INFO - Scripts.data_manager - Fetching data from YFinance for NFLX with interval 1d
+2025-03-03 15:08:21,660 - ERROR - Scripts.data_manager - Error fetching data from YFinance for NFLX: YFinance returned empty data for NFLX
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for NFLX
+
+2025-03-03 15:08:21,663 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for NFLX: Failed to fetch data from YFinance for NFLX: YFinance returned empty data for NFLX
+2025-03-03 15:08:21,664 - ERROR - Scripts.data_manager - All 4 attempts failed for NFLX
+2025-03-03 15:08:21,665 - ERROR - Scripts.data_manager - Error processing ticker NFLX: Failed to fetch data after 4 attempts
+2025-03-03 15:08:21,666 - INFO - Scripts.data_manager - Processing SPY (26/29)
+2025-03-03 15:08:21,667 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3124 seconds.
+2025-03-03 15:08:21,668 - INFO - Scripts.data_manager - Falling back to YFinance for SPY
+2025-03-03 15:08:21,669 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 424 seconds.
+2025-03-03 15:08:31,680 - INFO - Scripts.data_manager - Fetching data from YFinance for SPY with interval 1d
+2025-03-03 15:08:32,341 - ERROR - Scripts.data_manager - Error fetching data from YFinance for SPY: YFinance returned empty data for SPY
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for SPY
+
+2025-03-03 15:08:32,344 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for SPY: Failed to fetch data from YFinance for SPY: YFinance returned empty data for SPY
+2025-03-03 15:08:32,345 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:08:34,357 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3112 seconds.
+2025-03-03 15:08:34,358 - INFO - Scripts.data_manager - Falling back to YFinance for SPY
+2025-03-03 15:08:34,359 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 412 seconds.
+2025-03-03 15:08:44,366 - INFO - Scripts.data_manager - Fetching data from YFinance for SPY with interval 1d
+2025-03-03 15:08:45,038 - ERROR - Scripts.data_manager - Error fetching data from YFinance for SPY: YFinance returned empty data for SPY
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for SPY
+
+2025-03-03 15:08:45,041 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for SPY: Failed to fetch data from YFinance for SPY: YFinance returned empty data for SPY
+2025-03-03 15:08:45,042 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:08:49,047 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3097 seconds.
+2025-03-03 15:08:49,047 - INFO - Scripts.data_manager - Falling back to YFinance for SPY
+2025-03-03 15:08:49,048 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 397 seconds.
+2025-03-03 15:08:59,057 - INFO - Scripts.data_manager - Fetching data from YFinance for SPY with interval 1d
+2025-03-03 15:09:00,201 - ERROR - Scripts.data_manager - Error fetching data from YFinance for SPY: YFinance returned empty data for SPY
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for SPY
+
+2025-03-03 15:09:00,204 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for SPY: Failed to fetch data from YFinance for SPY: YFinance returned empty data for SPY
+2025-03-03 15:09:00,205 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:09:08,208 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3078 seconds.
+2025-03-03 15:09:08,209 - INFO - Scripts.data_manager - Falling back to YFinance for SPY
+2025-03-03 15:09:08,210 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 378 seconds.
+2025-03-03 15:09:18,216 - INFO - Scripts.data_manager - Fetching data from YFinance for SPY with interval 1d
+2025-03-03 15:09:18,883 - ERROR - Scripts.data_manager - Error fetching data from YFinance for SPY: YFinance returned empty data for SPY
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for SPY
+
+2025-03-03 15:09:18,885 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for SPY: Failed to fetch data from YFinance for SPY: YFinance returned empty data for SPY
+2025-03-03 15:09:18,887 - ERROR - Scripts.data_manager - All 4 attempts failed for SPY
+2025-03-03 15:09:18,887 - ERROR - Scripts.data_manager - Error processing ticker SPY: Failed to fetch data after 4 attempts
+2025-03-03 15:09:18,888 - INFO - Scripts.data_manager - Processing ARK (27/29)
+2025-03-03 15:09:18,888 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3067 seconds.
+2025-03-03 15:09:18,889 - INFO - Scripts.data_manager - Falling back to YFinance for ARK
+2025-03-03 15:09:18,890 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 367 seconds.
+2025-03-03 15:09:28,892 - INFO - Scripts.data_manager - Fetching data from YFinance for ARK with interval 1d
+2025-03-03 15:09:29,526 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ARK: YFinance returned empty data for ARK
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ARK
+
+2025-03-03 15:09:29,528 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for ARK: Failed to fetch data from YFinance for ARK: YFinance returned empty data for ARK
+2025-03-03 15:09:29,529 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:09:31,534 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3055 seconds.
+2025-03-03 15:09:31,535 - INFO - Scripts.data_manager - Falling back to YFinance for ARK
+2025-03-03 15:09:31,535 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 355 seconds.
+2025-03-03 15:09:41,549 - INFO - Scripts.data_manager - Fetching data from YFinance for ARK with interval 1d
+2025-03-03 15:09:42,197 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ARK: YFinance returned empty data for ARK
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ARK
+
+2025-03-03 15:09:42,199 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for ARK: Failed to fetch data from YFinance for ARK: YFinance returned empty data for ARK
+2025-03-03 15:09:42,200 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:09:46,206 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3040 seconds.
+2025-03-03 15:09:46,207 - INFO - Scripts.data_manager - Falling back to YFinance for ARK
+2025-03-03 15:09:46,208 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 340 seconds.
+2025-03-03 15:09:56,215 - INFO - Scripts.data_manager - Fetching data from YFinance for ARK with interval 1d
+2025-03-03 15:09:56,845 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ARK: YFinance returned empty data for ARK
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ARK
+
+2025-03-03 15:09:56,848 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for ARK: Failed to fetch data from YFinance for ARK: YFinance returned empty data for ARK
+2025-03-03 15:09:56,849 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:10:04,860 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3021 seconds.
+2025-03-03 15:10:04,861 - INFO - Scripts.data_manager - Falling back to YFinance for ARK
+2025-03-03 15:10:04,861 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 321 seconds.
+2025-03-03 15:10:14,877 - INFO - Scripts.data_manager - Fetching data from YFinance for ARK with interval 1d
+2025-03-03 15:10:15,638 - ERROR - Scripts.data_manager - Error fetching data from YFinance for ARK: YFinance returned empty data for ARK
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for ARK
+
+2025-03-03 15:10:15,641 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for ARK: Failed to fetch data from YFinance for ARK: YFinance returned empty data for ARK
+2025-03-03 15:10:15,642 - ERROR - Scripts.data_manager - All 4 attempts failed for ARK
+2025-03-03 15:10:15,643 - ERROR - Scripts.data_manager - Error processing ticker ARK: Failed to fetch data after 4 attempts
+2025-03-03 15:10:15,644 - INFO - Scripts.data_manager - Processing KBWB (28/29)
+2025-03-03 15:10:15,645 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 3010 seconds.
+2025-03-03 15:10:15,646 - INFO - Scripts.data_manager - Falling back to YFinance for KBWB
+2025-03-03 15:10:15,646 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 310 seconds.
+2025-03-03 15:10:25,651 - INFO - Scripts.data_manager - Fetching data from YFinance for KBWB with interval 1d
+2025-03-03 15:10:26,560 - ERROR - Scripts.data_manager - Error fetching data from YFinance for KBWB: YFinance returned empty data for KBWB
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for KBWB
+
+2025-03-03 15:10:26,563 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for KBWB: Failed to fetch data from YFinance for KBWB: YFinance returned empty data for KBWB
+2025-03-03 15:10:26,564 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:10:28,570 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 2998 seconds.
+2025-03-03 15:10:28,570 - INFO - Scripts.data_manager - Falling back to YFinance for KBWB
+2025-03-03 15:10:28,571 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 298 seconds.
+2025-03-03 15:10:38,582 - INFO - Scripts.data_manager - Fetching data from YFinance for KBWB with interval 1d
+2025-03-03 15:10:39,303 - ERROR - Scripts.data_manager - Error fetching data from YFinance for KBWB: YFinance returned empty data for KBWB
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for KBWB
+
+2025-03-03 15:10:39,306 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for KBWB: Failed to fetch data from YFinance for KBWB: YFinance returned empty data for KBWB
+2025-03-03 15:10:39,307 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:10:43,314 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 2983 seconds.
+2025-03-03 15:10:43,314 - INFO - Scripts.data_manager - Falling back to YFinance for KBWB
+2025-03-03 15:10:43,315 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 283 seconds.
+2025-03-03 15:10:53,319 - INFO - Scripts.data_manager - Fetching data from YFinance for KBWB with interval 1d
+2025-03-03 15:10:54,077 - ERROR - Scripts.data_manager - Error fetching data from YFinance for KBWB: YFinance returned empty data for KBWB
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for KBWB
+
+2025-03-03 15:10:54,080 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for KBWB: Failed to fetch data from YFinance for KBWB: YFinance returned empty data for KBWB
+2025-03-03 15:10:54,081 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:11:02,096 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 2964 seconds.
+2025-03-03 15:11:02,097 - INFO - Scripts.data_manager - Falling back to YFinance for KBWB
+2025-03-03 15:11:02,098 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 264 seconds.
+2025-03-03 15:11:12,108 - INFO - Scripts.data_manager - Fetching data from YFinance for KBWB with interval 1d
+2025-03-03 15:11:13,002 - ERROR - Scripts.data_manager - Error fetching data from YFinance for KBWB: YFinance returned empty data for KBWB
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for KBWB
+
+2025-03-03 15:11:13,004 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for KBWB: Failed to fetch data from YFinance for KBWB: YFinance returned empty data for KBWB
+2025-03-03 15:11:13,005 - ERROR - Scripts.data_manager - All 4 attempts failed for KBWB
+2025-03-03 15:11:13,005 - ERROR - Scripts.data_manager - Error processing ticker KBWB: Failed to fetch data after 4 attempts
+2025-03-03 15:11:13,006 - INFO - Scripts.data_manager - Processing XLC (29/29)
+2025-03-03 15:11:13,007 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 2953 seconds.
+2025-03-03 15:11:13,008 - INFO - Scripts.data_manager - Falling back to YFinance for XLC
+2025-03-03 15:11:13,009 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 253 seconds.
+2025-03-03 15:11:23,016 - INFO - Scripts.data_manager - Fetching data from YFinance for XLC with interval 1d
+2025-03-03 15:11:23,709 - ERROR - Scripts.data_manager - Error fetching data from YFinance for XLC: YFinance returned empty data for XLC
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for XLC
+
+2025-03-03 15:11:23,711 - WARNING - Scripts.data_manager - Fetch attempt 1 failed for XLC: Failed to fetch data from YFinance for XLC: YFinance returned empty data for XLC
+2025-03-03 15:11:23,712 - INFO - Scripts.data_manager - Retrying in 2 seconds...
+2025-03-03 15:11:25,714 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 2940 seconds.
+2025-03-03 15:11:25,715 - INFO - Scripts.data_manager - Falling back to YFinance for XLC
+2025-03-03 15:11:25,716 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 240 seconds.
+2025-03-03 15:11:35,730 - INFO - Scripts.data_manager - Fetching data from YFinance for XLC with interval 1d
+2025-03-03 15:11:36,393 - ERROR - Scripts.data_manager - Error fetching data from YFinance for XLC: YFinance returned empty data for XLC
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for XLC
+
+2025-03-03 15:11:36,397 - WARNING - Scripts.data_manager - Fetch attempt 2 failed for XLC: Failed to fetch data from YFinance for XLC: YFinance returned empty data for XLC
+2025-03-03 15:11:36,398 - INFO - Scripts.data_manager - Retrying in 4 seconds...
+2025-03-03 15:11:40,411 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 2926 seconds.
+2025-03-03 15:11:40,412 - INFO - Scripts.data_manager - Falling back to YFinance for XLC
+2025-03-03 15:11:40,412 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 226 seconds.
+2025-03-03 15:11:50,429 - INFO - Scripts.data_manager - Fetching data from YFinance for XLC with interval 1d
+2025-03-03 15:11:51,105 - ERROR - Scripts.data_manager - Error fetching data from YFinance for XLC: YFinance returned empty data for XLC
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for XLC
+
+2025-03-03 15:11:51,108 - WARNING - Scripts.data_manager - Fetch attempt 3 failed for XLC: Failed to fetch data from YFinance for XLC: YFinance returned empty data for XLC
+2025-03-03 15:11:51,109 - INFO - Scripts.data_manager - Retrying in 8 seconds...
+2025-03-03 15:11:59,117 - WARNING - Scripts.data_manager - Finnhub rate limit reached. Need to wait 2907 seconds.
+2025-03-03 15:11:59,118 - INFO - Scripts.data_manager - Falling back to YFinance for XLC
+2025-03-03 15:11:59,118 - WARNING - Scripts.data_manager - YFinance rate limit reached. Need to wait 207 seconds.
+2025-03-03 15:12:09,120 - INFO - Scripts.data_manager - Fetching data from YFinance for XLC with interval 1d
+2025-03-03 15:12:09,829 - ERROR - Scripts.data_manager - Error fetching data from YFinance for XLC: YFinance returned empty data for XLC
+Traceback (most recent call last):
+  File "c:\Users\clubs\Desktop\Prediction Model\Scripts\data_manager.py", line 227, in fetch_ticker_data_yfinance
+    raise DataFetchError(f"YFinance returned empty data for {ticker}")
+Scripts.data_manager.DataFetchError: YFinance returned empty data for XLC
+
+2025-03-03 15:12:09,832 - WARNING - Scripts.data_manager - Fetch attempt 4 failed for XLC: Failed to fetch data from YFinance for XLC: YFinance returned empty data for XLC
+2025-03-03 15:12:09,833 - ERROR - Scripts.data_manager - All 4 attempts failed for XLC
+2025-03-03 15:12:09,834 - ERROR - Scripts.data_manager - Error processing ticker XLC: Failed to fetch data after 4 attempts
+2025-03-03 15:12:09,834 - INFO - Scripts.data_manager - Data refresh cycle completed in 703.64 seconds
+2025-03-03 15:12:09,835 - INFO - Scripts.data_manager - Sleeping for 2896.36 seconds until next refresh
+2025-03-03 15:17:56,735 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 15:17:56,736 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 17:48:01,886 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 17:48:01,887 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT

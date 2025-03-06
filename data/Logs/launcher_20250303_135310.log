@@ -1,0 +1,9 @@
+
+2025-03-03 14:18:12,930 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 14:18:12,931 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 14:18:14,147 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 14:18:14,148 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 14:18:14,367 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 14:18:14,368 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT
+2025-03-03 14:18:14,613 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 14:18:14,614 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Signal SIGINT

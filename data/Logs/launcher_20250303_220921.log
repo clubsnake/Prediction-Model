@@ -1,0 +1,21 @@
+2025-03-03 22:09:21,711 - INFO - launcher - Logs will be saved to: c:\Users\clubs\Desktop\Prediction Model\Data\logs\launcher_20250303_220921.log
+2025-03-03 22:09:24,112 - INFO - Scripts.dashboard_shutdown - Dashboard shutdown handlers initialized
+2025-03-03 22:09:24,116 - INFO - launcher - Launcher initialized
+2025-03-03 22:09:34,739 - INFO - launcher - Starting model training...
+2025-03-03 22:09:34,751 - INFO - launcher - Starting log monitor for model_training
+2025-03-03 22:09:34,751 - INFO - launcher - Model training started
+2025-03-03 22:09:34,825 - ERROR - launcher - model_training stderr | Traceback (most recent call last):
+2025-03-03 22:09:34,828 - ERROR - launcher - model_training stderr | File "C:\Users\clubs\Desktop\Prediction Model\scripts\optimization_handler.py", line 3, in <module>
+2025-03-03 22:09:34,829 - ERROR - launcher - model_training stderr | from Scripts.env_setup import setup_tf_environment
+2025-03-03 22:09:34,830 - ERROR - launcher - model_training stderr | ModuleNotFoundError: No module named 'Scripts.env_setup'
+2025-03-03 22:09:34,831 - INFO - launcher - Log monitor for model_training stopped
+2025-03-03 22:30:07,394 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 22:30:07,395 - INFO - Scripts.robust_handler - Initiating graceful shutdown (source: Signal SIGINT)
+2025-03-03 22:30:07,396 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup_dashboard_components
+2025-03-03 22:30:07,397 - INFO - Scripts.dashboard_shutdown - Dashboard cleanup completed
+2025-03-03 22:30:07,399 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup
+2025-03-03 22:30:07,399 - INFO - launcher - Cleaning up launcher resources...
+2025-03-03 22:30:07,399 - INFO - launcher - Launcher cleanup completed
+2025-03-03 22:30:07,400 - INFO - Scripts.robust_handler - Graceful shutdown completed
+2025-03-03 22:30:09,943 - INFO - Scripts.robust_handler - Shutdown already initiated. Ignoring request from Interactive mode exit
+2025-03-03 22:30:09,945 - INFO - Scripts.dashboard_shutdown - Dashboard cleanup completed

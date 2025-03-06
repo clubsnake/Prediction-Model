@@ -1,0 +1,21 @@
+2025-03-03 21:27:18,840 - INFO - launcher - Logs will be saved to: c:\Users\clubs\Desktop\Prediction Model\Data\logs\launcher_20250303_212718.log
+2025-03-03 21:27:20,926 - INFO - Scripts.dashboard_shutdown - Dashboard shutdown handlers initialized
+2025-03-03 21:27:20,930 - INFO - launcher - Launcher initialized
+2025-03-03 21:27:25,488 - INFO - launcher - Starting dashboard on port 8501...
+2025-03-03 21:27:25,502 - INFO - launcher - Starting log monitor for dashboard
+2025-03-03 21:27:28,130 - INFO - launcher - dashboard | 
+2025-03-03 21:27:28,131 - INFO - launcher - dashboard | You can now view your Streamlit app in your browser.
+2025-03-03 21:27:28,132 - INFO - launcher - dashboard | 
+2025-03-03 21:27:28,133 - INFO - launcher - dashboard | URL: http://localhost:8501
+2025-03-03 21:27:28,133 - INFO - launcher - dashboard | 
+2025-03-03 21:27:29,528 - INFO - launcher - Dashboard started on http://localhost:8501
+2025-03-03 21:28:35,241 - INFO - Scripts.robust_handler - Received signal SIGINT
+2025-03-03 21:28:35,242 - INFO - Scripts.robust_handler - Initiating graceful shutdown (source: Signal SIGINT)
+2025-03-03 21:28:35,243 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup_dashboard_components
+2025-03-03 21:28:35,245 - INFO - Scripts.dashboard_shutdown - Dashboard cleanup completed
+2025-03-03 21:28:35,245 - INFO - Scripts.robust_handler - Running shutdown callback: cleanup
+2025-03-03 21:28:35,246 - INFO - launcher - Cleaning up launcher resources...
+2025-03-03 21:28:35,247 - INFO - launcher - Terminating process: dashboard
+2025-03-03 21:28:35,290 - INFO - launcher - Log monitor for dashboard stopped
+2025-03-03 21:28:35,340 - INFO - launcher - Launcher cleanup completed
+2025-03-03 21:28:35,341 - INFO - Scripts.robust_handler - Graceful shutdown completed
