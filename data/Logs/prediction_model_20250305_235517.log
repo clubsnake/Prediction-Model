@@ -1,6 +1,0 @@
-2025-03-05 23:55:17,057 - prediction_model - INFO - Logging to file: C:\Users\clubs\Desktop\Prediction Model\data\Logs\prediction_model_20250305_235517.log
-2025-03-05 23:55:19,292 - prediction_model - ERROR - Critical error in main dashboard: name 'load_latest_progress' is not defined
-Traceback (most recent call last):
-  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 285, in main_dashboard
-    progress = load_latest_progress(ticker=ticker, timeframe=timeframe)
-NameError: name 'load_latest_progress' is not defined

@@ -7,10 +7,11 @@ Functions for loading and processing data for the dashboard.
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import streamlit as st
 import os
 import sys
+end_date = datetime.now()
 
 # Add project root to sys.path if not already there
 current_file = os.path.abspath(__file__)
@@ -24,8 +25,14 @@ if project_root not in sys.path:
 
 # Try to import with error handling
 try:
-    from dashboard_error import robust_error_boundary
+    from src.dashboard.dashboard.dashboard_error import robust_error_boundary
     from config.logger_config import logger
+    
+    # Try to import sequence_utils if available
+    try:
+        from src.data.sequence_utils import numba_mse, numba_mape, vectorized_sequence_creation
+    except ImportError:
+        logger.warning("Could not import sequence_utils. Some optimizations will be unavailable.")
 except ImportError as e:
     # Set up basic logger if import fails
     logging.basicConfig(level=logging.INFO)
@@ -51,33 +58,102 @@ else:
     streamlit_cache = st.cache(ttl=600, allow_output_mutation=True)
 
 
+def ensure_date_column(df, default_name='date'):
+    """
+    Ensure the dataframe has a proper datetime date column.
+    
+    Args:
+        df: DataFrame to process
+        default_name: Default column name to use for the date column
+        
+    Returns:
+        tuple: (DataFrame with guaranteed date column, name of date column)
+    """
+    # Handle invalid dataframe cases
+    if df is None:
+        return None, default_name
+    
+    # Check if we received a tuple instead of a DataFrame
+    if isinstance(df, tuple):
+        logger.error(f"Received tuple instead of DataFrame: {df}")
+        return None, default_name
+        
+    if hasattr(df, 'empty') and df.empty:
+        return df, default_name
+    
+    df = df.copy()  # Don't modify the original
+    
+    # Safely process column names
+    date_col = None
+    date_cols = []
+    for col in df.columns:
+        if isinstance(col, str) and 'date' in col.lower():
+            date_cols.append(col)
+        elif not isinstance(col, str):
+            logger.warning(f"Non-string column name encountered: {type(col)}")
+    
+    # Try to find an existing date column
+    if 'date' in df.columns:
+        date_col = 'date'
+    elif 'Date' in df.columns:
+        date_col = 'Date'
+    elif date_cols:
+        date_col = date_cols[0]
+    
+    # If no date column but index is datetime, convert index to column
+    if date_col is None and isinstance(df.index, pd.DatetimeIndex):
+        df[default_name] = df.index
+        date_col = default_name
+    
+    # If still no date column, create a synthetic one
+    if date_col is None:
+        df[default_name] = pd.date_range(start=datetime.now() - timedelta(days=len(df)), periods=len(df))
+        date_col = default_name
+    
+    # Ensure date column is datetime type
+    try:
+        df[date_col] = pd.to_datetime(df[date_col])
+    except Exception as e:
+        logger.warning(f"Error converting {date_col} to datetime: {e}")
+        # If conversion fails, create a new date column
+        df[default_name] = pd.date_range(start=datetime.now() - timedelta(days=len(df)), periods=len(df))
+        date_col = default_name
+    
+    return df, date_col
+
+
 @robust_error_boundary
 @streamlit_cache  # Using our compatible cache decorator
 def load_data(ticker, start_date, end_date=None, interval="1d", training_mode=False):
     """Load market data with caching and robust error handling"""
     try:
-        # Attempt to load data from the API
+        # Convert string dates to datetime if needed
+        if isinstance(start_date, str):
+            start_date = pd.to_datetime(start_date).date()
+        if isinstance(end_date, str) and end_date is not None:
+            end_date = pd.to_datetime(end_date).date()
+
+        # Handle future dates - use current date as the end date for API call
+        current_date = datetime.now().date()
+        if end_date and end_date > current_date:
+            logger.info(f"End date {end_date} is in the future. Using current date {current_date} for API call.")
+            api_end_date = current_date
+        else:
+            api_end_date = end_date
+
+        # Attempt to load data from the API using adjusted end date
         df = fetch_data_from_api(
-            ticker, start_date, end_date, interval
+            ticker, start_date, api_end_date, interval
         )
 
         if df is None or df.empty:
             logging.warning(
-                f"No data received from API for {ticker} between {start_date} and {end_date}"
+                f"No data received from API for {ticker} between {start_date} and {api_end_date}"
             )
             return None
             
         # Ensure the date column is properly handled
-        if isinstance(df.index, pd.DatetimeIndex):
-            df = df.reset_index()
-            if 'Date' in df.columns and 'date' not in df.columns:
-                df = df.rename(columns={'Date': 'date'})
-            elif 'index' in df.columns and 'date' not in df.columns:
-                df = df.rename(columns={'index': 'date'})
-                
-        # Ensure date column is datetime type
-        if 'date' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['date']):
-            df['date'] = pd.to_datetime(df['date'], errors='coerce')
+        df, _ = ensure_date_column(df)
 
         return df
 
@@ -102,21 +178,30 @@ def fetch_data_from_api(ticker, start_date, end_date, interval):
     try:
         import yfinance as yf
 
+        # Ensure start_date and end_date are strings (yfinance expects string dates)
+        if not isinstance(start_date, str):
+            start_date = start_date.strftime('%Y-%m-%d')
+        
+        if end_date is not None and not isinstance(end_date, str):
+            end_date = end_date.strftime('%Y-%m-%d')
+        
+        # If end_date is None, use current date
+        if end_date is None:
+            end_date = datetime.now().strftime('%Y-%m-%d')
+
         # Show a download message in the UI
         with st.spinner(f"Downloading data for {ticker}..."):
             data = yf.download(ticker, start=start_date, end=end_date, interval=interval)
         
         if data is not None and not data.empty:
             # Consistently add date column
-            data = data.reset_index()
-            # Normalize column name to lowercase 'date'
-            if 'Date' in data.columns and 'date' not in data.columns:
-                data = data.rename(columns={'Date': 'date'})
+            data, _ = ensure_date_column(data)
             return data
         else:
+            logger.warning(f"No data received from API for {ticker} between {start_date} and {end_date}")
             return None
     except Exception as e:
-        logging.error(f"Error fetching data from yfinance: {e}", exc_info=True)
+        logger.error(f"Error fetching data from yfinance: {e}", exc_info=True)
         return None
 
 
@@ -136,11 +221,7 @@ def load_data_from_backup(ticker, start_date, end_date, interval):
                     df = pd.read_csv(filepath)
                     
                     # Ensure date column is properly formatted
-                    if 'date' in df.columns:
-                        df['date'] = pd.to_datetime(df['date'], errors='coerce')
-                    elif 'Date' in df.columns:
-                        df['date'] = pd.to_datetime(df['Date'], errors='coerce')
-                        df = df.drop(columns=['Date'])
+                    df, _ = ensure_date_column(df)
                         
                     return df
         
@@ -148,72 +229,84 @@ def load_data_from_backup(ticker, start_date, end_date, interval):
         st.warning(f"No backup data found for {ticker}")
         return None
     except Exception as e:
-        logging.error(f"Error loading data from backup file: {e}", exc_info=True)
+        logging.error(f"Error loading data from backup file: {e}")
         return None
 
 
 @robust_error_boundary
-def calculate_indicators(data):
-    """Calculate technical indicators for the data"""
-    if data is None or data.empty:
-        return data
-
-    try:
-        # Make a copy to avoid modifying the original
-        df = data.copy()
+def calculate_indicators(df):
+    """
+    Calculate technical indicators for the given dataframe.
+    
+    Args:
+        df: DataFrame with OHLCV data
         
-        # Ensure there's a Date column with consistent name
-        if "Date" in df.columns:
-            df = df.rename(columns={"Date": "date"})
-        elif "date" not in df.columns:
-            # If neither exists, create from index if possible
-            if isinstance(df.index, pd.DatetimeIndex):
-                df["date"] = df.index
-            else:
-                # Last resort: create a dummy date column
-                df["date"] = pd.date_range(start="2020-01-01", periods=len(df))
-
-        # Calculate moving averages
-        df["MA_20"] = df["Close"].rolling(window=20).mean()
-        df["MA_50"] = df["Close"].rolling(window=50).mean()
-        df["MA_200"] = df["Close"].rolling(window=200).mean()
-
-        # Bollinger Bands
-        df["BB_Middle"] = df["Close"].rolling(window=20).mean()
-        df["BB_Std"] = df["Close"].rolling(window=20).std()
-        df["BB_Upper"] = df["BB_Middle"] + (df["BB_Std"] * 2)
-        df["BB_Lower"] = df["BB_Middle"] - (df["BB_Std"] * 2)
-
+    Returns:
+        DataFrame with added technical indicators
+    """
+    if df is None or df.empty:
+        return df
+        
+    # Create a copy to avoid modifying the original
+    df = df.copy()
+    
+    # Check for required columns
+    required_cols = ['Open', 'High', 'Low', 'Close']
+    if not all(col in df.columns for col in required_cols):
+        logger.warning(f"Missing required columns for indicators. Have: {df.columns.tolist()}")
+        return df
+        
+    try:
+        # Simple Moving Averages
+        df['MA20'] = df['Close'].rolling(window=20).mean()
+        df['MA50'] = df['Close'].rolling(window=50).mean()
+        df['MA200'] = df['Close'].rolling(window=200).mean()
+        
+        # Exponential Moving Averages
+        df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
+        df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
+        
+        # MACD
+        df['MACD'] = df['EMA12'] - df['EMA26']
+        df['MACD_signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+        df['MACD_hist'] = df['MACD'] - df['MACD_signal']
+        
         # RSI
-        delta = df["Close"].diff()
+        delta = df['Close'].diff()
         gain = delta.where(delta > 0, 0)
         loss = -delta.where(delta < 0, 0)
         avg_gain = gain.rolling(window=14).mean()
         avg_loss = loss.rolling(window=14).mean()
-        rs = avg_gain / avg_loss.replace(0, np.finfo(float).eps)
-        df["RSI"] = 100 - (100 / (1 + rs))
-
-        # MACD
-        exp1 = df["Close"].ewm(span=12, adjust=False).mean()
-        exp2 = df["Close"].ewm(span=26, adjust=False).mean()
-        df["MACD"] = exp1 - exp2
-        df["MACD_Signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
-        df["MACD_Hist"] = df["MACD"] - df["MACD_Signal"]
-
-        # Volume indicators - fixed to avoid DataFrame to Series assignment
-        if "Volume" in df.columns:
-            df["Volume_MA_20"] = df["Volume"].rolling(window=20).mean()
-            
-            # Fix for the Volume_Ratio calculation
-            # Calculate as a Series operation, not DataFrame
-            vol_ratio = df["Volume"] / df["Volume_MA_20"]
-            df["Volume_Ratio"] = vol_ratio
-
-        return df
+        rs = avg_gain / avg_loss.replace(0, 0.001)  # Avoid division by zero
+        df['RSI'] = 100 - (100 / (1 + rs))
+        
+        # Bollinger Bands
+        df['BB_middle'] = df['Close'].rolling(window=20).mean()
+        df['BB_std'] = df['Close'].rolling(window=20).std()
+        df['BB_upper'] = df['BB_middle'] + 2 * df['BB_std']
+        df['BB_lower'] = df['BB_middle'] - 2 * df['BB_std']
+        
+        # Volume indicators - only if Volume column exists
+        if 'Volume' in df.columns:
+            try:
+                # Volume Moving Average
+                df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
+                
+                # Fix the Volume_Ratio calculation:
+                # 1. Extract Volume as Series to ensure it's not a DataFrame
+                volume_series = df['Volume'].astype(float)
+                # 2. Extract Volume_MA as Series
+                volume_ma_series = df['Volume_MA'].replace(0, 0.001).astype(float)
+                # 3. Perform element-wise division between Series
+                df['Volume_Ratio'] = volume_series.div(volume_ma_series)
+                
+            except Exception as e:
+                logger.error(f"Error calculating volume indicators: {e}", exc_info=True)
+        
     except Exception as e:
         logger.error(f"Error calculating indicators: {e}")
-        # Return the original data if calculation fails
-        return data
+        
+    return df
 
 
 @robust_error_boundary
@@ -240,7 +333,6 @@ def update_progress_display():
         st.session_state["progress_container"].markdown(
             f"### Trial Progress: {current_trial}/{total_trials} ({percent}%)"
         )
-
     with st.session_state["metrics_container"].container():
         cols = st.columns(3)
         with cols[0]:
@@ -282,4 +374,114 @@ def get_stock_sentiment(ticker, days_back=7):
         }
     except Exception as e:
         logger.error(f"Error getting sentiment data: {e}")
+        return None
+
+
+# Add this function to handle forecast generation in the dashboard
+@robust_error_boundary
+def generate_dashboard_forecast(model, df, feature_cols):
+    """
+    Generate forecast for the dashboard using available model.
+    Abstracts the forecast generation to handle different sources.
+    
+    Args:
+        model: Model to use for forecasting
+        df: DataFrame with historical data
+        feature_cols: List of feature column names
+        
+    Returns:
+        List of forecast values
+    """
+    try:
+        # Try multiple approaches to generate forecast
+        
+        # First try walk_forward method (preferred)
+        try:
+            from src.training.walk_forward import generate_future_forecast
+            
+            # Get settings from session state
+            import streamlit as st
+            lookback = st.session_state.get("lookback", 30)
+            forecast_window = st.session_state.get("forecast_window", 30)
+            
+            # Generate and return forecast
+            forecast = generate_future_forecast(model, df, feature_cols, lookback, forecast_window)
+            return forecast
+        except ImportError:
+            logger.info("Could not import generate_future_forecast from walk_forward")
+        
+        # Try prediction service approach
+        try:
+            from src.dashboard.prediction_service import PredictionService
+            
+            service = PredictionService(model_instance=model)
+            import streamlit as st
+            lookback = st.session_state.get("lookback", 30)
+            forecast_window = st.session_state.get("forecast_window", 30)
+            
+            forecast = service.generate_forecast(df, feature_cols, lookback, forecast_window)
+            return forecast
+        except ImportError:
+            logger.info("Could not import PredictionService")
+        
+        # Last resort - basic forecast with direct model calls
+        import streamlit as st
+        from sklearn.preprocessing import StandardScaler
+        
+        lookback = st.session_state.get("lookback", 30)
+        forecast_window = st.session_state.get("forecast_window", 30)
+        
+        # Get the last 'lookback' days of data for input
+        last_data = df.iloc[-lookback:].copy()
+        
+        # Create a scaler for feature normalization
+        scaler = StandardScaler()
+        scaler.fit(last_data[feature_cols])
+        
+        # Initialize array to store predictions
+        future_prices = []
+        current_data = last_data.copy()
+        
+        # Try to get create_sequences from preprocessing
+        try:
+            from src.data.preprocessing import create_sequences
+        except ImportError:
+            # Define a minimal version if not available
+            def create_sequences(data, features, target, window, horizon):
+                import numpy as np
+                X = []
+                for i in range(len(data) - window):
+                    X.append(data[features].values[i:i+window])
+                return np.array(X), None
+        
+        # Create initial input sequence
+        X_input, _ = create_sequences(current_data, feature_cols, "Close", lookback, 1)
+        
+        # Generate forecasts one step at a time
+        for i in range(forecast_window):
+            try:
+                preds = model.predict(X_input, verbose=0)
+                next_price = float(preds[0][0])
+                future_prices.append(next_price)
+                
+                # Update input data with prediction
+                next_row = current_data.iloc[-1:].copy()
+                if isinstance(next_row.index[0], pd.Timestamp):
+                    next_row.index = [next_row.index[0] + pd.Timedelta(days=1)]
+                else:
+                    next_row.index = [next_row.index[0] + 1]
+                
+                next_row["Close"] = next_price
+                current_data = pd.concat([current_data.iloc[1:], next_row])
+                
+                # Create new sequence for next prediction
+                X_input, _ = create_sequences(current_data, feature_cols, "Close", lookback, 1)
+            except Exception as e:
+                logger.error(f"Error in forecast iteration {i}: {e}")
+                break
+        
+        return future_prices
+    
+    except Exception as e:
+        logger.error(f"Error generating dashboard forecast: {e}")
         return None

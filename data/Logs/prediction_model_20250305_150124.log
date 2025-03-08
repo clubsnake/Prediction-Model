@@ -1,6 +1,0 @@
-2025-03-05 15:01:24,190 - prediction_model - INFO - Logging to file: C:\Users\clubs\Desktop\Prediction Model\data\Logs\prediction_model_20250305_150124.log
-2025-03-05 15:01:25,069 - prediction_model - ERROR - Critical error in main dashboard: can't compare datetime.datetime to datetime.date
-Traceback (most recent call last):
-  File "C:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py", line 140, in main_dashboard
-    historical_end_date = min(end_date, datetime.now())
-TypeError: can't compare datetime.datetime to datetime.date

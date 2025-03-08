@@ -1,12 +1,27 @@
 import sys
+import os
 
-from config import PROJECT_ROOT
+# Fix import path
+try:
+    from config.config_loader import get_data_dir
+    from config import __init__ as config_init
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+except ImportError:
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 sys.path.append(PROJECT_ROOT)
-import yaml
 from config.logger_config import logger
 
-from config import BEST_PARAMS_FILE, MODELS_DIR
+# These constants may not exist directly in config
+try:
+    from config.config_loader import get_data_dir
+    MODELS_DIR = get_data_dir("Models")
+    BEST_PARAMS_FILE = os.path.join(get_data_dir("Hyperparameters"), "best_params.yaml")
+except ImportError:
+    # Define fallbacks
+    MODELS_DIR = os.path.join(PROJECT_ROOT, "data", "Models")
+    BEST_PARAMS_FILE = os.path.join(PROJECT_ROOT, "data", "Hyperparameters", "best_params.yaml")
+    logger.warning("Could not import from config.config_loader, using fallback paths")
 
 
 def train_model():

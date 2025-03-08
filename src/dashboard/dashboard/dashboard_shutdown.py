@@ -13,12 +13,47 @@ from typing import Any, Callable, Optional
 
 import streamlit as st
 
-# Import the robust handler
-from src.utils.robust_handler import (
-    initiate_shutdown,
-    register_shutdown_callback,
-    register_thread,
-)
+# Import the dashboard_error module for robust error handling
+try:
+    from src.dashboard.dashboard.dashboard_error import robust_error_boundary, section_error_boundary
+except ImportError:
+    try:
+        from dashboard_error import robust_error_boundary, section_error_boundary
+    except ImportError:
+        # Define simple error boundary if import fails
+        def robust_error_boundary(func):
+            def wrapper(*args, **kwargs):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    print(f"Error in {func.__name__}: {e}")
+                    return None
+            return wrapper
+            
+        @contextmanager
+        def section_error_boundary(section_name):
+            try:
+                yield
+            except Exception as e:
+                print(f"Error in section {section_name}: {e}")
+
+# Try to import from src.utils if available
+try:
+    from src.utils.robust_handler import (
+        initiate_shutdown,
+        register_shutdown_callback,
+        register_thread,
+    )
+except ImportError:
+    # Define fallback implementations if not available
+    def initiate_shutdown(source="unknown"):
+        print(f"Shutdown initiated from {source}")
+        
+    def register_shutdown_callback(callback):
+        atexit.register(callback)
+        
+    def register_thread(thread):
+        pass
 
 # Set up logger
 logger = logging.getLogger(__name__)

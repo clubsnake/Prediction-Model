@@ -1,164 +1,83 @@
-# resource_config.py
 """
-Configures and optimizes GPU/CPU resources with support for both NVIDIA and AMD GPUs.
+Configures system resources and provides an interface to GPU memory management.
+Acts as a thin wrapper around the more comprehensive gpu_memory_management module.
 """
 
 import logging
 import os
+import json
+import sys
 
-from config import get_value
+# Add the project root to the path to ensure we can import from config
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configure threading environment variables BEFORE importing tensorflow
-omp_num_threads = get_value("hardware.omp_num_threads")
-if omp_num_threads:
-    import multiprocessing
+# System resources configuration
+SYSTEM_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'system_config.json')
 
-    num_threads = omp_num_threads if omp_num_threads else multiprocessing.cpu_count()
-    # Set environment variables for threading (this works before TF initialization)
-    os.environ["TF_NUM_INTEROP_THREADS"] = str(num_threads)
-    os.environ["TF_NUM_INTRAOP_THREADS"] = str(num_threads)
-    print(f"Set TensorFlow threading environment to {num_threads} threads")
-
-# Enable additional TensorFlow optimizations via environment variables
-if get_value("hardware.enable_onednn_opts", True):
-    os.environ["TF_ENABLE_ONEDNN_OPTS"] = (
-        "1"  # Enable Intel MKL-DNN optimizations if available
-    )
-
-# Import centralized GPU memory management
-from config.resource_config import         (clean_gpu_memory,
-                                           configure_gpu_memory)
-
-# Configure GPU with settings from config
-memory_config = {
-    "use_gpu": get_value("hardware.use_gpu", True),
-    "allow_growth": True,
-    "memory_limit_mb": (
-        int(get_value("hardware.gpu_memory_fraction", 0.6) * 10000)
-        if get_value("hardware.gpu_memory_fraction", 0.6) < 1.0
-        else None
-    ),
-    "use_xla": get_value("hardware.use_xla", True),
-    "mixed_precision": get_value("hardware.use_mixed_precision", False),
-    "directml_enabled": get_value("hardware.use_directml", True),
-}
-
-# Initialize GPU - This will be ignored if already configured by gpu_memory_management
-gpu_config_result = configure_gpu_memory(memory_config)
-
-
-def list_available_gpus():
-    """
-    Simple utility to list all available GPUs detected by TensorFlow.
-    """
+def load_system_config():
+    """Load system configuration from JSON file"""
     try:
-        import tensorflow as tf
-
-        gpus = tf.config.list_physical_devices("GPU")
-
-        print("\n=== GPU DETECTION ===")
-        print(f"TensorFlow version: {tf.__version__}")
-
-        backend = gpu_config_result.get("backend", "unknown")
-        print(f"Using {backend} backend")
-
-        print(f"GPUs detected: {len(gpus)}")
-        for i, gpu in enumerate(gpus):
-            print(f"  GPU {i}: {gpu}")
-
-        # Additional device info that's helpful for debugging
-        logical_gpus = tf.config.list_logical_devices("GPU")
-        print(f"Logical GPUs: {len(logical_gpus)}")
-
-        if not gpus:
-            print("WARNING: No GPUs detected - using CPU for computation")
-
-        print("====================\n")
-        return gpus
+        if os.path.exists(SYSTEM_CONFIG_PATH):
+            with open(SYSTEM_CONFIG_PATH, 'r') as f:
+                return json.load(f)
+        else:
+            logger.warning(f"System config file not found: {SYSTEM_CONFIG_PATH}")
+            return {}
     except Exception as e:
-        print(f"Error detecting GPUs: {e}")
-        return []
+        logger.error(f"Error loading system config: {e}")
+        return {}
 
-
-def test_gpu_availability():
-    """
-    Run a simple test to verify which device TensorFlow is using and print device placement info.
-    """
+def configure_gpu_resources():
+    """Configure GPU resources using the centralized gpu_memory_management module"""
+    # Load settings from system config
+    system_config = load_system_config()
+    gpu_config = system_config.get('gpu', {})
+    
+    # Get mixed precision setting from both configs (system and user)
     try:
-        import tensorflow as tf
-
-        # Enable device placement logging
-        tf.debugging.set_log_device_placement(True)
-
-        print("\n===== GPU TEST =====")
-        print("Testing TensorFlow device placement...")
-
-        # Create some simple operations to test device placement
-        a = tf.constant([1.0, 2.0, 3.0])
-        b = tf.constant([4.0, 5.0, 6.0])
-        c = tf.add(a, b)
-
-        # Reset device placement logging (so it doesn't affect other operations)
-        tf.debugging.set_log_device_placement(False)
-
-        print("\nGPU test completed successfully")
-        print("===== TEST COMPLETE =====\n")
-
-        return c  # Return the result of the simple operation
-    except Exception as e:
-        print(f"Error testing GPU: {e}")
-        return None
-
-
-def run_gpu_benchmark(size=1000, dtype=None):
-    """
-    Quick benchmark to verify GPU acceleration and measure performance.
-
-    Args:
-        size: Size of matrices to multiply (larger = more intensive)
-        dtype: Data type to use (tf.float32 or tf.float16)
-
-    Returns:
-        Execution time in milliseconds
-    """
+        from config.config_loader import get_value
+        use_mixed_precision = get_value("hardware.use_mixed_precision", False)
+        logger.info(f"Using mixed_precision setting from config: {use_mixed_precision}")
+    except ImportError:
+        # If we can't import config_loader, use the setting from system_config
+        use_mixed_precision = gpu_config.get("use_mixed_precision", False)
+        logger.info(f"Using mixed_precision setting from system config: {use_mixed_precision}")
+    
+    # Set environment variable based on the mixed precision setting
+    if not use_mixed_precision:
+        os.environ["TF_FORCE_FLOAT32"] = "1"
+        logger.info("Setting TF_FORCE_FLOAT32=1 to disable mixed precision")
+    
+    # Import centralized GPU memory management
     try:
-        import time
+        from src.utils.gpu_memory_management import configure_gpu_memory, configure_mixed_precision
+        
+        # Configuration for GPU memory
+        memory_config = {
+            "allow_growth": gpu_config.get("allow_growth", True),
+            "memory_limit_mb": gpu_config.get("memory_limit_mb", None),
+            "visible_gpus": gpu_config.get("visible_gpus", None),
+            "mixed_precision": use_mixed_precision
+        }
+        
+        # Configure GPU memory
+        result = configure_gpu_memory(memory_config)
+        
+        # Explicitly configure mixed precision
+        configure_mixed_precision(use_mixed_precision)
+        
+        return memory_config
+    except ImportError as e:
+        logger.warning(f"GPU memory management utilities not found: {e}")
+        return gpu_config
 
-        import tensorflow as tf
+# Initialize GPU configuration at import time
+GPU_CONFIG = configure_gpu_resources()
 
-        if dtype is None:
-            dtype = tf.float32
-
-        print(f"\n=== RUNNING GPU BENCHMARK (size={size}) ===")
-        # Create two random matrices
-        a = tf.random.normal((size, size), dtype=dtype)
-        b = tf.random.normal((size, size), dtype=dtype)
-
-        # First run - warm up (often slower due to initialization)
-        _ = tf.matmul(a, b)
-
-        # Timed run
-        start = time.time()
-        c = tf.matmul(a, b)
-        # Force evaluation
-        _ = c.numpy()
-        end = time.time()
-
-        execution_ms = (end - start) * 1000
-        print(f"Matrix multiplication ({size}x{size}): {execution_ms:.2f} ms")
-
-        # Clean up memory after benchmark
-        clean_gpu_memory(force_gc=True)
-
-        return execution_ms
-    except Exception as e:
-        print(f"Benchmark failed: {e}")
-        return None
-
-
-# List GPUs at import time for quick feedback
-list_available_gpus()
+# Export configuration for other modules
+GPU_MEMORY_LIMIT = GPU_CONFIG.get("memory_limit_mb")
+USE_MIXED_PRECISION = GPU_CONFIG.get("mixed_precision", False)

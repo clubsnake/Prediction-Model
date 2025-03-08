@@ -67,7 +67,7 @@ def is_stop_requested():
     return stop_event.is_set()
 
 
-def update_progress_in_yaml(progress_file, trial_info):
+def update_trial_info_in_yaml(progress_file, trial_info):
     """
     Update the progress tracking YAML file with information from a trial.
 
@@ -104,6 +104,43 @@ def update_progress_in_yaml(progress_file, trial_info):
             return True
     except Exception as e:
         print(f"Error writing progress file: {e}")
+        return False
+
+
+def update_progress_in_yaml(progress_data, filepath=None):
+    """
+    Update progress in a YAML file.
+    
+    Args:
+        progress_data: Dictionary with progress information
+        filepath: Path to YAML file (optional)
+        
+    Returns:
+        Boolean indicating success
+    """
+    try:
+        # Get project root directory to resolve relative paths
+        if filepath is None:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            tuning_dir = os.path.dirname(script_dir)
+            src_dir = os.path.dirname(tuning_dir)
+            project_root = os.path.dirname(src_dir)
+            filepath = os.path.join(project_root, "Data", "progress.yaml")
+        
+        # Make sure parent directory exists
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        
+        # Add timestamp if not present
+        if 'timestamp' not in progress_data:
+            progress_data['timestamp'] = datetime.now().timestamp()
+        
+        # Write to file
+        with open(filepath, 'w') as f:
+            yaml.dump(progress_data, f, default_flow_style=False)
+        
+        return True
+    except Exception as e:
+        print(f"Error updating progress file: {e}")
         return False
 
 

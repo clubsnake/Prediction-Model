@@ -1,9 +1,8 @@
-# Add this to a new file Scripts/incremental_learning.py
-
 import concurrent.futures
 import datetime
 import json
 import logging
+import multiprocessing
 import os
 import pickle
 import threading
@@ -18,6 +17,12 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import CSVLogger  # type: ignore
 from tensorflow.keras.models import Model, load_model, model_from_json  # type: ignore
 
+# Import optimized utilities
+from src.data.sequence_utils import batch_sequence_creation
+from src.utils.memory_utils import adaptive_memory_clean
+
+# Add training optimizer import
+from src.utils.training_optimizer import get_training_optimizer
 
 # Define register_shutdown_callback if it's not available
 def register_shutdown_callback(callback_func):
@@ -38,6 +43,11 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("IncrementalLearning")
+
+
+class ModelLoadError(Exception):
+    """Exception raised when a model cannot be loaded."""
+    pass
 
 
 class ModelRegistry:
@@ -199,39 +209,44 @@ class ModelRegistry:
         Returns:
             model: The loaded model
             metadata: Metadata dictionary (if with_metadata=True)
+            
+        Raises:
+            ModelLoadError: If the model cannot be loaded
         """
         if model_id not in self.model_index:
-            self.logger.error(f"Model {model_id} not found in registry")
-            return None
+            error_msg = f"Model {model_id} not found in registry"
+            self.logger.error(error_msg)
+            raise ModelLoadError(error_msg)
 
         metadata = self.model_index[model_id]
         model_type = metadata["model_type"]
         model_path = metadata.get("model_path")
 
         if not model_path or not os.path.exists(model_path):
-            self.logger.error(f"Model path not found: {model_path}")
-            return None
+            error_msg = f"Model path not found: {model_path}"
+            self.logger.error(error_msg)
+            raise ModelLoadError(error_msg)
 
         try:
             # Load the model based on its type
             if model_type == "tensorflow":
-                if model_path.endswith(".h5"):
-                    model = tf.keras.models.load_model(model_path)
-                else:
-                    model = tf.keras.models.load_model(model_path)
+                import tensorflow as tf
+                model = tf.keras.models.load_model(model_path)
             elif model_type == "sklearn":
+                import joblib
                 model = joblib.load(model_path)
             elif model_type == "xgboost":
                 import xgboost as xgb
-
                 model = xgb.Booster()
                 model.load_model(model_path)
             elif model_type == "ensemble":
+                import pickle
                 with open(model_path, "rb") as f:
                     model = pickle.load(f)
             else:
-                self.logger.error(f"Unknown model type: {model_type}")
-                return None
+                error_msg = f"Unsupported model type: {model_type}"
+                self.logger.error(error_msg)
+                raise ModelLoadError(error_msg)
 
             self.logger.info(f"Loaded model {model_id} of type {model_type}")
 
@@ -241,8 +256,9 @@ class ModelRegistry:
                 return model
 
         except Exception as e:
-            self.logger.error(f"Error loading model {model_id}: {e}")
-            return None
+            error_msg = f"Error loading model {model_id}: {str(e)}"
+            self.logger.error(error_msg)
+            raise ModelLoadError(error_msg) from e
 
     def update_model_metrics(self, model_id, metrics):
         """
@@ -886,6 +902,10 @@ class IncrementalLearner:
         self.futures = {}
         self.data_versions = {}
 
+        # Initialize training optimizer
+        self.training_optimizer = get_training_optimizer()
+        logger.info("Training optimizer initialized for IncrementalLearner")
+
     def cache_training_data(self, ticker, timeframe, df, version=None):
         """
         Cache training data for later use.
@@ -1058,12 +1078,24 @@ class IncrementalLearner:
                 if col != target_col and col != "date" and col != "Date"
             ]
 
-        # Prepare data for training
+        # Clean memory before data processing
+        adaptive_memory_clean("small")
+        
+        # Prepare data for training using optimized sequence creation
         X = df[feature_cols].values
         y = df[target_col].values
 
         if model_type == "tensorflow":
-            # For TensorFlow/Keras models
+            # For TensorFlow/Keras models that expect sequential data
+            if len(model.input_shape) > 2:  # Sequential data expected
+                # Replace this block with optimized version
+                X_reshaped, y_reshaped = batch_sequence_creation(
+                    np.column_stack((y.reshape(-1, 1), X)), 
+                    lookback=model.input_shape[1], 
+                    horizon=model.output_shape[1]
+                )
+                X = X_reshaped
+                y = y_reshaped
 
             # Set up checkpointing
             checkpoint_path = os.path.join(
@@ -1264,32 +1296,100 @@ class IncrementalLearner:
         Returns:
             future_ids: Dictionary mapping future IDs to futures
         """
-        # Create a thread pool
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit training tasks
+        # Use the training optimizer to group configurations efficiently
+        try:
+            # Group configurations for optimal resource utilization
+            training_groups = self.training_optimizer.parallel_training_groups(configs)
+            
             future_ids = {}
-
-            for config in configs:
-                # Create a partial function with the configuration
-                train_fn = partial(self.train_incrementally, **config)
-
-                # Submit the task
-                future = executor.submit(train_fn)
-
-                # Generate a future ID
-                future_id = str(uuid.uuid4())[:8]
-
-                # Store the future
-                self.futures[future_id] = {
-                    "future": future,
-                    "config": config,
-                    "status": "pending",
-                }
-
-                future_ids[future_id] = future
-
-            self.logger.info(f"Submitted {len(configs)} parallel training tasks")
+            
+            # Process each group sequentially to avoid resource contention
+            for group_idx, group in enumerate(training_groups):
+                self.logger.info(f"Training group {group_idx+1}/{len(training_groups)} with {len(group)} models")
+                
+                # Create a thread pool for this group
+                with concurrent.futures.ThreadPoolExecutor(max_workers=len(group)) as executor:
+                    group_futures = {}
+                    
+                    for config in group:
+                        # Create a partial function with the configuration
+                        train_fn = partial(self.train_incrementally, **config)
+                        
+                        # Submit the task
+                        future = executor.submit(train_fn)
+                        
+                        # Generate a future ID
+                        future_id = str(uuid.uuid4())[:8]
+                        
+                        # Store the future
+                        self.futures[future_id] = {
+                            "future": future,
+                            "config": config,
+                            "status": "pending",
+                        }
+                        
+                        group_futures[future_id] = future
+                        future_ids[future_id] = future
+                
+                # Wait for all futures in this group to complete before moving to next group
+                for future_id, future in group_futures.items():
+                    try:
+                        future.result()  # This blocks until the future completes
+                        self.futures[future_id]["status"] = "completed"
+                    except Exception as e:
+                        self.logger.error(f"Training error in future {future_id}: {str(e)}")
+                        self.futures[future_id]["status"] = "error"
+                        self.futures[future_id]["error"] = str(e)
+                
+                # Clean GPU memory between groups
+                if self.training_optimizer.has_gpu:
+                    self._clean_gpu_memory()
+            
             return future_ids
+            
+        except Exception as e:
+            self.logger.error(f"Error in parallel training: {str(e)}")
+            
+            # Fall back to original implementation
+            # Use a thread pool with configured max_workers
+            if max_workers is None:
+                max_workers = self.training_optimizer.config.get("num_parallel_models", 
+                                                             multiprocessing.cpu_count())
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_ids = {}
+                
+                for config in configs:
+                    # Create a partial function with the configuration
+                    train_fn = partial(self.train_incrementally, **config)
+                    
+                    # Submit the task
+                    future = executor.submit(train_fn)
+                    
+                    # Generate a future ID
+                    future_id = str(uuid.uuid4())[:8]
+                    
+                    # Store the future
+                    self.futures[future_id] = {
+                        "future": future,
+                        "config": config,
+                        "status": "pending",
+                    }
+                    
+                    future_ids[future_id] = future
+                
+            return future_ids
+    
+    def _clean_gpu_memory(self):
+        """Clean GPU memory between training runs"""
+        try:
+            import tensorflow as tf
+            tf.keras.backend.clear_session()
+            import gc
+            gc.collect()
+            self.logger.debug("GPU memory cleaned")
+        except Exception as e:
+            self.logger.warning(f"Error cleaning GPU memory: {e}")
 
     def get_training_status(self, thread_id=None):
         """

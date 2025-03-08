@@ -1,0 +1,10 @@
+best_model: null
+best_rmse: null
+current_mape: null
+current_rmse: null
+current_trial: 0
+cycle: 1
+last_update: '2025-03-08T00:35:34.744615'
+ticker: ETH-USD
+timeframe: 1d
+total_trials: 50

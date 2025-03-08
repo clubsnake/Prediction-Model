@@ -4,6 +4,21 @@ Hyperparameter configuration and settings module.
 
 This includes hyperparameter search options and specific tuning parameters.
 """
+import os
+import sys
+
+# Add project root to Python path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Import from config_loader to ensure consistency
+from config.config_loader import (
+    N_STARTUP_TRIALS,
+    TUNING_TRIALS_PER_CYCLE_min,
+    TUNING_TRIALS_PER_CYCLE_max,
+)
 
 # Hyperparameter Registry System
 HYPERPARAMETER_REGISTRY = {}
@@ -57,14 +72,22 @@ MAPE_THRESHOLD = 5.0
 
 AUTO_RUN_TUNING = False  # Start tuning automatically on startup
 
-# Meta-tuning parameters with min/max ranges
+# Meta-tuning parameters with min/max ranges - use values from config_loader for consistency
 META_TUNING_PARAMS = {
     "TOTAL_STEPS": {"min": 1, "max": 500},  # Steps for splitting evaluation
-    "N_STARTUP_TRIALS": {"min": 5, "max": 500},  # Trials before pruning starts
+    "N_STARTUP_TRIALS": {
+        "min": 5, 
+        "max": 10000, 
+        "default": N_STARTUP_TRIALS
+    },  # Trials before pruning starts
     "N_WARMUP_STEPS": {"min": 5, "max": 500},  # Steps before pruning enabled
     "INTERVAL_STEPS": {"min": 1, "max": 50},  # Interval between pruning checks
     "PRUNING_PERCENTILE": {"min": 1, "max": 90},  # Percentile for pruning
     "META_TUNING_ENABLED": True,  # Toggle for meta-tuning
+    "TRIALS_PER_CYCLE": {
+        "min": TUNING_TRIALS_PER_CYCLE_min,
+        "max": TUNING_TRIALS_PER_CYCLE_max 
+    }  # Min/max trials per cycle from config_loader
 }
 
 # Define model types

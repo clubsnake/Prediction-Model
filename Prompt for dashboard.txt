@@ -1,0 +1,19 @@
+Add a Config Flag:
+
+In the control panel (in dashboard_ui.py), add a new checkbox (e.g. “Enable trial updates”) that sets a session state flag (like st.session_state["trial_updates"]).
+Instrument the Training Loop:
+
+In your walk_forward.py (or the training loop module), update the logic so that if the “trial_updates” flag is true, after each trial the forecast is generated.
+Have the training loop call update_forecast_in_dashboard (or a new variant) after every trial instead of only after a full cycle.
+Update Forecast Handling:
+
+In update_forecast_in_dashboard (in dashboard_visualization.py), allow an additional parameter or check the “trial_updates” flag.
+When enabled, update session state with the intermediate trial forecast (and optionally store individual trial predictions).
+Modify the Dashboard Chart:
+
+In create_interactive_price_chart (dashboard_visualization.py), add optional code to plot each trial’s prediction as separate traces or markers.
+Ensure the chart still shows historical data from the training start date up to today, then overlays the current trial forecast (or “race” progress) if enabled.
+Synchronize and Document Changes:
+
+Verify that the changes work across modules (dashboard_core.py, dashboard_ui.py, dashboard_visualization.py, and walk_forward.py).
+Update any related docs/comments to note that when “trial_updates” is enabled, forecasts update trial-by-trial.

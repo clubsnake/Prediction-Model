@@ -1,7 +1,19 @@
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Union
+import os
+import logging
 
 import numpy as np
 import pandas as pd
+import tensorflow as tf
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Import centralized GPU memory management
+try:
+    from src.utils.gpu_memory_management import configure_gpu_memory, configure_mixed_precision
+except ImportError:
+    logger.warning("GPU memory management not found, performance optimizations will be disabled")
 
 # Import TabNet module
 try:
@@ -14,24 +26,287 @@ except ImportError:
 
 class ModelFactory:
     """
-    Factory class for creating different prediction models.
-    Consolidates what might have been separate model implementation files.
+    Centralized factory for creating different prediction models.
+    Provides a single interface to create any supported model type.
     """
 
     @staticmethod
-    def create_model(model_type: str, params=None):
-        """Creates and returns a model of the specified type with given parameters"""
-        if model_type.lower() == "tabnet":
-            if not HAS_TABNET:
-                raise ImportError("TabNet module is not available. Cannot create TabNet model.")
-            return TabNetModel(params)
-        elif model_type.lower() == "linear_regression":
-            return LinearRegressionModel(params)
-        elif model_type.lower() == "neural_network":
-            return NeuralNetworkModel(params)
-        # ... other model types ...
+    def create_model(model_type: str, params: Dict[str, Any] = None) -> Any:
+        """
+        Creates and returns a model of the specified type with given parameters.
+        
+        Args:
+            model_type: Type of model to create
+            params: Dictionary of parameters for the model
+            
+        Returns:
+            Initialized model of the requested type
+        """
+        # Normalize model type string
+        model_type = model_type.lower()
+        
+        # Initialize default params if not provided
+        if params is None:
+            params = {}
+            
+        # Configure GPU before model creation
+        try:
+            configure_mixed_precision(params.get("use_mixed_precision"))
+        except:
+            pass
+        
+        # Create requested model
+        if model_type == "tabnet":
+            return ModelFactory._create_tabnet_model(params)
+        elif model_type == "lstm":
+            return ModelFactory._create_lstm_model(params)
+        elif model_type == "rnn":
+            return ModelFactory._create_rnn_model(params)
+        elif model_type == "cnn":
+            return ModelFactory._create_cnn_model(params)
+        elif model_type == "ltc":
+            return ModelFactory._create_ltc_model(params)
+        elif model_type == "tft":
+            return ModelFactory._create_tft_model(params)
+        elif model_type == "nbeats":
+            return ModelFactory._create_nbeats_model(params)
+        elif model_type == "random_forest":
+            return ModelFactory._create_random_forest_model(params)
+        elif model_type == "xgboost":
+            return ModelFactory._create_xgboost_model(params)
+        elif model_type == "ensemble":
+            return ModelFactory._create_ensemble_model(params)
         else:
             raise ValueError(f"Unsupported model type: {model_type}")
+    
+    @staticmethod
+    def _create_tabnet_model(params: Dict[str, Any]) -> Any:
+        """Create a TabNet model"""
+        try:
+            from src.models.tabnet_model import TabNetPricePredictor
+            
+            # Extract parameters with defaults
+            n_d = params.get("n_d", 64)
+            n_a = params.get("n_a", 64)
+            n_steps = params.get("n_steps", 3)
+            gamma = params.get("gamma", 1.5)
+            lambda_sparse = params.get("lambda_sparse", 0.001)
+            learning_rate = params.get("learning_rate", 0.001)
+            
+            # Create the model
+            model = TabNetPricePredictor(
+                n_d=n_d,
+                n_a=n_a,
+                n_steps=n_steps,
+                gamma=gamma,
+                lambda_sparse=lambda_sparse,
+                optimizer_fn=lambda lr: tf.keras.optimizers.Adam(learning_rate=lr),
+                optimizer_params={"lr": learning_rate}
+            )
+            
+            return model
+        except ImportError:
+            logger.error("TabNet module not available")
+            raise ImportError("TabNet module is not available")
+    
+    @staticmethod
+    def _create_lstm_model(params: Dict[str, Any]) -> tf.keras.Model:
+        """Create an LSTM model using build_model_by_type"""
+        try:
+            from src.models.model import build_model_by_type
+            
+            return build_model_by_type(
+                model_type="lstm",
+                num_features=params.get("num_features", 1),
+                horizon=params.get("horizon", 1),
+                learning_rate=params.get("learning_rate", 0.001),
+                dropout_rate=params.get("dropout_rate", 0.2),
+                loss_function=params.get("loss_function", "mse"),
+                lookback=params.get("lookback", 30),
+                architecture_params=params.get("architecture_params", None)
+            )
+        except ImportError:
+            logger.error("Could not import build_model_by_type")
+            raise ImportError("Model building module not available")
+    
+    @staticmethod
+    def _create_rnn_model(params: Dict[str, Any]) -> tf.keras.Model:
+        """Create a SimpleRNN model"""
+        try:
+            from src.models.model import build_model_by_type
+            
+            return build_model_by_type(
+                model_type="rnn",
+                num_features=params.get("num_features", 1),
+                horizon=params.get("horizon", 1),
+                learning_rate=params.get("learning_rate", 0.001),
+                dropout_rate=params.get("dropout_rate", 0.2),
+                loss_function=params.get("loss_function", "mse"),
+                lookback=params.get("lookback", 30),
+                architecture_params=params.get("architecture_params", None)
+            )
+        except ImportError:
+            logger.error("Could not import build_model_by_type")
+            raise ImportError("Model building module not available")
+    
+    @staticmethod
+    def _create_cnn_model(params: Dict[str, Any]) -> Any:
+        """Create a CNN model"""
+        try:
+            from src.models.cnn_model import CNNPricePredictor
+            
+            # Extract parameters with defaults
+            lookback = params.get("lookback", 30)
+            num_features = params.get("num_features", 1)
+            horizon = params.get("horizon", 1)
+            num_filters = params.get("num_filters", 64)
+            kernel_size = params.get("kernel_size", 3)
+            learning_rate = params.get("learning_rate", 0.001)
+            
+            # Create model
+            model = CNNPricePredictor(
+                lookback=lookback,
+                num_features=num_features,
+                horizon=horizon,
+                num_filters=num_filters,
+                kernel_size=kernel_size,
+                learning_rate=learning_rate
+            )
+            
+            return model
+        except ImportError:
+            logger.error("CNN model module not available")
+            raise ImportError("CNN model module not available")
+    
+    @staticmethod
+    def _create_ltc_model(params: Dict[str, Any]) -> tf.keras.Model:
+        """Create a Liquid Time Constant (LTC) model"""
+        try:
+            from src.models.ltc_model import build_ltc_model
+            
+            return build_ltc_model(
+                num_features=params.get("num_features", 1),
+                horizon=params.get("horizon", 1),
+                learning_rate=params.get("learning_rate", 0.001),
+                loss_function=params.get("loss_function", "mse"),
+                lookback=params.get("lookback", 30),
+                units=params.get("units", 64),
+                num_layers=params.get("num_layers", 1),
+                use_attention=params.get("use_attention", False),
+                dropout_rate=params.get("dropout_rate", 0.1),
+                recurrent_dropout_rate=params.get("recurrent_dropout_rate", 0.0),
+                timescale_min=params.get("timescale_min", 0.1),
+                timescale_max=params.get("timescale_max", 10.0)
+            )
+        except ImportError:
+            logger.error("LTC model module not available")
+            raise ImportError("LTC model module not available")
+    
+    @staticmethod
+    def _create_tft_model(params: Dict[str, Any]) -> tf.keras.Model:
+        """Create a Temporal Fusion Transformer model"""
+        try:
+            from src.models.temporal_fusion_transformer import build_tft_model
+            
+            return build_tft_model(
+                num_features=params.get("num_features", 1),
+                horizon=params.get("horizon", 1),
+                learning_rate=params.get("learning_rate", 0.001),
+                dropout_rate=params.get("dropout_rate", 0.1),
+                loss_function=params.get("loss_function", "mse"),
+                lookback=params.get("lookback", 30),
+                hidden_size=params.get("hidden_size", 64),
+                lstm_units=params.get("lstm_units", 128),
+                num_heads=params.get("num_heads", 4)
+            )
+        except ImportError:
+            logger.error("TFT model module not available")
+            raise ImportError("TFT model module not available")
+    
+    @staticmethod
+    def _create_nbeats_model(params: Dict[str, Any]) -> tf.keras.Model:
+        """Create an N-BEATS model"""
+        try:
+            from src.models.nbeats_model import build_nbeats_model
+            
+            return build_nbeats_model(
+                lookback=params.get("lookback", 30),
+                horizon=params.get("horizon", 1),
+                num_features=params.get("num_features", 1),
+                learning_rate=params.get("learning_rate", 0.001),
+                stack_types=params.get("stack_types", ["trend", "seasonality"]),
+                num_blocks=params.get("num_blocks", [3, 3]),
+                num_layers=params.get("num_layers", [4, 4]),
+                layer_width=params.get("layer_width", 256)
+            )
+        except ImportError:
+            logger.error("N-BEATS model module not available")
+            raise ImportError("N-BEATS model module not available")
+    
+    @staticmethod
+    def _create_random_forest_model(params: Dict[str, Any]) -> Any:
+        """Create a Random Forest model"""
+        from sklearn.ensemble import RandomForestRegressor
+        
+        return RandomForestRegressor(
+            n_estimators=params.get("n_estimators", 100),
+            max_depth=params.get("max_depth", None),
+            min_samples_split=params.get("min_samples_split", 2),
+            min_samples_leaf=params.get("min_samples_leaf", 1),
+            random_state=params.get("random_state", 42)
+        )
+    
+    @staticmethod
+    def _create_xgboost_model(params: Dict[str, Any]) -> Any:
+        """Create an XGBoost model"""
+        try:
+            import xgboost as xgb
+            
+            return xgb.XGBRegressor(
+                n_estimators=params.get("n_estimators", 100),
+                learning_rate=params.get("learning_rate", 0.1),
+                max_depth=params.get("max_depth", 6),
+                subsample=params.get("subsample", 0.8),
+                colsample_bytree=params.get("colsample_bytree", 0.8),
+                random_state=params.get("random_state", 42),
+                n_jobs=params.get("n_jobs", -1)
+            )
+        except ImportError:
+            logger.error("XGBoost not available")
+            raise ImportError("XGBoost module not available")
+    
+    @staticmethod
+    def _create_ensemble_model(params: Dict[str, Any]) -> Any:
+        """Create an ensemble of models"""
+        try:
+            from src.models.ensemble_weighting import AdvancedEnsembleWeighter
+            
+            # Create submodels
+            submodel_params = params.get("submodels", {})
+            models = {}
+            
+            for model_type, model_params in submodel_params.items():
+                try:
+                    models[model_type] = ModelFactory.create_model(model_type, model_params)
+                except Exception as e:
+                    logger.warning(f"Failed to create {model_type} for ensemble: {e}")
+            
+            # Create ensemble weighter
+            weights = {model_type: 1.0/len(models) for model_type in models}
+            ensemble = AdvancedEnsembleWeighter(
+                base_weights=weights,
+                adaptation_rate=params.get("adaptation_rate", 0.05)
+            )
+            
+            # Return both models and weighter
+            return {"models": models, "weighter": ensemble}
+            
+        except ImportError:
+            logger.error("Ensemble module not available")
+            raise ImportError("Ensemble module not available")
+
+# Create an instance for convenience
+model_factory = ModelFactory()
 
 
 class BaseModel:

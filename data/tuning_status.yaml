@@ -1,0 +1,13 @@
+completed_at: '2025-03-08T00:35:35.435518'
+is_running: false
+models:
+- Ensemble
+- LSTM
+- XGBoost
+pid: 537280
+started_at: '2025-03-08T00:35:34.741622'
+status: completed
+ticker: ETH-USD
+timeframe: 1d
+train_window: 365
+trials: 50

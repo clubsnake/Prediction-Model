@@ -134,9 +134,9 @@ class CNNPriceModel(nn.Module):
     """
     CNN model for financial price prediction.
     """
-    def __init__(self, input_dim, output_dim=1, num_conv_layers=3, num_filters=64, 
-                 kernel_size=3, stride=1, dropout_rate=0.2, activation='relu',
-                 use_adaptive_pooling=True, fc_layers=[128, 64], lookback=20):
+    def __init__(self, input_dim, output_dim=1, num_conv_layers=5, num_filters=128, 
+                 kernel_size=3, stride=1, dropout_rate=0.3, activation='relu',
+                 use_adaptive_pooling=True, fc_layers=[512,256, 128, 64], lookback=20):
         """
         Initialize CNN Price Prediction model.
         

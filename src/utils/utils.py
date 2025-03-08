@@ -15,8 +15,14 @@ import numpy as np
 import pandas as pd
 import psutil
 
-# Import missing constants
-from config import WALK_FORWARD_MAX, WALK_FORWARD_MIN
+# Import constants from config_loader instead of direct from config
+try:
+    from config.config_loader import WALK_FORWARD_MAX, WALK_FORWARD_MIN
+except ImportError:
+    # Fallback defaults if config loading fails
+    WALK_FORWARD_MIN = 3
+    WALK_FORWARD_MAX = 180
+    logging.warning("Failed to load walk-forward constants from config, using defaults")
 
 # Configure logging
 logger = logging.getLogger("MemoryManager")

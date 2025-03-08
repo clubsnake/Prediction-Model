@@ -13,8 +13,7 @@ from hmmlearn import hmm
 
 def add_rsi(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     """Add RSI with improved numerical stability."""
-    # Make a copy to avoid SettingWithCopyWarning
-    df = df.copy()
+    df = df.copy()  # Make a copy of the input DataFrame
 
     delta = df["Close"].diff()
     gain = delta.clip(lower=0)
@@ -740,8 +739,12 @@ def add_breakout_indicators(df: pd.DataFrame) -> pd.DataFrame:
             df[ma_col] = df["Close"].rolling(window=ma_period).mean()
         df[f"Distance_MA_{ma_period}"] = (df["Close"] - df[ma_col]) / df[ma_col] * 100
 
-    df["Volume_MA_20"] = df["Volume"].rolling(window=20).mean()
-    df["Volume_Ratio"] = df["Volume"] / df["Volume_MA_20"]
+    # Fix volume ratio calculation
+    vol_ma_20 = df["Volume"].rolling(window=20).mean()
+    df["Volume_MA_20"] = vol_ma_20
+    # Ensure we're dividing Series by Series
+    df["Volume_Ratio"] = df["Volume"].div(vol_ma_20)
+    
     df["Range"] = df["High"] - df["Low"]
     df["Avg_Range_20"] = df["Range"].rolling(window=20).mean()
     df["Range_Expansion"] = df["Range"] / df["Avg_Range_20"]

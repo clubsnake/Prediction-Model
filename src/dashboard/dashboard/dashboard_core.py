@@ -26,46 +26,125 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-# Use robust error handling
+# First, define a simple error boundary function for fallback
+def simple_error_boundary(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            st.error(f"Error in {func.__name__}: {str(e)}")
+            st.code(traceback.format_exc())
+            return None
+    return wrapper
+
+# Then try to import the real one (if available)
 try:
-    from dashboard_error import robust_error_boundary, read_tuning_status, load_latest_progress
+    # Import dashboard error handling separately to avoid circular imports
+    from src.dashboard.dashboard.dashboard_error import robust_error_boundary, read_tuning_status, load_latest_progress
     print("Successfully imported dashboard_error")
 except ImportError as e:
     print(f"Error importing dashboard_error: {e}")
-    # Define a simple error boundary if it fails
-    def robust_error_boundary(func):
-        def wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                st.error(f"Error in {func.__name__}: {str(e)}")
-                st.code(traceback.format_exc())
-                return None
-        return wrapper
+    # Use the fallback function we defined
+    robust_error_boundary = simple_error_boundary
     
-    # Provide a fallback for load_latest_progress
+    # Define fallback functions
+    def read_tuning_status():
+        return {"status": "unknown", "is_running": False}
+        
     def load_latest_progress(ticker=None, timeframe=None):
         return {"current_trial": 0, "total_trials": 1, "current_rmse": None, "current_mape": None, "cycle": 1}
 
-# Try to import our dashboard modules - with fallbacks
-try:
-    from dashboard_ui import create_header, create_control_panel, create_metrics_cards, create_hyperparameter_tuning_panel
-    from dashboard_data import load_data as load_market_data, calculate_indicators
-    from dashboard_model import start_tuning, stop_tuning, display_tested_models, generate_future_forecast
-    from dashboard_visualization import (
-        create_interactive_price_chart, 
-        create_technical_indicators_chart, 
-        show_advanced_dashboard_tabs,
-        prepare_dataframe_for_display
-    )
-    from dashboard_state import init_session_state
-except ImportError as e:
-    st.error(f"Error importing dashboard modules: {e}")
-    st.stop()
+# Delay other dashboard module imports until after error handling is set up
+# This helps break circular dependencies
+def import_dashboard_modules():
+    """Import dashboard modules with error handling to avoid circular imports"""
+    modules = {}
+    
+    try:
+        # Import UI components
+        try:
+            from src.dashboard.dashboard.dashboard_ui import create_header, create_control_panel, create_metrics_cards, create_hyperparameter_tuning_panel
+            modules.update({
+                "create_header": create_header,
+                "create_control_panel": create_control_panel,
+                "create_metrics_cards": create_metrics_cards,
+                "create_hyperparameter_tuning_panel": create_hyperparameter_tuning_panel
+            })
+        except ImportError as e:
+            print(f"Error importing dashboard_ui: {e}")
+            
+        # Import data handling
+        try:
+            from src.dashboard.dashboard.dashboard_data import load_data, calculate_indicators, ensure_date_column
+            modules.update({
+                "load_data": load_data,
+                "load_market_data": load_data,
+                "calculate_indicators": calculate_indicators,
+                "ensure_date_column": ensure_date_column
+            })
+        except ImportError as e:
+            print(f"Error importing dashboard_data: {e}")
+            
+        # Import model functions
+        try:
+            from src.dashboard.dashboard.dashboard_ui import start_tuning, stop_tuning, display_tested_models, generate_future_forecast
+            modules.update({
+                "start_tuning": start_tuning,
+                "stop_tuning": stop_tuning,
+                "display_tested_models": display_tested_models,
+                "generate_future_forecast": generate_future_forecast
+            })
+        except ImportError as e:
+            print(f"Error importing dashboard_model: {e}")
+            
+        # Import visualization components
+        try:
+            from src.dashboard.dashboard.dashboard_visualization import (
+                create_interactive_price_chart, 
+                create_technical_indicators_chart, 
+                show_advanced_dashboard_tabs,
+                prepare_dataframe_for_display
+            )
+            modules.update({
+                "create_interactive_price_chart": create_interactive_price_chart,
+                "create_technical_indicators_chart": create_technical_indicators_chart,
+                "show_advanced_dashboard_tabs": show_advanced_dashboard_tabs,
+                "prepare_dataframe_for_display": prepare_dataframe_for_display
+            })
+        except ImportError as e:
+            print(f"Error importing dashboard_visualization: {e}")
+            
+        # Import state management
+        try:
+            from src.dashboard.dashboard.dashboard_state import init_session_state
+            modules["init_session_state"] = init_session_state
+        except ImportError as e:
+            print(f"Error importing dashboard_state: {e}")
+            # Fallback function
+            def init_session_state():
+                if "initialized" not in st.session_state:
+                    st.session_state["initialized"] = True
+                    st.session_state["last_refresh"] = datetime.now().timestamp()
+            modules["init_session_state"] = init_session_state
+            
+    except Exception as e:
+        print(f"Error during module imports: {e}")
+        
+    return modules
 
-# Try to import config
+# Import modules using the function
+dashboard_modules = import_dashboard_modules()
+
+# Try to import config after other imports to avoid circular dependencies
 try:
-    from config import DATA_DIR, TICKER, TICKERS, TIMEFRAMES
+    from config.config_loader import get_config
+    config = get_config()
+    
+    DATA_DIR = config.get("DATA_DIR", os.path.join(project_root, "data"))
+    TICKER = config.get("TICKER", "ETH-USD")
+    TICKERS = config.get("TICKERS", ["ETH-USD", "BTC-USD"])
+    TIMEFRAMES = config.get("TIMEFRAMES", ["1d", "1h"])
+    
     from config.logger_config import logger
     print("Successfully imported config")
 except ImportError as e:
@@ -223,12 +302,17 @@ def main_dashboard():
 
         # Setup page and session state
         set_page_config()
+        
+        # Get init_session_state function from imported modules
+        init_session_state = dashboard_modules.get("init_session_state", lambda: None)
         init_session_state()
 
         # Build UI components - header with status and app info
+        create_header = dashboard_modules.get("create_header", lambda: st.title("Dashboard"))
         create_header()
         
         # Create sidebar with controls
+        create_control_panel = dashboard_modules.get("create_control_panel", lambda: {"ticker": TICKER, "timeframe": "1d"})
         params = create_control_panel()
         
         # Check if params is None (indicating an error in create_control_panel)
@@ -255,8 +339,8 @@ def main_dashboard():
         training_start = params.get("training_start_date")
         
         # Calculate derived values automatically
-        historical_window = params["historical_window"]
-        forecast_window = params["forecast_window"]
+        historical_window = params.get("historical_window")
+        forecast_window = params.get("forecast_window")
         
         # Make sure these values are in session state for other components
         st.session_state["start_date"] = start_date
@@ -270,9 +354,9 @@ def main_dashboard():
         **Dashboard Settings:**
         - Training data from: {}
         - Display range: {} to {}
-        """.format(params["training_start_date"].strftime('%Y-%m-%d'), 
-                 params["start_date"].strftime('%Y-%m-%d'), 
-                 params["end_date"].strftime('%Y-%m-%d')))
+        """.format(params.get("training_start_date", datetime.now() - timedelta(days=365*5)).strftime('%Y-%m-%d'), 
+                 params.get("start_date", datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'), 
+                 params.get("end_date", datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')))
 
         # Don't update session state here to avoid overwriting user selections
         # Just use the values from params for this run of the app
@@ -284,25 +368,20 @@ def main_dashboard():
 
         # Show a loading spinner while fetching data
         with st.spinner("Loading market data..."):
+            # Modify this part to ensure we only fetch historical data up to today
+            today = datetime.now().strftime("%Y-%m-%d")
+            
             # Fetch historical market data (cached) for the selected ticker/timeframe
-            df_vis = load_market_data(
+            df_vis = dashboard_modules["load_data"](
                 ticker, 
-                params["start_date"].strftime("%Y-%m-%d"), 
-                params["end_date"].strftime("%Y-%m-%d"), 
-                interval=timeframe
+                params.get("start_date", datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d"), 
+                today,  # Use current date instead of future end_date
+                timeframe
             )
             
         if df_vis is not None and not df_vis.empty:
-            # Ensure date column is properly formatted
-            try:
-                date_col = 'date' if 'date' in df_vis.columns else 'Date'
-                if date_col in df_vis.columns:
-                    df_vis[date_col] = pd.to_datetime(df_vis[date_col])
-            except Exception as e:
-                logger.warning(f"Error converting date column: {e}")
-                # Create a backup date column
-                df_vis['date'] = pd.date_range(start=params["start_date"], periods=len(df_vis))
-                
+            # Fix: Use the centralized date handling function
+            df_vis, date_col = dashboard_modules["ensure_date_column"](df_vis)
             st.session_state["df_raw"] = df_vis  # cache data in session
         else:
             # If no new data, use cached data if available
@@ -356,19 +435,27 @@ def main_dashboard():
             # Get indicator preferences from params
             indicators = params.get("indicators", {})
             
-            # Only attempt forecast if model exists and user wants to see it
+            # Replace the existing forecast generation code with this consolidated approach
             model = st.session_state.get('model')
             if model and indicators.get("show_forecast", True):
                 with st.spinner("Generating forecast..."):
                     # Determine feature columns (exclude date and target 'Close')
                     feature_cols = [col for col in df_vis.columns if col not in ["date", "Date", "Close"]]
-                    future_forecast = generate_future_forecast(model, df_vis, feature_cols)
+                    
+                    # Use the consolidated function from dashboard_data
+                    from src.dashboard.dashboard.dashboard_data import generate_dashboard_forecast
+                    future_forecast = generate_dashboard_forecast(model, df_vis, feature_cols)
+                    
+                    # Save the prediction for historical comparison
+                    if future_forecast and len(future_forecast) > 0:
+                        from src.dashboard.dashboard.dashboard_visualization import save_best_prediction
+                        save_best_prediction(df_vis, future_forecast)
             
             # Calculate indicators and plot the chart
-            df_vis_indicators = calculate_indicators(df_vis)
+            df_vis_indicators = dashboard_modules["calculate_indicators"](df_vis)
             
             # Pass indicator options to visualization function
-            create_interactive_price_chart(df_vis_indicators, params, 
+            dashboard_modules["create_interactive_price_chart"](df_vis_indicators, params, 
                                          future_forecast=future_forecast, 
                                          indicators=indicators,
                                          height=700)  # Increase height for better visualization
@@ -441,7 +528,7 @@ def main_dashboard():
         with main_tabs[0]:
             # Invisible button to track tab selection
             st.button("Tab 1", on_click=set_main_tab, args=(0,), key="main_tab_1_btn", help=None, 
-                     type="hidden")
+                     type="primary")
             
             # Only render content if this tab is selected
             if st.session_state.selected_main_tab == 0:
@@ -459,7 +546,7 @@ def main_dashboard():
                 with insight_tabs[0]:
                     # Invisible button to track nested tab selection
                     st.button("Insight Tab 1", on_click=set_insight_tab, args=(0,), key="insight_tab_1_btn", 
-                             help=None, type="hidden")
+                             help=None, type="primary")
                     
                     if st.session_state.selected_insight_tab == 0:
                         if "best_metrics" in st.session_state and st.session_state["best_metrics"]:
@@ -486,7 +573,7 @@ def main_dashboard():
                 with insight_tabs[1]:
                     # Invisible button to track nested tab selection
                     st.button("Insight Tab 2", on_click=set_insight_tab, args=(1,), key="insight_tab_2_btn", 
-                             help=None, type="hidden")
+                             help=None, type="primary")
                     
                     if st.session_state.selected_insight_tab == 1:
                         if "feature_importance" in st.session_state and st.session_state["feature_importance"]:
@@ -502,7 +589,7 @@ def main_dashboard():
                             st.bar_chart(feature_df.set_index("Feature"))
                             
                             # Show as table too
-                            st.dataframe(prepare_dataframe_for_display(feature_df))
+                            st.dataframe(dashboard_modules["prepare_dataframe_for_display"](feature_df))
                             
                             # Add TabNet-specific feature importance if available
                             if "tabnet_feature_importance" in st.session_state:
@@ -529,14 +616,14 @@ def main_dashboard():
                                 """)
                                 
                                 # Show as table with prepared dataframe
-                                st.dataframe(prepare_dataframe_for_display(tabnet_df))
+                                st.dataframe(dashboard_modules["prepare_dataframe_for_display"](tabnet_df))
                         else:
                             st.info("No feature importance data available yet.")
                 
                 with insight_tabs[2]:
                     # Invisible button to track nested tab selection
                     st.button("Insight Tab 3", on_click=set_insight_tab, args=(2,), key="insight_tab_3_btn", 
-                             help=None, type="hidden")
+                             help=None, type="primary")
                     
                     if st.session_state.selected_insight_tab == 2:
                         if "prediction_history" in st.session_state and st.session_state["prediction_history"]:
@@ -561,7 +648,7 @@ def main_dashboard():
         with main_tabs[1]:
             # Invisible button to track tab selection
             st.button("Tab 2", on_click=set_main_tab, args=(1,), key="main_tab_2_btn", help=None, 
-                     type="hidden")
+                     type="primary")
             
             # Only render content if this tab is selected
             if st.session_state.selected_main_tab == 1:
@@ -581,13 +668,13 @@ def main_dashboard():
                 
                 # Show tested models in an expandable section
                 with st.expander("View All Tested Models", expanded=False):
-                    display_tested_models()
+                    dashboard_modules["display_tested_models"]()
 
         # Tab 3: Technical Analysis (was Tab 2)
         with main_tabs[2]:
             # Invisible button to track tab selection
             st.button("Tab 3", on_click=set_main_tab, args=(2,), key="main_tab_3_btn", help=None, 
-                     type="hidden")
+                     type="primary")
             
             # Only render content if this tab is selected
             if st.session_state.selected_main_tab == 2:
@@ -596,18 +683,18 @@ def main_dashboard():
                 
                 with st.spinner("Loading technical indicators..."):
                     # Enhanced technical indicators
-                    create_technical_indicators_chart(df_vis_indicators, params)
+                    dashboard_modules["create_technical_indicators_chart"](df_vis_indicators, params)
                 st.markdown("</div>", unsafe_allow_html=True)
                 
                 # Advanced analysis dashboard
                 with st.spinner("Loading advanced analysis..."):
-                    show_advanced_dashboard_tabs(df_vis_indicators)
+                    dashboard_modules["show_advanced_dashboard_tabs"](df_vis_indicators)
 
         # Tab 4: Price Data (was Tab 1)
         with main_tabs[3]:
             # Invisible button to track tab selection
             st.button("Tab 4", on_click=set_main_tab, args=(3,), key="main_tab_4_btn", help=None, 
-                     type="hidden")
+                     type="primary")
             
             # Only render content if this tab is selected
             if st.session_state.selected_main_tab == 3:
@@ -647,26 +734,38 @@ def main_dashboard():
                         st.subheader("Market Data")
                         
                         # Prepare dataframe for display
-                        display_df = prepare_dataframe_for_display(df_vis)
+                        display_df = dashboard_modules["prepare_dataframe_for_display"](df_vis)
                         
-                        # Now safely display it
-                        st.dataframe(
-                            display_df.style.background_gradient(
-                                cmap='Blues', 
-                                subset=['Volume']
-                            ).format({
-                                'Open': '${:,.2f}',
-                                'High': '${:,.2f}',
-                                'Low': '${:,.2f}',
-                                'Close': '${:,.2f}',
-                                'Volume': '{:,.0f}'
-                            }),
-                            height=400
-                        )
+                        # FIX: Check if display_df is not None and not empty before styling
+                        if display_df is not None and not display_df.empty:
+                            try:
+                                styled_df = display_df.style.background_gradient(
+                                    cmap='Blues', 
+                                    subset=['Volume'] if 'Volume' in display_df.columns else None
+                                ).format({
+                                    'Open': '${:,.2f}',
+                                    'High': '${:,.2f}',
+                                    'Low': '${:,.2f}',
+                                    'Close': '${:,.2f}',
+                                    'Volume': '{:,.0f}'
+                                })
+                                st.dataframe(styled_df, height=400)
+                            except Exception as e:
+                                # Fallback if styling fails
+                                logger.error(f"Error styling dataframe: {e}")
+                                st.dataframe(display_df, height=400)
+                        else:
+                            st.warning("No data available to display.")
                         
                         with st.expander("Summary Statistics"):
-                            stats_df = prepare_dataframe_for_display(df_vis.describe().transpose())
-                            st.dataframe(stats_df)
+                            if display_df is not None and not display_df.empty:
+                                try:
+                                    stats_df = dashboard_modules["prepare_dataframe_for_display"](df_vis.describe().transpose())
+                                    st.dataframe(stats_df)
+                                except Exception as e:
+                                    st.error(f"Error displaying summary statistics: {e}")
+                            else:
+                                st.info("No data available for statistics.")
 
         # Add hyperparameter tuning section - this section always renders
         st.markdown("<a name='hyperparameter-tuning'></a>", unsafe_allow_html=True)
@@ -681,7 +780,7 @@ def main_dashboard():
             
         if st.session_state.show_tuning_panel:
             with st.spinner("Loading hyperparameter tuning panel..."):
-                create_hyperparameter_tuning_panel()
+                dashboard_modules["create_hyperparameter_tuning_panel"]()
 
         # Auto-refresh logic
         if params["auto_refresh"]:

@@ -4,10 +4,10 @@ For very large datasets, these functions offer significant speed improvements.
 """
 
 import warnings
-
+import pandas as pd
 import numpy as np
 from numba import jit, njit
-
+import gc
 
 def vectorized_sequence_creation(df, feature_cols, target_col, lookback, horizon):
     """

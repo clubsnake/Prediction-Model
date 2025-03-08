@@ -116,7 +116,7 @@ def launch_dashboard(mode="full") -> None:
             logger.info("Launching enhanced dashboard...")
         else:
             possible_paths = [
-               os.path.join("src", "dashboard", "dashboard, dashboard_core.py"),
+               os.path.join("src", "dashboard", "dashboard", "dashboard_core.py"),
             ]
             
             script_path = None

@@ -109,22 +109,13 @@ def create_download_section():
     ):
         try:
             model = st.session_state["current_model"]
-            model_json = model.to_json()
-            b64 = base64.b64encode(model_json.encode()).decode()
-            href = f'<a href="data:file/json;base64,{b64}" download="model.json">Download Model Architecture (JSON)</a>'
-            st.markdown(href, unsafe_allow_html=True)
-
-            # Save weights to a temporary file
-            weights_path = os.path.join(tempfile.gettempdir(), "model_weights.h5")
-            model.save_weights(weights_path)
-
-            with open(weights_path, "rb") as f:
+            model.save_weights("model_weights.h5")
+            with open("model_weights.h5", "rb") as f:
                 b64 = base64.b64encode(f.read()).decode()
-                href = f'<a href="data:file/h5;base64,{b64}" download="model_weights.h5">Download Model Weights (H5)</a>'
-                st.markdown(href, unsafe_allow_html=True)
+            href = f'<a href="data:file/h5;base64,{b64}" download="model_weights.h5">Download Model Weights (H5)</a>'
+            st.markdown(href, unsafe_allow_html=True)
         except Exception as e:
-            st.error(f"Error preparing model download: {e}")
-            logger.error(f"Error preparing model download: {e}", exc_info=True)
+            st.error(f"Error downloading model weights: {e}")
     else:
         st.info("No model available for download.")
 

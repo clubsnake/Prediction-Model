@@ -34,6 +34,216 @@ from config.config_loader import (
     N_STARTUP_TRIALS,
 )
 
+"""
+Central state management module to avoid circular imports between modules.
+This module provides access to shared state without directly importing entire modules.
+"""
+import logging
+import os
+import json
+import time
+from typing import Dict, Any, Optional
+from datetime import datetime, timedelta
+
+# Try to use streamlit if available
+try:
+    import streamlit as st
+    HAS_STREAMLIT = True
+except ImportError:
+    HAS_STREAMLIT = False
+    
+logger = logging.getLogger(__name__)
+
+# Dictionary to store global state when not using streamlit
+_global_state = {}
+
+def get_state(key: str, default=None) -> Any:
+    """
+    Get state value by key name, works with or without streamlit.
+    
+    Args:
+        key: State key to retrieve
+        default: Default value if key doesn't exist
+    
+    Returns:
+        The state value or default
+    """
+    if HAS_STREAMLIT:
+        # Use streamlit session state if available
+        return st.session_state.get(key, default)
+    else:
+        # Fall back to global state dictionary
+        return _global_state.get(key, default)
+
+def set_state(key: str, value: Any) -> None:
+    """
+    Set state value by key name, works with or without streamlit.
+    
+    Args:
+        key: State key to set
+        value: Value to store
+    """
+    if HAS_STREAMLIT:
+        # Use streamlit session state if available
+        st.session_state[key] = value
+    else:
+        # Fall back to global state dictionary
+        _global_state[key] = value
+
+# Convenience functions for accessing common state
+def get_current_ticker() -> str:
+    """Get the currently selected ticker symbol"""
+    return get_state("selected_ticker", "AAPL")
+
+def get_current_timeframe() -> str:
+    """Get the currently selected timeframe"""
+    return get_state("selected_timeframe", "1d")
+
+def get_lookback_period() -> int:
+    """Get the lookback period for model training"""
+    return get_state("lookback", 30)
+
+def get_forecast_window() -> int:
+    """Get the forecast window for predictions"""
+    return get_state("forecast_window", 30)
+
+def get_current_model():
+    """Get the current model from state"""
+    return get_state("current_model")
+
+# ----- PREDICTION MONITOR MANAGEMENT -----
+
+def get_prediction_monitor():
+    """Get or create the prediction monitor instance"""
+    monitor = get_state("prediction_monitor")
+    if monitor is None:
+        try:
+            # Lazy import to avoid circular dependencies
+            from src.dashboard.monitoring import PredictionMonitor
+            
+            # Create a new monitor
+            logs_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs"
+            )
+            monitor = PredictionMonitor(logs_path=logs_path)
+            set_state("prediction_monitor", monitor)
+            logger.info("Created new prediction monitor")
+        except ImportError:
+            logger.warning("PredictionMonitor not available")
+            
+    return monitor
+
+# ----- PREDICTION SERVICE MANAGEMENT -----
+
+def get_prediction_service():
+    """Get or create the prediction service instance"""
+    service = get_state("prediction_service")
+    if service is None:
+        try:
+            # Lazy import to avoid circular dependencies
+            from src.dashboard.prediction_service import PredictionService
+            
+            # Create a new service with current context
+            service = PredictionService(
+                model_instance=get_current_model(),
+                ticker=get_current_ticker(),
+                timeframe=get_current_timeframe(),
+                monitor=get_prediction_monitor()
+            )
+            set_state("prediction_service", service)
+            logger.info("Created new prediction service")
+        except ImportError:
+            logger.warning("PredictionService not available")
+            
+    return service
+
+# ----- ENSEMBLE WEIGHTS MANAGEMENT -----
+
+def get_ensemble_weights() -> Dict[str, float]:
+    """Get the current ensemble model weights"""
+    weights = get_state("ensemble_weights")
+    if weights is None:
+        # Create default equal weights using model types from config
+        try:
+            from config.config_loader import ACTIVE_MODEL_TYPES
+            weights = {model_type: 1.0/len(ACTIVE_MODEL_TYPES) for model_type in ACTIVE_MODEL_TYPES}
+        except ImportError:
+            # Fallback default weights
+            weights = {
+                "lstm": 0.2, 
+                "rnn": 0.2, 
+                "random_forest": 0.2, 
+                "xgboost": 0.2,
+                "tabnet": 0.2
+            }
+        set_state("ensemble_weights", weights)
+    return weights
+
+def update_ensemble_weights(weights: Dict[str, float]) -> None:
+    """
+    Update ensemble weights, ensuring they sum to 1.0
+    
+    Args:
+        weights: Dictionary of model type to weight
+    """
+    # Ensure weights are valid
+    if not weights:
+        return
+        
+    # Normalize weights to sum to 1.0
+    total = sum(weights.values())
+    if total <= 0:
+        logger.warning("Invalid weights - sum is zero or negative")
+        return
+        
+    normalized = {k: v/total for k, v in weights.items()}
+    set_state("ensemble_weights", normalized)
+    logger.info(f"Updated ensemble weights: {normalized}")
+
+# ----- INITIALIZATION -----
+
+def initialize_state():
+    """Initialize all required state with default values"""
+    if HAS_STREAMLIT and get_state("state_initialized", False):
+        return  # Already initialized
+        
+    # Core state
+    set_state("state_initialized", True)
+    set_state("last_refresh", time.time())
+    
+    # Model state
+    if get_state("ensemble_weights") is None:
+        # Will initialize with defaults
+        get_ensemble_weights()
+        
+    # Dashboard UI state
+    if get_state("selected_ticker") is None:
+        from config.config_loader import TICKER
+        set_state("selected_ticker", TICKER)
+        
+    if get_state("selected_timeframe") is None:
+        from config.config_loader import TIMEFRAMES
+        set_state("selected_timeframe", TIMEFRAMES[0] if TIMEFRAMES else "1d")
+    
+    # Training defaults
+    if get_state("lookback") is None:
+        set_state("lookback", 30)
+        
+    if get_state("forecast_window") is None:
+        set_state("forecast_window", 30)
+        
+    # Initialize monitor and service
+    get_prediction_monitor()
+    get_prediction_service()
+    
+    logger.info("Dashboard state initialized")
+
+# Initialize state when this module is imported
+if HAS_STREAMLIT:
+    try:
+        initialize_state()
+    except Exception as e:
+        logger.error(f"Error initializing dashboard state: {e}")
 
 @robust_error_boundary
 def init_session_state():
@@ -41,6 +251,10 @@ def init_session_state():
     # Check if already initialized to avoid resetting values
     if "initialized" in st.session_state:
         return
+
+    # Create a new timestamp if it doesn't exist
+    if "last_refresh" not in st.session_state:
+        st.session_state["last_refresh"] = time.time()
 
     # Set default values
     default_values = {
@@ -92,6 +306,10 @@ def init_session_state():
     for key, value in default_values.items():
         if key not in st.session_state:
             st.session_state[key] = value
+
+    # Check if the load path exists before attempting to load the model
+    if not os.path.exists(st.session_state["saved_model_dir"]):
+        st.session_state["model_loaded"] = False
 
 
 @robust_error_boundary

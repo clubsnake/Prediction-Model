@@ -3,14 +3,14 @@
 Provides a class to track and log predictions over time,
 and compute accuracy metrics for a defined window.
 """
-
-import logging
 import os
-from datetime import datetime, timedelta
-from typing import Dict
-
-import numpy as np
+import logging
 import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Union
+import json
+
 from src.utils.threadsafe import (
     AtomicFileWriter,
     convert_to_native_types,
@@ -25,213 +25,290 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 class PredictionMonitor:
     """
-    Monitors predictions, logs them, and calculates basic error metrics
-    over a specified window (e.g. 24h).
+    Monitor and evaluate model predictions over time.
+    
+    This class tracks predictions, compares them with actual values,
+    and calculates accuracy metrics over different time windows.
     """
-
-    def __init__(self, max_log_entries=1000, logs_path=None):
+    
+    def __init__(self, logs_path: str = None):
         """
         Initialize the prediction monitor.
-
+        
         Args:
-            max_log_entries: Maximum number of entries to keep in memory
-            logs_path: Path to directory where logs will be saved
+            logs_path: Path to store prediction logs
         """
-        self.predictions_log = pd.DataFrame(
-            columns=[
-                "timestamp",
-                "ticker",
-                "timeframe",
-                "actual_price",
-                "predicted_price",
-                "prediction_error",
-                "horizon",
-            ]
-        )
-        self.metrics_cache = {}
-        self.last_cache_update = None
-        self.cache_timeout = timedelta(minutes=5)
-        self.max_log_entries = max_log_entries
-
-        # Set default logs path if none provided
-        self.logs_path = logs_path or os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "..", "logs"
-        )
-
-        # Ensure logs directory exists
+        self.logs_path = logs_path or os.path.join(os.getcwd(), "logs")
         os.makedirs(self.logs_path, exist_ok=True)
-
+        
+        # Create DataFrame to store predictions
+        self.predictions_log = pd.DataFrame(columns=[
+            "timestamp", "ticker", "timeframe", "horizon", 
+            "predicted", "actual", "error", "pct_error"
+        ])
+        
         # Load existing logs if available
-        self.log_file_path = os.path.join(self.logs_path, "prediction_logs.csv")
-        self.load_logs()
-
-    def load_logs(self) -> bool:
-        """
-        Load prediction logs from disk.
-
-        Returns:
-            bool: True if logs were successfully loaded
-        """
+        self._load_logs()
+        
+    def _load_logs(self):
+        """Load existing prediction logs from disk"""
         try:
-            if os.path.exists(self.log_file_path):
-                loaded_logs = pd.read_csv(self.log_file_path, parse_dates=["timestamp"])
-                if not loaded_logs.empty:
-                    # If we have more entries than max_log_entries, keep only the most recent
-                    if len(loaded_logs) > self.max_log_entries:
-                        loaded_logs = loaded_logs.iloc[-self.max_log_entries :]
-                    self.predictions_log = loaded_logs
-                    logger.info(
-                        f"Loaded {len(loaded_logs)} prediction logs from {self.log_file_path}"
-                    )
-                    return True
-            return False
+            log_file = os.path.join(self.logs_path, "predictions.csv")
+            if os.path.exists(log_file):
+                self.predictions_log = pd.read_csv(log_file)
+                # Ensure timestamp is datetime for filtering operations
+                self.predictions_log["timestamp"] = pd.to_datetime(self.predictions_log["timestamp"])
+                logger.info(f"Loaded {len(self.predictions_log)} prediction logs")
         except Exception as e:
-            logger.error(f"Error loading prediction logs: {str(e)}")
-            return False
-
-    def save_logs(self) -> bool:
-        """
-        Save prediction logs to disk.
-
-        Returns:
-            bool: True if logs were successfully saved
-        """
-        try:
-            if not self.predictions_log.empty:
-                # Use AtomicFileWriter for thread-safe writing
-                with AtomicFileWriter(self.log_file_path) as temp_file:
-                    self.predictions_log.to_csv(temp_file.name, index=False)
-                logger.info(
-                    f"Saved {len(self.predictions_log)} prediction logs to {self.log_file_path}"
-                )
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Error saving prediction logs: {str(e)}")
-            return False
-
+            logger.error(f"Error loading prediction logs: {e}")
+    
     def log_prediction(
-        self, ticker: str, timeframe: str, actual: float, predicted: float, horizon: int
-    ) -> None:
+        self, 
+        ticker: str, 
+        timeframe: str,
+        predicted: float,
+        actual: Optional[float] = None,
+        horizon: int = 1,
+        timestamp: Optional[datetime] = None
+    ):
         """
-        Log a single prediction result, computing error automatically.
+        Log a new prediction with optional actual value.
+        
+        Args:
+            ticker: Stock ticker symbol
+            timeframe: Data timeframe (e.g. '1d', '1h')
+            predicted: Predicted price value
+            actual: Actual price value if known
+            horizon: Prediction horizon in periods (days/hours)
+            timestamp: Prediction timestamp (defaults to current time)
         """
         try:
-            actual = float(actual)
-            predicted = float(predicted)
-            if not (np.isfinite(actual) and np.isfinite(predicted)):
-                raise ValueError("Invalid actual or predicted values (NaN/Inf).")
-
-            error = abs((predicted - actual) / actual) * 100
-            new_entry = pd.DataFrame(
-                {
-                    "timestamp": [datetime.now()],
-                    "ticker": [ticker],
-                    "timeframe": [timeframe],
-                    "actual_price": [actual],
-                    "predicted_price": [predicted],
-                    "prediction_error": [error],
-                    "horizon": [horizon],
-                }
-            )
-            self.predictions_log = pd.concat(
-                [self.predictions_log, new_entry], ignore_index=True
-            )
-
-            # Limit the log size to max_log_entries
-            if len(self.predictions_log) > self.max_log_entries:
-                self.predictions_log = self.predictions_log.iloc[
-                    -self.max_log_entries :
-                ]
-
-            self.metrics_cache = {}  # clear cache
-
-            # Save logs after each update
-            self.save_logs()
+            timestamp = timestamp or datetime.now()
+            
+            # Calculate error metrics if actual value is provided
+            error = None
+            pct_error = None
+            if actual is not None:
+                error = predicted - actual
+                pct_error = (abs(error) / actual) * 100 if actual != 0 else None
+            
+            # Create new log entry
+            new_prediction = pd.DataFrame([{
+                "timestamp": timestamp,
+                "ticker": ticker,
+                "timeframe": timeframe,
+                "horizon": horizon,
+                "predicted": predicted,
+                "actual": actual,
+                "error": error,
+                "pct_error": pct_error
+            }])
+            
+            # Append to log
+            self.predictions_log = pd.concat([self.predictions_log, new_prediction], ignore_index=True)
+            
+            # Save to disk
+            self._save_logs()
+            
+            logger.debug(f"Logged prediction for {ticker}/{timeframe}: predicted={predicted}, actual={actual}")
+            return True
         except Exception as e:
-            logger.error(f"Error logging prediction: {str(e)}")
-
-    def get_accuracy_metrics(self, window: str = "24h") -> Dict[str, float]:
+            logger.error(f"Error logging prediction: {e}")
+            return False
+    
+    def update_actual(self, ticker: str, timeframe: str, timestamp: datetime, actual: float):
         """
-        Return aggregated accuracy metrics over the specified window.
-
-        :param window: e.g. '24h', '7d', etc.
-        :return: Dict with mean_error, max_error, and correct_direction fraction.
+        Update a prediction with actual value once known.
+        
+        Args:
+            ticker: Stock ticker symbol
+            timeframe: Data timeframe
+            timestamp: Prediction timestamp to update
+            actual: Actual price value
+            
+        Returns:
+            bool: True if updated successfully
         """
         try:
-            now = datetime.now()
-            if (
-                self.last_cache_update
-                and (now - self.last_cache_update < self.cache_timeout)
-                and window in self.metrics_cache
-            ):
-                return self.metrics_cache[window]
-
-            # Vectorized filtering
-            recent = self.predictions_log[
-                self.predictions_log["timestamp"] > now - pd.Timedelta(window)
-            ]
-            if recent.empty:
-                return {"mean_error": 0.0, "max_error": 0.0, "correct_direction": 0.0}
-
-            # Vectorized calculations
-            mean_error = float(recent["prediction_error"].mean())
-            max_error = float(recent["prediction_error"].max())
-
-            # Calculate direction accuracy using vectorized operations
-            price_diffs = recent["predicted_price"].diff()
-            actual_diffs = recent["actual_price"].diff()
-            correct_dir = float((price_diffs * actual_diffs > 0).mean())
-
+            # Convert timestamp to pd.Timestamp for comparison
+            pd_timestamp = pd.Timestamp(timestamp)
+            
+            # Locate the prediction to update
+            mask = (
+                (self.predictions_log["ticker"] == ticker) &
+                (self.predictions_log["timeframe"] == timeframe) &
+                (self.predictions_log["timestamp"] == pd_timestamp) &
+                (self.predictions_log["actual"].isna())
+            )
+            
+            if not mask.any():
+                logger.warning(f"No matching prediction found to update for {ticker}/{timeframe} at {timestamp}")
+                return False
+            
+            # Update the actual value and calculate error metrics
+            idx = mask.idxmax()
+            predicted = self.predictions_log.at[idx, "predicted"]
+            
+            self.predictions_log.at[idx, "actual"] = actual
+            self.predictions_log.at[idx, "error"] = predicted - actual
+            self.predictions_log.at[idx, "pct_error"] = (abs(predicted - actual) / actual) * 100 if actual != 0 else None
+            
+            # Save updated logs
+            self._save_logs()
+            
+            logger.debug(f"Updated prediction for {ticker}/{timeframe}: actual={actual}, predicted={predicted}")
+            return True
+        except Exception as e:
+            logger.error(f"Error updating prediction: {e}")
+            return False
+    
+    def _save_logs(self):
+        """Save prediction logs to disk"""
+        try:
+            log_file = os.path.join(self.logs_path, "predictions.csv")
+            self.predictions_log.to_csv(log_file, index=False)
+        except Exception as e:
+            logger.error(f"Error saving prediction logs: {e}")
+    
+    def get_accuracy_metrics(self, window: str = "all", ticker: str = None, timeframe: str = None) -> Dict:
+        """
+        Calculate accuracy metrics over a time window.
+        
+        Args:
+            window: Time window for metrics ('all', '24h', '7d', '30d', etc.)
+            ticker: Filter by ticker (optional)
+            timeframe: Filter by timeframe (optional)
+            
+        Returns:
+            Dict with accuracy metrics
+        """
+        try:
+            # Create a filtered copy of the log
+            filtered_log = self.predictions_log.copy()
+            
+            # Apply time window filter
+            if window != "all":
+                if window == "24h":
+                    cutoff = datetime.now() - timedelta(days=1)
+                elif window == "7d":
+                    cutoff = datetime.now() - timedelta(days=7)
+                elif window == "30d":
+                    cutoff = datetime.now() - timedelta(days=30)
+                else:
+                    logger.warning(f"Unknown time window: {window}, using all data")
+                    cutoff = None
+                
+                if cutoff:
+                    filtered_log = filtered_log[filtered_log["timestamp"] >= cutoff]
+            
+            # Apply ticker filter
+            if ticker:
+                filtered_log = filtered_log[filtered_log["ticker"] == ticker]
+            
+            # Apply timeframe filter
+            if timeframe:
+                filtered_log = filtered_log[filtered_log["timeframe"] == timeframe]
+            
+            # Filter to entries with both predicted and actual values
+            valid_entries = filtered_log.dropna(subset=["predicted", "actual"])
+            
+            # Default metrics in case of empty data
             metrics = {
-                "mean_error": mean_error,
-                "max_error": max_error,
-                "correct_direction": correct_dir,
+                "mean_error": 0,
+                "mean_abs_error": 0,
+                "root_mean_sq_error": 0,
+                "correct_direction": 0,
+                "num_predictions": len(valid_entries)
             }
-            self.metrics_cache[window] = metrics
-            self.last_cache_update = now
-
+            
+            if len(valid_entries) == 0:
+                return metrics
+            
+            # Calculate error metrics
+            metrics["mean_error"] = valid_entries["pct_error"].mean()
+            metrics["mean_abs_error"] = valid_entries["error"].abs().mean()
+            metrics["root_mean_sq_error"] = np.sqrt((valid_entries["error"] ** 2).mean())
+            
+            # Calculate direction accuracy if we have enough data
+            if len(valid_entries) > 1:
+                # Sort by timestamp
+                sorted_entries = valid_entries.sort_values("timestamp")
+                
+                # Calculate direction changes
+                actual_direction = np.diff(sorted_entries["actual"]) > 0
+                pred_direction = np.diff(sorted_entries["predicted"]) > 0
+                
+                # Direction correct if both have same sign
+                correct = (actual_direction == pred_direction).mean()
+                metrics["correct_direction"] = correct
+            
             return metrics
         except Exception as e:
-            logger.error(f"Error calculating metrics: {str(e)}")
-            return {"mean_error": 0.0, "max_error": 0.0, "correct_direction": 0.0}
-
-    def export_metrics_history(self, path: str = None) -> bool:
+            logger.error(f"Error calculating accuracy metrics: {e}")
+            return {"error": str(e)}
+    
+    def get_recent_predictions(self, limit: int = 10, ticker: str = None, timeframe: str = None):
         """
-        Export metrics history to JSON file.
-
+        Get the most recent predictions.
+        
         Args:
-            path: Path to save the metrics history. If None, use default path.
-
+            limit: Maximum number of predictions to return
+            ticker: Filter by ticker (optional)
+            timeframe: Filter by timeframe (optional)
+            
         Returns:
-            bool: True if successful
+            DataFrame with recent predictions
         """
         try:
-            if path is None:
-                path = os.path.join(self.logs_path, "metrics_history.json")
-
-            # Calculate metrics for different time windows
-            metrics = {
-                "1h": self.get_accuracy_metrics("1h"),
-                "24h": self.get_accuracy_metrics("24h"),
-                "7d": self.get_accuracy_metrics("7d"),
-                "all": self.get_accuracy_metrics("365d"),  # Effectively all-time
-            }
-
-            # Add timestamp
-            metrics["timestamp"] = datetime.now().isoformat()
-
-            # Convert to native types for JSON
-            metrics = convert_to_native_types(metrics)
-
-            # Save to JSON
-            safe_write_json(metrics, path)
-            logger.info(f"Exported metrics history to {path}")
-            return True
-
+            # Create a filtered copy of the log
+            filtered_log = self.predictions_log.copy()
+            
+            # Apply ticker filter
+            if ticker:
+                filtered_log = filtered_log[filtered_log["ticker"] == ticker]
+            
+            # Apply timeframe filter
+            if timeframe:
+                filtered_log = filtered_log[filtered_log["timeframe"] == timeframe]
+            
+            # Sort by timestamp (newest first) and limit results
+            recent = filtered_log.sort_values("timestamp", ascending=False).head(limit)
+            
+            return recent
         except Exception as e:
-            logger.error(f"Error exporting metrics history: {str(e)}")
+            logger.error(f"Error getting recent predictions: {e}")
+            return pd.DataFrame()
+
+    def export_predictions_to_json(self, file_path: str = None) -> bool:
+        """
+        Export predictions log to JSON file.
+        
+        Args:
+            file_path: Path to save the JSON file. If None, saves to logs directory.
+            
+        Returns:
+            bool: True if export was successful
+        """
+        try:
+            if file_path is None:
+                file_path = os.path.join(self.logs_path, "predictions_export.json")
+            
+            # Convert DataFrame to JSON-compatible format
+            predictions_data = self.predictions_log.to_dict(orient="records")
+            
+            # Convert datetime objects to strings
+            for entry in predictions_data:
+                if isinstance(entry["timestamp"], pd.Timestamp):
+                    entry["timestamp"] = entry["timestamp"].isoformat()
+            
+            # Write to file
+            with open(file_path, "w") as f:
+                json.dump(predictions_data, f, indent=2)
+                
+            logger.info(f"Exported {len(predictions_data)} predictions to {file_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Error exporting predictions to JSON: {e}")
             return False

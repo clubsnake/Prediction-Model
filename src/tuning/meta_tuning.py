@@ -37,29 +37,35 @@ import time
 
 # Set optimized environment variables early (before any other imports)
 from src.utils.env_setup import setup_tf_environment
-env_vars = setup_tf_environment(memory_growth=True, mixed_precision=True)
 
-# Keep only essential imports at the module level
+# Get mixed precision setting from config first
+import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+try:
+    from config.config_loader import get_value
+    use_mixed_precision = get_value("hardware.use_mixed_precision", False)
+except ImportError:
+    use_mixed_precision = False
+
+env_vars = setup_tf_environment(memory_growth=True, mixed_precision=use_mixed_precision)
+
 import numpy as np
 import optuna
 import streamlit as st
 import yaml
-from src.models.cnn_model import CNNPricePredictor, EnsembleModel  # Add this import
-
-# Use absolute imports
+from src.models.cnn_model import CNNPricePredictor, EnsembleModel 
 from src.training.walk_forward import run_walk_forward as walk_forward_ensemble_eval
-from progress_helper import update_progress_in_yaml  # Corrected import path
+from src.tuning.progress_helper import update_progress_in_yaml 
 from src.utils.threadsafe import (AtomicFileWriter, convert_to_native_types,
                                 safe_read_json, safe_read_yaml,
                                 safe_write_json, safe_write_yaml)
-
-# Import direct configuration that doesn't create cycles
 from config.config_loader import (LOSS_FUNCTIONS, MAPE_THRESHOLD, MODEL_TYPES,
                     N_STARTUP_TRIALS, RMSE_THRESHOLD, START_DATE, TFT_GRID,
                     TICKER, TIMEFRAMES, TUNING_LOOP,
                     TUNING_TRIALS_PER_CYCLE_max, TUNING_TRIALS_PER_CYCLE_min,
                     INTERVAL, get_active_feature_names, get_horizon_for_category,
-                    get_hyperparameter_ranges, ACTIVE_MODEL_TYPES)
+                    ACTIVE_MODEL_TYPES)
 
 # Import pruning settings from config
 from config.config_loader import (PRUNING_ABSOLUTE_MAPE_FACTOR, PRUNING_ABSOLUTE_RMSE_FACTOR,
@@ -208,11 +214,12 @@ def prune_old_cycles(filename=CYCLE_METRICS_FILE, max_cycles=50):
 
 class LazyImportManager:
     """
-    Handles lazy imports to avoid circular import issues.
-    Imports only happen when functions are called (on demand), not at module load time.
+    Handles lazy imports to avoid circular dependencies.
+    All functions below are invoked on demand and import only when necessary.
     """
     @staticmethod
     def get_model_builder():
+        # Returns the model-building function.
         from src.models.model import build_model_by_type
         return build_model_by_type
 
@@ -251,11 +258,25 @@ class LazyImportManager:
         from src.models.cnn_model import CNNPricePredictor
         return CNNPricePredictor
 
+# ...existing imports...
+from src.utils.training_optimizer import get_training_optimizer
+
+# Initialize training optimizer
+training_optimizer = get_training_optimizer()
+
 def get_model_prediction(mtype, submodel_params, X_train, y_train, X_test, horizon, unified_lookback, feature_cols):
     """
     Get predictions from a model without circular imports.
     Uses lazy imports to avoid circular dependencies.
     """
+    # Get optimal configuration for this model type
+    model_config = training_optimizer.get_model_config(mtype)
+    
+    # Use optimized batch size if not specified
+    if mtype in ["lstm", "rnn", "tft", "cnn", "ltc"]:
+        if "batch_size" not in submodel_params[mtype]:
+            submodel_params[mtype]["batch_size"] = model_config["batch_size"]
+    
     if (mtype in ["lstm", "rnn"]):
         arch_params = {
             "units_per_layer": submodel_params[mtype].get("units_per_layer", [64, 32]),
@@ -1154,8 +1175,12 @@ def tune_for_combo(ticker, timeframe, range_cat="all", n_trials=None, cycle=1):
     study.set_user_attr("cycle", cycle)
     study.set_user_attr("tuning_multipliers", tuning_multipliers)  # Store for reference
     
-    if study.best_trial:
-        logger.info(f"Current best: {study.best_value:.6f} (Trial {study.best_trial.number})")
+    # Fix: Safely check for best trial using a try-except block
+    try:
+        if study.best_trial:
+            logger.info(f"Current best: {study.best_value:.6f} (Trial {study.best_trial.number})")
+    except (ValueError, AttributeError, RuntimeError):
+        logger.info(f"No trials completed yet for study {study_name}")
     
     # Define callbacks
     stop_callback = StopStudyCallback()
@@ -1182,21 +1207,24 @@ def tune_for_combo(ticker, timeframe, range_cat="all", n_trials=None, cycle=1):
         adaptive_memory_clean("large")
     
     # Register the best model if study wasn't interrupted
-    if study.best_trial and not is_stop_requested():
-        model_id = register_best_model(study, study.best_trial, ticker, timeframe)
-        
-        # If successful, save model ID to best_params.yaml
-        if model_id:
-            best_params_data = safe_read_yaml(BEST_PARAMS_FILE) or {}
-            if "best_models" not in best_params_data:
-                best_params_data["best_models"] = {}
+    try:
+        if not is_stop_requested() and study.best_trial:
+            model_id = register_best_model(study, study.best_trial, ticker, timeframe)
             
-            # Store by ticker and timeframe
-            if ticker not in best_params_data["best_models"]:
-                best_params_data["best_models"][ticker] = {}
-            
-            best_params_data["best_models"][ticker][timeframe] = model_id
-            safe_write_yaml(BEST_PARAMS_FILE, best_params_data)
+            # If successful, save model ID to best_params.yaml
+            if model_id:
+                best_params_data = safe_read_yaml(BEST_PARAMS_FILE) or {}
+                if "best_models" not in best_params_data:
+                    best_params_data["best_models"] = {}
+                
+                # Store by ticker and timeframe
+                if ticker not in best_params_data["best_models"]:
+                    best_params_data["best_models"][ticker] = {}
+                
+                best_params_data["best_models"][ticker][timeframe] = model_id
+                safe_write_yaml(BEST_PARAMS_FILE, best_params_data)
+    except (ValueError, AttributeError, RuntimeError) as e:
+        logger.warning(f"Could not register best model: {e}")
     
     return study
 
@@ -1371,3 +1399,18 @@ def main():
         except Exception as e:
             logger.error(f"Error fetching training data: {e}")
             return False
+
+# ...existing code...
+
+# Import configuration properly
+from config.config_loader import get_config
+
+# Use this before importing walk_forward
+config = get_config()
+LOOKBACK = config.get('LOOKBACK', 30)
+PREDICTION_HORIZON = config['PREDICTION_HORIZON']
+
+# Now import from training
+from src.training.walk_forward import run_walk_forward as walk_forward_ensemble_eval
+
+# ...existing code...

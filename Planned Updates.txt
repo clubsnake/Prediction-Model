@@ -2,10 +2,6 @@ Disributed processing
 
 Remote GUI
 
-more models such as TabNet and CNN
-
 Sentiment analysis and fundemental/onchain data
-
-Automatic saving when finished training and only training on new data
 
 Automatically training on multiple assest to keep memory refreshed

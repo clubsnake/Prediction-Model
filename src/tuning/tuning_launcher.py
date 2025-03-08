@@ -9,6 +9,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from config import HYPERPARAM_SEARCH_METHOD
+from src.utils.training_optimizer import get_training_optimizer
 
 valid_methods = ["optuna", "grid", "both"]
 if HYPERPARAM_SEARCH_METHOD not in valid_methods:
@@ -17,6 +18,8 @@ if HYPERPARAM_SEARCH_METHOD not in valid_methods:
     )
     HYPERPARAM_SEARCH_METHOD = "optuna"
 
+# Initialize training optimizer
+training_optimizer = get_training_optimizer()
 
 def main():
     """
@@ -43,6 +46,9 @@ def main():
             f"Invalid HYPERPARAM_SEARCH_METHOD: {HYPERPARAM_SEARCH_METHOD}"
         )
 
+def setup_optuna_study(study_name="prediction_model_study", storage=None):
+    # Configure resources for parallel tuning
+    parallel_jobs = training_optimizer.config.get("num_parallel_models", 1)
 
 if __name__ == "__main__":
     main()

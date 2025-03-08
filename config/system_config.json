@@ -24,7 +24,8 @@
     "gpu_memory_limit_mb": 0,
     "enable_onednn_opts": true,
     "inference_threads": 4,
-    "parallel_calls": 16
+    "parallel_calls": 16,
+    "gpu_memory_limit": 0.8
   },
   "time_series": {
     "lookback": 30,
@@ -34,15 +35,20 @@
       "enabled": true,
       "default_days": 30,
       "min_days": 3,
-      "max_days": 180
+      "max_days": 180,
+      "min_window": 3,
+      "max_window": 180,
+      "default_window": 30
     }
   },
   "training": {
     "epochs": 50,
-    "batch_size": 16,
+    "batch_size": 64,
     "learning_rate": 0.001,
     "validation_split": 0.2,
-    "shuffle": true
+    "shuffle": true,
+    "default_batch_size": 32,
+    "num_workers": 4
   },
   "features": {
     "optuna_managed": true,
@@ -122,12 +128,7 @@
   "loss_functions": {
     "available": [
       "mean_squared_error",
-      "mean_absolute_error",
-      "mean_absolute_percentage_error",
-      "huber_loss",
-      "log_cosh",
-      "mean_squared_logarithmic_error",
-      "quantile_loss"
+      "mean_absolute_error"
     ],
     "default": "mean_squared_error",
     "optimization": {
@@ -162,5 +163,30 @@
   "optimization_results": {
     "best_params": {},
     "tuning_history": []
+  },
+  "gpu": {
+    "allow_growth": true,
+    "memory_limit_mb": null,
+    "visible_gpus": null,
+    "use_mixed_precision": false
+  },
+  "model_paths": {
+    "base_dir": "Data/Models",
+    "checkpoints_dir": "Data/Models/Checkpoints",
+    "optimized_dir": "Data/Models/Optimized"
+  },
+  "optuna": {
+    "storage": "sqlite:///Data/DB/optuna.db",
+    "pruning": true,
+    "n_startup_trials": 10
+  },
+  "last_update_time": "2023-07-27T12:00:00.000Z",
+  "runtime": {
+    "use_multiprocessing": true,
+    "prefetch_factor": 2
+  },
+  "data": {
+    "use_caching": true,
+    "cache_expiry_days": 7
   }
 }

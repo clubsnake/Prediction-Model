@@ -1,15 +1,15 @@
 """
-Utilities for memory management and resource cleanup.
+Memory management utilities for efficient training.
 """
 
-import gc
-import logging
 import os
-import weakref
-
-import numpy as np
+import gc
 import psutil
-import tensorflow as tf
+import numpy as np
+import logging
+import time
+import weakref
+from typing import Dict, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +40,151 @@ class WeakRefCache:
         return len(self._cache)
 
 
+def get_memory_usage() -> Dict[str, float]:
+    """
+    Get current memory usage statistics.
+    
+    Returns:
+        Dictionary with memory usage statistics
+    """
+    # Get process memory info
+    process = psutil.Process(os.getpid())
+    memory_info = process.memory_info()
+    
+    # Get system memory info
+    system_memory = psutil.virtual_memory()
+    
+    return {
+        'process_rss_gb': memory_info.rss / 1e9,  # Resident Set Size in GB
+        'process_vms_gb': memory_info.vms / 1e9,  # Virtual Memory Size in GB
+        'system_used_percent': system_memory.percent,
+        'system_available_gb': system_memory.available / 1e9,
+        'system_total_gb': system_memory.total / 1e9
+    }
+
+
+def adaptive_memory_clean(level: str = "medium") -> Dict[str, float]:
+    """
+    Clean memory adaptively based on specified level.
+    
+    Args:
+        level: Cleaning level ("small", "medium", "large")
+        
+    Returns:
+        Dictionary with memory statistics before and after cleaning
+    """
+    # Get memory usage before cleaning
+    before = get_memory_usage()
+    
+    # Always run garbage collection
+    gc.collect()
+    
+    if level in ["medium", "large"]:
+        # Clear Numpy cache
+        np.clear_cffi_cache()
+    
+    if level == "large":
+        # Try to release TensorFlow memory
+        try:
+            import tensorflow as tf
+            tf.keras.backend.clear_session()
+            
+            # Reset GPU memory if available
+            gpus = tf.config.experimental.list_physical_devices('GPU')
+            if gpus:
+                for gpu in gpus:
+                    tf.config.experimental.reset_memory_stats(gpu)
+        except:
+            pass
+        
+        # Try to release PyTorch memory
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except:
+            pass
+    
+    # Get memory usage after cleaning
+    after = get_memory_usage()
+    
+    # Calculate savings
+    savings = {
+        'rss_gb': before['process_rss_gb'] - after['process_rss_gb'],
+        'system_available_gb': after['system_available_gb'] - before['system_available_gb']
+    }
+    
+    logger.debug(f"Memory cleaning ({level}) - Saved: {savings['rss_gb']:.2f} GB process RSS")
+    
+    return {
+        'before': before,
+        'after': after,
+        'savings': savings
+    }
+
+
+def limit_memory_growth(max_memory_percent: float = 90.0) -> bool:
+    """
+    Monitor memory usage and pause execution if it exceeds threshold.
+    
+    Args:
+        max_memory_percent: Maximum memory usage percentage
+        
+    Returns:
+        Whether action was taken
+    """
+    system_memory = psutil.virtual_memory()
+    
+    if system_memory.percent > max_memory_percent:
+        logger.warning(f"Memory usage critical: {system_memory.percent:.1f}% - Cleaning and pausing")
+        adaptive_memory_clean("large")
+        
+        # If still high, wait for memory to be released
+        system_memory = psutil.virtual_memory()
+        if system_memory.percent > max_memory_percent:
+            wait_time = 5.0  # seconds
+            logger.warning(f"Still high memory usage, waiting {wait_time}s")
+            time.sleep(wait_time)
+            return True
+    
+    return False
+
+
+def memory_efficient_operation(func):
+    """
+    Decorator to make functions memory-efficient.
+    
+    Args:
+        func: Function to decorate
+        
+    Returns:
+        Wrapped function that cleans memory before and after execution
+    """
+    def wrapper(*args, **kwargs):
+        # Clean before execution
+        adaptive_memory_clean("small")
+        
+        # Monitor memory growth during execution
+        result = func(*args, **kwargs)
+        
+        # Clean after execution
+        adaptive_memory_clean("small")
+        
+        return result
+    
+    return wrapper
+
+
 def cleanup_tf_session():
     """
     Clean up TensorFlow session resources.
     More selective than just clear_session().
     """
-    tf.keras.backend.clear_session()
+    try:
+        import tensorflow as tf
+        tf.keras.backend.clear_session()
+    except ImportError:
+        pass
     gc.collect()
 
 

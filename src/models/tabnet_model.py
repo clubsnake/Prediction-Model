@@ -9,13 +9,14 @@ for tabular data with feature selection capabilities.
 import logging
 import os
 import pickle
+import sys
+import warnings
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import optuna
 import pandas as pd
 from optuna.trial import Trial
-from pytorch_tabnet.tab_model import TabNetRegressor
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
@@ -27,6 +28,25 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("TabNet_PricePrediction")
+
+# Add project root to Python path
+current_file = os.path.abspath(__file__)
+models_dir = os.path.dirname(current_file)
+src_dir = os.path.dirname(models_dir)
+project_root = os.path.dirname(src_dir)
+
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Try to import TabNet
+try:
+    import torch
+    from pytorch_tabnet.tab_model import TabNetRegressor
+    TABNET_AVAILABLE = True
+    logger.info("TabNet successfully imported")
+except ImportError:
+    logger.warning("TabNet module not available. TabNet models will not be supported.")
+    TABNET_AVAILABLE = False
 
 
 class TabNetPricePredictor(BaseEstimator, RegressorMixin):

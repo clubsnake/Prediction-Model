@@ -44,6 +44,13 @@ except ImportError:
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
 
+# Add proper import for PredictionMonitor
+try:
+    from src.dashboard.monitoring import PredictionMonitor
+    HAS_MONITORING = True
+except ImportError:
+    logger.warning("PredictionMonitor not available")
+    HAS_MONITORING = False
 
 class PredictionService:
     """
@@ -57,6 +64,9 @@ class PredictionService:
         models_dir: str = None,
         model_file: str = None,
         model_instance=None,
+        monitor=None,
+        ticker=None,
+        timeframe=None
     ):
         """
         Initialize the prediction service.
@@ -66,11 +76,17 @@ class PredictionService:
             models_dir: Directory containing model files
             model_file: Optional specific model file to load
             model_instance: Optional pre-loaded model instance
+            monitor: Optional PredictionMonitor instance for tracking predictions
+            ticker: Current ticker symbol being analyzed
+            timeframe: Current timeframe being analyzed
         """
         self.data_dir = data_dir or DATA_DIR
         self.models_dir = models_dir or MODELS_DIR
         self.model_file = model_file
         self.model = model_instance
+        self.monitor = monitor
+        self.current_ticker = ticker
+        self.current_timeframe = timeframe
 
         # If model_file is provided, load the model
         if self.model_file and not self.model:
@@ -167,11 +183,46 @@ class PredictionService:
 
             # Make prediction
             predictions = self.model.predict(processed_data)
-            logger.info(f"Prediction successful: shape={predictions.shape}")
+            logger.info(f"Prediction successful: shape={predictions.shape if hasattr(predictions, 'shape') else 'scalar'}")
             return predictions
         except Exception as e:
             logger.error(f"Error during prediction: {e}")
             return np.array([])
+
+    def predict_and_log(self, data: Union[pd.DataFrame, np.ndarray, List], 
+                       actual=None, feature_names: List[str] = None,
+                       horizon: int = 1) -> np.ndarray:
+        """
+        Make predictions and log them to the monitor if available.
+
+        Args:
+            data: Input data for prediction
+            actual: Actual values for comparison (optional)
+            feature_names: Optional feature names
+            horizon: Prediction horizon (days ahead)
+
+        Returns:
+            Numpy array of predictions
+        """
+        predictions = self.predict(data, feature_names)
+        
+        # Log prediction if monitor is available and actual values provided
+        if self.monitor is not None and actual is not None:
+            try:
+                # Extract first prediction value for single-value logging
+                pred_value = predictions[0] if isinstance(predictions, np.ndarray) and len(predictions) > 0 else predictions
+                
+                self.monitor.log_prediction(
+                    ticker=self.current_ticker,
+                    timeframe=self.current_timeframe,
+                    actual=actual,
+                    predicted=pred_value,
+                    horizon=horizon
+                )
+            except Exception as e:
+                logger.error(f"Error logging prediction: {e}")
+        
+        return predictions
 
     def _preprocess_input(
         self, data: Union[pd.DataFrame, np.ndarray, List], feature_names: List[str] = None
@@ -251,6 +302,12 @@ class PredictionService:
                 info["layers"] = layers
             except Exception as e:
                 info["layers_error"] = str(e)
+                
+        # Add ensemble info if this is an ensemble model
+        if hasattr(self.model, "models") and hasattr(self.model, "weights"):
+            info["is_ensemble"] = True
+            info["ensemble_models"] = list(self.model.models.keys())
+            info["ensemble_weights"] = {k: float(v) for k, v in self.model.weights.items()}
 
         return info
 
@@ -276,6 +333,208 @@ class PredictionService:
         except yaml.YAMLError as e:
             logger.error(f"Error parsing parameters file: {e}")
             return {}
+
+    def generate_forecast(
+        self, df: pd.DataFrame, feature_cols: List[str], lookback: int = 30, horizon: int = 30
+    ) -> List[float]:
+        """
+        Generate forecast for future time periods.
+        
+        Args:
+            df: DataFrame with historical data
+            feature_cols: Features to use for prediction
+            lookback: Number of past days to use for input
+            horizon: Number of days to forecast
+            
+        Returns:
+            List of forecasted values
+        """
+        if self.model is None:
+            logger.error("No model loaded for forecasting")
+            return []
+            
+        try:
+            # Get the last 'lookback' days of data for input
+            if len(df) < lookback:
+                logger.error(f"DataFrame has fewer rows ({len(df)}) than lookback ({lookback})")
+                return []
+                
+            last_data = df.iloc[-lookback:].copy()
+            
+            # Create a scaler for feature normalization
+            from sklearn.preprocessing import StandardScaler
+            scaler = StandardScaler()
+            scaler.fit(last_data[feature_cols])
+            
+            # Initialize array to store predictions
+            future_prices = []
+            current_data = last_data.copy()
+            
+            # Import create_sequences once
+            try:
+                from src.data.preprocessing import create_sequences
+                
+                # First attempt - use create_sequences to generate input sequence
+                X_input, _ = create_sequences(current_data, feature_cols, "Close", lookback, 1)
+                
+                # Make prediction for each day in the horizon
+                for i in range(horizon):
+                    # Use model to predict
+                    preds = self.model.predict(X_input, verbose=0)
+                    
+                    # Get the predicted price (first value if multiple outputs)
+                    if hasattr(preds, 'shape') and len(preds.shape) > 1:
+                        next_price = float(preds[0][0])
+                    else:
+                        next_price = float(preds[0])
+                        
+                    future_prices.append(next_price)
+                    
+                    # Update input data with the prediction
+                    next_row = current_data.iloc[-1:].copy()
+                    if isinstance(next_row.index[0], pd.Timestamp):
+                        next_row.index = [next_row.index[0] + pd.Timedelta(days=1)]
+                    else:
+                        next_row.index = [next_row.index[0] + 1]
+                    
+                    next_row["Close"] = next_price
+                    current_data = pd.concat([current_data.iloc[1:], next_row])
+                    
+                    # Scale features for consistent input
+                    current_scaled = current_data.copy()
+                    current_scaled[feature_cols] = scaler.transform(current_data[feature_cols])
+                    
+                    # Create new sequence for next prediction
+                    X_input, _ = create_sequences(current_scaled, feature_cols, "Close", lookback, 1)
+                
+            except ImportError:
+                logger.warning("Using simplified forecast approach without create_sequences")
+                
+                # Simplified approach without create_sequences
+                feature_data = last_data[feature_cols].values
+                X_input = np.array([feature_data])
+                
+                # Make prediction for each day in the horizon
+                for i in range(horizon):
+                    # Use model to predict
+                    preds = self.model.predict(X_input, verbose=0)
+                    
+                    # Get the predicted price
+                    if hasattr(preds, 'shape') and len(preds.shape) > 1:
+                        next_price = float(preds[0][0])
+                    else:
+                        next_price = float(preds[0])
+                        
+                    future_prices.append(next_price)
+                    
+                    # Update input data with the prediction
+                    next_row = current_data.iloc[-1:].copy()
+                    if isinstance(next_row.index[0], pd.Timestamp):
+                        next_row.index = [next_row.index[0] + pd.Timedelta(days=1)]
+                    else:
+                        next_row.index = [next_row.index[0] + 1]
+                    
+                    next_row["Close"] = next_price
+                    current_data = pd.concat([current_data.iloc[1:], next_row])
+                    
+                    # Get new feature data for next prediction
+                    feature_data = current_data[feature_cols].values
+                    X_input = np.array([feature_data])
+                
+            logger.info(f"Generated {len(future_prices)} day forecast")
+            return future_prices
+        
+        except Exception as e:
+            logger.error(f"Error generating forecast: {e}", exc_info=True)
+            return []
+
+
+def update_dashboard_forecast(model, df, feature_cols, ensemble_weights=None):
+    """
+    Unified function to update the dashboard forecast from a trained model.
+    This function serves as the central point for forecast updates.
+    
+    Args:
+        model: The trained model (ensemble or single model)
+        df: DataFrame with historical data
+        feature_cols: Feature columns to use
+        ensemble_weights: Optional weights for ensemble models
+        
+    Returns:
+        List of forecast values or None if failed
+    """
+    try:
+        import streamlit as st
+        from datetime import datetime
+        
+        # Get context information from session state or directly passed
+        ticker = st.session_state.get("selected_ticker")
+        timeframe = st.session_state.get("selected_timeframe")
+        
+        # Get monitor from session state
+        monitor = st.session_state.get("prediction_monitor")
+        
+        # Get parameters or use defaults
+        lookback = st.session_state.get("lookback", 30)
+        forecast_window = st.session_state.get("forecast_window", 30)
+        
+        # Create prediction service if needed
+        service = PredictionService(
+            model_instance=model,
+            ticker=ticker,
+            timeframe=timeframe,
+            monitor=monitor
+        )
+        
+        # Generate forecast
+        forecast = service.generate_forecast(df, feature_cols, lookback, forecast_window)
+        
+        # Update session state with forecast results
+        if forecast and len(forecast) > 0:
+            st.session_state["future_forecast"] = forecast
+            st.session_state["last_forecast_update"] = datetime.now()
+            
+            # Store ensemble weights if provided
+            if ensemble_weights:
+                st.session_state["ensemble_weights"] = ensemble_weights
+            
+            # Log this forecast to monitor
+            if monitor is not None:
+                try:
+                    # Record first day forecast for monitoring
+                    first_day_forecast = forecast[0] if forecast else None
+                    
+                    # Get the most recent close price as reference
+                    last_price = df["Close"].iloc[-1] if not df.empty else None
+                    
+                    if first_day_forecast is not None:
+                        monitor.log_prediction(
+                            ticker=ticker,
+                            timeframe=timeframe,
+                            predicted=first_day_forecast,
+                            actual=None,  # Will be updated later
+                            horizon=1
+                        )
+                        logger.info(f"Logged new forecast: {first_day_forecast:.2f}")
+                except Exception as e:
+                    logger.error(f"Error logging forecast: {e}")
+            
+            # Try to save prediction history
+            try:
+                from src.dashboard.dashboard.dashboard_visualization import save_best_prediction
+                save_best_prediction(df, forecast)
+            except ImportError:
+                logger.debug("Could not import save_best_prediction")
+                
+            logger.info(f"Updated dashboard forecast with {len(forecast)} days")
+            return forecast
+        else:
+            logger.warning("Generated forecast was empty")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error updating dashboard forecast: {e}", exc_info=True)
+        return None
 
 
 # ===== FLASK WEB INTERFACE =====
@@ -372,10 +631,44 @@ def create_flask_app(prediction_service=None):
         """API endpoint for model information."""
         return jsonify(prediction_service.get_model_info())
     
+    @app.route("/api/forecast", methods=["POST"])
+    def api_forecast():
+        """API endpoint for generating forecasts."""
+        try:
+            data = request.get_json()
+            
+            if not data:
+                return jsonify({"error": "No data provided"}), 400
+                
+            # Extract DataFrame from JSON
+            df_data = data.get("data", [])
+            if not df_data:
+                return jsonify({"error": "No data provided in 'data' field"}), 400
+                
+            feature_cols = data.get("feature_cols", [])
+            if not feature_cols:
+                return jsonify({"error": "No feature columns specified"}), 400
+                
+            lookback = data.get("lookback", 30)
+            horizon = data.get("horizon", 30)
+            
+            # Convert to DataFrame
+            df = pd.DataFrame(df_data)
+            
+            # Generate forecast
+            forecast = prediction_service.generate_forecast(df, feature_cols, lookback, horizon)
+            
+            return jsonify({
+                "forecast": forecast,
+                "status": "success"
+            })
+            
+        except Exception as e:
+            return jsonify({"error": str(e), "status": "error"}), 500
+    
     @app.route("/templates", methods=["GET"])
     def list_templates():
         """Show available prediction templates."""
-        # This would typically load from a database or file
         templates = [
             {"name": "Simple Prediction", "description": "Basic prediction with minimal features"},
             {"name": "Full Analysis", "description": "Comprehensive analysis with all features"}
@@ -404,6 +697,7 @@ def run_cli():
     parser.add_argument("--data", help="Path to data file")
     parser.add_argument("--output", help="Path to output file")
     parser.add_argument("--params", help="Path to parameters file")
+    parser.add_argument("--forecast", action="store_true", help="Generate forecast instead of prediction")
     args = parser.parse_args()
     
     # Initialize prediction service
@@ -437,15 +731,23 @@ def run_cli():
         logger.error(f"Could not load data from {data_file}. Exiting.")
         return 1
     
-    # Make predictions
-    logger.info("Performing predictions...")
-    predictions = service.predict(data)
+    # Generate forecast or make predictions
+    if args.forecast:
+        logger.info("Generating forecast...")
+        feature_cols = [col for col in data.columns if col != "Close"]
+        forecast = service.generate_forecast(data, feature_cols)
+        result = pd.DataFrame({"forecast": forecast})
+    else:
+        logger.info("Performing predictions...")
+        predictions = service.predict(data)
+        
+        if len(predictions) == 0:
+            logger.error("Prediction failed. Exiting.")
+            return 1
+            
+        result = pd.DataFrame({"prediction": predictions})
     
-    if len(predictions) == 0:
-        logger.error("Prediction failed. Exiting.")
-        return 1
-    
-    # Save or display predictions
+    # Save or display results
     if args.output:
         try:
             # Create output directory if it doesn't exist
@@ -453,26 +755,30 @@ def run_cli():
             if output_dir:
                 os.makedirs(output_dir, exist_ok=True)
             
-            # Save predictions
+            # Save results
             if args.output.endswith(".csv"):
-                pd.DataFrame({"prediction": predictions}).to_csv(args.output, index=False)
+                result.to_csv(args.output, index=False)
             elif args.output.endswith((".xls", ".xlsx")):
-                pd.DataFrame({"prediction": predictions}).to_excel(args.output, index=False)
+                result.to_excel(args.output, index=False)
             elif args.output.endswith(".json"):
                 with open(args.output, "w") as f:
-                    json.dump({"predictions": predictions.tolist()}, f)
+                    json.dump(result.to_dict(orient="records"), f)
             else:
-                np.save(args.output, predictions)
+                np.save(args.output, result.values)
             
-            logger.info(f"Predictions saved to {args.output}")
+            logger.info(f"Results saved to {args.output}")
         except Exception as e:
-            logger.error(f"Error saving predictions: {e}")
+            logger.error(f"Error saving results: {e}")
             return 1
     else:
-        # Display first 10 predictions
-        logger.info(f"First 10 predictions: {predictions[:10]}")
+        # Display first 10 values
+        display_count = min(10, len(result))
+        logger.info(f"First {display_count} results:")
+        for i in range(display_count):
+            for col in result.columns:
+                logger.info(f"{col}[{i}]: {result.iloc[i][col]}")
     
-    logger.info("Prediction completed successfully.")
+    logger.info("Processing completed successfully.")
     return 0
 
 
