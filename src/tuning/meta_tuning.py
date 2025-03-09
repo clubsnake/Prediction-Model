@@ -85,7 +85,6 @@ def set_stop_requested(val: bool):
     """Set the stop event flag."""
     if val:
         stop_event.set()
-        print("Stop requested - flag set")
     else:
         stop_event.clear()
 
@@ -168,8 +167,7 @@ class AdaptiveEnsembleWeighting:
             # Add exploration factor for diversity
             if self.exploration_factor > 0:
                 for mtype in self.weights:
-                    self.weights[mtype] += np.random.normal(0, self.exploration_factor)
-                    self.weights[mtype] = max(0, self.weights[mtype])  # Ensure non-negative
+                    self.weights[mtype] += self.exploration_factor
             
             # Normalize weights to sum to 1
             weight_sum = sum(self.weights.values())
@@ -203,12 +201,11 @@ def prune_old_cycles(filename=CYCLE_METRICS_FILE, max_cycles=50):
     try:
         if os.path.exists(filename):
             with open(filename, "r") as f:
-                cycles = yaml.safe_load(f) or []
+                cycles = yaml.safe_load(f)
             if len(cycles) > max_cycles:
                 cycles = cycles[-max_cycles:]
                 with open(filename, "w") as f:
-                    yaml.safe_dump(convert_to_builtin_type(cycles), f)
-                print(f"Pruned old cycles. Now storing {len(cycles)} cycles.")
+                    yaml.safe_dump(cycles, f)
     except Exception as e:
         print(f"Error pruning old cycles: {e}")
 
@@ -1151,6 +1148,7 @@ def tune_for_combo(ticker, timeframe, range_cat="all", n_trials=None, cycle=1):
         adjusted_min = max(5, int(TUNING_TRIALS_PER_CYCLE_min * trials_multiplier))
         adjusted_max = max(adjusted_min + 5, int(TUNING_TRIALS_PER_CYCLE_max * trials_multiplier))
         
+        
         n_trials = random.randint(adjusted_min, adjusted_max)
         logger.info(f"Auto-selecting {n_trials} trials for this cycle (between {adjusted_min} and {adjusted_max})")
     
@@ -1245,172 +1243,13 @@ def create_progress_callback(cycle=1):
             
     return progress_callback
 
-# Add these functions after your other function definitions
+__all__ = [
+    "start_tuning_process",
+    "stop_tuning_process",
+    "tune_for_combo",
+    "ensemble_with_walkforward_objective",
+    "register_best_model",
+    "get_model_registry"
+]
 
-def get_model_registry():
-    """Lazily load the model registry to avoid circular imports"""
-    # Use function attribute for caching
-    if not hasattr(get_model_registry, "_registry"):
-        try:
-            # Import only when needed
-            from src.training.incremental_learning import ModelRegistry  # Fixed typo: ModelRegistryry → ModelRegistry
 
-            # Create registry directory
-            registry_dir = os.path.join(DATA_DIR, "model_registry")
-            os.makedirs(registry_dir, exist_ok=True)
-            
-            # Create or get registry
-            registry = ModelRegistry(registry_dir=registry_dir, create_if_missing=True)
-            print(f"Model registry initialized at {registry_dir}")
-            get_model_registry._registry = registry
-        except (ImportError, Exception) as e:
-            print(f"Warning: Could not initialize model registry: {e}")
-            print("Model registration will be disabled")
-            get_model_registry._registry = None
-    
-    return get_model_registry._registry
-
-def register_best_model(study, trial, ticker, timeframe):
-    """Register the best model from a tuning run to the model registry"""
-    # Get model registry (or return if not available)
-    registry = get_model_registry()
-    if not registry:
-        print("Model registry not available - skipping registration")
-        return None
-    
-    # Get model parameters
-    try:
-        best_params = trial.params.copy()
-        
-        # Get feature columns and horizon
-        feature_cols = get_active_feature_names()
-        horizon = get_horizon_for_category(best_params.get("range_category", "all"))
-        
-        # Extract model type
-        model_type = best_params.get("model_type", "ensemble")
-        if "model_type" in best_params:
-            del best_params["model_type"]  # Remove to avoid duplication in hyperparams
-        
-        # Get model builder using lazy import manager
-        build_model_by_type = LazyImportManager.get_model_builder()
-        
-        # Prepare architecture parameters
-        architecture_params = {
-            "units_per_layer": best_params.get("units", [64, 32]),
-            "hidden_size": best_params.get("hidden_size", 64),
-            "lstm_units": best_params.get("lstm_units", 128),
-            "num_heads": best_params.get("num_heads", 4),
-            "use_batch_norm": best_params.get("use_batch_norm", False)
-        }
-        
-        # Only try to build and register neural network models
-        if model_type in ["lstm", "rnn", "tft"]:
-            # Build the model
-            build_model_by_type = LazyImportManager.get_model_builder()
-            model = build_model_by_type(
-                model_type=model_type,
-                num_features=len(feature_cols),
-                horizon=horizon,
-                learning_rate=best_params.get("lr", 0.001),
-                dropout_rate=best_params.get("dropout", 0.2),
-                loss_function=best_params.get("loss_function", "mean_squared_error"),
-                lookback=best_params.get("lookback", 30),
-                architecture_params=architecture_params
-            )
-            
-            # Performance metrics
-            metrics = {
-                "rmse": trial.user_attrs.get("rmse", 0),
-                "mape": trial.user_attrs.get("mape", 0),
-                "objective_value": trial.value,
-                "trial_number": trial.number,
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            # Register the model
-            model_id = registry.register_model(
-                model=model,
-                model_type=model_type,
-                ticker=ticker,
-                timeframe=timeframe,
-                metrics=metrics,
-                hyperparams=best_params,
-                tags=["optuna", "best_trial", f"cycle_{study.user_attrs.get('cycle', 0)}"]
-            )
-            
-            print(f"✅ Registered best {model_type} model with ID: {model_id}")
-            return model_id
-            
-        else:
-            print(f"⚠️ Skipping registration for non-neural model type: {model_type}")
-            return None
-    
-    except Exception as e:
-        print(f"❌ Error registering model: {e}")
-        return None
-
-# ...existing code...
-
-# Add import to get default INTERVAL from config
-from config.config_loader import INTERVAL
-
-# ...existing code...
-
-# ...existing code...
-
-# Add this variable to store the training dataframe
-df = None  # Will be set by dashboard.py when starting tuning
-
-def main():
-    """Main entry point for meta-tuning process"""
-    global df
-    if df is None and 'df_train' in st.session_state:
-        df = st.session_state['df_train']
-        logger.info(f"Using training data from session state: {len(df)} rows")
-    
-    # Determine interval: from session state if set, otherwise default to config.INTERVAL
-    interval = st.session_state.get("selected_timeframe", INTERVAL)
-    
-    # If we don't have training data yet, attempt to fetch it
-    if df is None:
-        try:
-            # Get training dates from session state or use defaults
-            training_start_date = st.session_state.get("training_start_date", 
-                                                     (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d'))
-            
-            if isinstance(training_start_date, datetime):
-                training_start_str = training_start_date.strftime('%Y-%m-%d')
-            else:
-                training_start_str = training_start_date
-                
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            ticker = st.session_state.get("selected_ticker", TICKER)
-            
-            # Use the determined interval here
-            logger.info(f"Fetching training data from {training_start_str} to {end_date} for {ticker} with interval {interval}")
-            from src.data.data import fetch_data
-            df = fetch_data(ticker=ticker, start=training_start_str, end=end_date, interval=interval)
-            
-            if df is not None:
-                logger.info(f"Successfully fetched training data: {len(df)} rows")
-            else:
-                logger.error("Failed to fetch training data")
-                return False
-        except Exception as e:
-            logger.error(f"Error fetching training data: {e}")
-            return False
-
-# ...existing code...
-
-# Import configuration properly
-from config.config_loader import get_config
-
-# Use this before importing walk_forward
-config = get_config()
-LOOKBACK = config.get('LOOKBACK', 30)
-PREDICTION_HORIZON = config['PREDICTION_HORIZON']
-
-# Now import from training
-from src.training.walk_forward import run_walk_forward as walk_forward_ensemble_eval
-
-# ...existing code...

@@ -1395,3 +1395,60 @@ if __name__ == "__main__":
     print("Feature Importance:")
     for feature, imp in sorted(importance.items(), key=lambda x: x[1], reverse=True):
         print(f"  {feature}: {imp:.4f}")
+
+
+def render_explainable_ai_tab():
+    """
+    Render the Explainable AI tab in the dashboard.
+    This function provides an interactive interface for exploring model explanations.
+    """
+    import streamlit as st
+    
+    st.header("Explainable AI Analysis")
+    
+    # Get the current model from session state
+    model = st.session_state.get('model')
+    
+    if model is None:
+        st.warning("Please load or train a model to use Explainable AI features.")
+        return
+    
+    # Get sample data for explanation
+    df = st.session_state.get('df_raw')
+    if df is None or df.empty:
+        st.warning("No data available for analysis.")
+        return
+    
+    # Determine feature columns (exclude date and target)
+    feature_cols = [col for col in df.columns if col not in ["date", "Date", "Close"]]
+    
+    # Use XAIWrapper from xai_integration to create interface
+    try:
+        from src.dashboard.xai_integration import XAIWrapper, create_xai_explorer
+        
+        # Create sample data for explanation (last 30 days)
+        X_sample = df.iloc[-30:][feature_cols].values
+        
+        # Get feature names
+        feature_names = feature_cols
+        
+        # Create the XAI explorer
+        xai_wrapper = create_xai_explorer(st, model, X_sample, feature_names)
+        
+        # Add additional XAI information
+        st.subheader("Understanding Model Decisions")
+        
+        st.markdown("""
+        Explainable AI helps us understand how the model makes predictions. Use the tools above to:
+        
+        1. **SHAP Analysis** - See how each feature contributes to predictions
+        2. **Feature Importance** - Identify which features are most influential
+        3. **Partial Dependence Plots** - Understand how changes in a feature affect predictions
+        4. **What-If Analysis** - Explore how changing inputs affects the output
+        
+        These techniques help build trust in the model by making its decision-making process transparent.
+        """)
+        
+    except Exception as e:
+        st.error(f"Error initializing Explainable AI components: {str(e)}")
+        st.info("The XAI module may not be properly installed or configured.")

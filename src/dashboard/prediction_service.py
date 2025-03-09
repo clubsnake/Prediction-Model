@@ -449,6 +449,65 @@ class PredictionService:
             return []
 
 
+def generate_predictions(model, df, feature_cols, lookback=30, horizon=30, return_sequences=False):
+    """
+    Generate predictions using the provided model.
+    
+    Args:
+        model: Trained prediction model
+        df: DataFrame with historical data
+        feature_cols: Features to use for prediction
+        lookback: Number of past days to use for input
+        horizon: Number of days to forecast
+        return_sequences: Whether to return the full sequence or just predictions
+        
+    Returns:
+        Predicted values
+    """
+    try:
+        # Get the last 'lookback' days of data for input
+        if len(df) < lookback:
+            logger.error(f"DataFrame has fewer rows ({len(df)}) than lookback ({lookback})")
+            return []
+                
+        last_data = df.iloc[-lookback:].copy()
+        
+        # Initialize predictions array
+        predictions = []
+        
+        # Use PredictionService if available
+        service = PredictionService(model_instance=model)
+        forecast = service.generate_forecast(df, feature_cols, lookback, horizon)
+        
+        if forecast and len(forecast) > 0:
+            return forecast
+        
+        logger.warning("Unable to generate predictions using PredictionService, trying direct model prediction")
+        
+        # Fallback to direct model prediction if service approach fails
+        try:
+            from src.data.preprocessing import create_sequences
+            X_input, _ = create_sequences(last_data, feature_cols, "Close", lookback, horizon)
+            preds = model.predict(X_input)
+            
+            if isinstance(preds, np.ndarray):
+                if len(preds.shape) > 1:
+                    predictions = preds[0].tolist()
+                else:
+                    predictions = preds.tolist()
+            else:
+                predictions = list(preds)
+                
+            return predictions[:horizon]  # Return only requested horizon length
+        except Exception as e:
+            logger.error(f"Error in direct model prediction: {e}", exc_info=True)
+            return []
+    
+    except Exception as e:
+        logger.error(f"Error generating predictions: {e}", exc_info=True)
+        return []
+
+
 def update_dashboard_forecast(model, df, feature_cols, ensemble_weights=None):
     """
     Unified function to update the dashboard forecast from a trained model.

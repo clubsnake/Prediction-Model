@@ -1,7 +1,7 @@
 import os
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
-from config_loader import REPORTS_DIR
+from config.config_loader import REPORTS_DIR
 
 def generate_roc_curve(model, X_test, y_test, filename='roc_curve.png'):
     """

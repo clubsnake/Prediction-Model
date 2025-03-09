@@ -365,10 +365,45 @@ def write_tuning_status(status: bool):
     Args:
         status: Boolean indicating whether tuning is active
     """
-    tuning_status_file = os.path.join(DATA_DIR, "tuning_status.txt")
-    with open(tuning_status_file, "w") as f:
-        f.write(str(status))
+    try:
+        from config.config_loader import TUNING_STATUS_FILE
+        tuning_status_file = TUNING_STATUS_FILE
+    except ImportError:
+        # Fallback if import fails
+        tuning_status_file = os.path.join(DATA_DIR, "tuning_status.txt")
+    
+    try:
+        with open(tuning_status_file, "w") as f:
+            f.write(str(status))
+    except Exception as e:
+        logger.error(f"Error writing tuning status: {e}")
 
+@robust_error_boundary
+def write_tuning_status(ticker, timeframe, is_running=False):
+    """
+    Write tuning status to file for coordination between processes.
+    
+    Args:
+        ticker: The ticker being tuned
+        timeframe: The timeframe being tuned
+        is_running: Boolean indicating if tuning is active
+    """
+    try:
+        status_info = {
+            "ticker": ticker,
+            "timeframe": timeframe,
+            "is_running": is_running,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Write to tuning status file
+        status_file = os.path.join(DATA_DIR, "tuning_status.yaml")
+        with open(status_file, "w") as f:
+            yaml.dump(status_info, f)
+        
+        logger.info(f"Updated tuning status: {ticker} {timeframe} running={is_running}")
+    except Exception as e:
+        logger.error(f"Error writing tuning status: {e}")
 
 @robust_error_boundary
 def read_tuning_status() -> bool:

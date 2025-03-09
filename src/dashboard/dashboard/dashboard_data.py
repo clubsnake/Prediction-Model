@@ -83,6 +83,14 @@ def ensure_date_column(df, default_name='date'):
     
     df = df.copy()  # Don't modify the original
     
+    # Handle MultiIndex columns by flattening them
+    if hasattr(df, 'columns') and isinstance(df.columns, pd.MultiIndex):
+        df.columns = [f"{col[0]}_{col[1]}" if isinstance(col, tuple) else col for col in df.columns]
+        logger.info("Flattened MultiIndex columns")
+    elif hasattr(df, 'columns'):
+        # Handle individual tuple columns
+        df.columns = [f"{col[0]}_{col[1]}" if isinstance(col, tuple) else col for col in df.columns]
+    
     # Safely process column names
     date_col = None
     date_cols = []
@@ -123,62 +131,171 @@ def ensure_date_column(df, default_name='date'):
 
 
 @robust_error_boundary
+def calculate_indicators(df):
+    """
+    Calculate technical indicators for the given dataframe.
+    
+    Args:
+        df: DataFrame with OHLCV data
+        
+    Returns:
+        DataFrame with added technical indicators
+    """
+    if df is None or df.empty:
+        return df
+        
+    # Create a copy to avoid modifying the original
+    df = df.copy()
+    
+    # Check for required columns
+    required_cols = ['Open', 'High', 'Low', 'Close']
+    if not all(col in df.columns for col in required_cols):
+        logger.warning(f"Missing required columns for indicators. Have: {df.columns.tolist()}")
+        return df
+        
+    try:
+        # Simple Moving Averages
+        df['MA20'] = df['Close'].rolling(window=20).mean()
+        df['MA50'] = df['Close'].rolling(window=50).mean()
+        df['MA200'] = df['Close'].rolling(window=200).mean()
+        
+        # Exponential Moving Averages
+        df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
+        df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
+        
+        # MACD
+        df['MACD'] = df['EMA12'] - df['EMA26']
+        df['MACD_signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+        df['MACD_hist'] = df['MACD'] - df['MACD_signal']
+        
+        # RSI
+        delta = df['Close'].diff()
+        gain = delta.where(delta > 0, 0)
+        loss = -delta.where(delta < 0, 0)
+        avg_gain = gain.rolling(window=14).mean()
+        avg_loss = loss.rolling(window=14).mean()
+        rs = avg_gain / avg_loss.replace(0, 0.001)  # Avoid division by zero
+        df['RSI'] = 100 - (100 / (1 + rs))
+        
+        # Bollinger Bands
+        df['BB_middle'] = df['Close'].rolling(window=20).mean()
+        df['BB_std'] = df['Close'].rolling(window=20).std()
+        df['BB_upper'] = df['BB_middle'] + 2 * df['BB_std']
+        df['BB_lower'] = df['BB_middle'] - df['BB_std']
+        
+        # Volume indicators - only if Volume column exists
+        if 'Volume' in df.columns:
+            try:
+                # Volume Moving Average
+                df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
+                
+                # Create Volume_Ratio more safely
+                df['Volume_Ratio'] = np.nan  # Initialize with NaN
+                
+                # Create boolean mask for valid values (as Series)
+                mask = (
+                    ~df['Volume'].isna() & 
+                    ~df['Volume_MA'].isna() & 
+                    (df['Volume_MA'] > 0)
+                )
+                
+                # Only calculate for valid values using loc
+                if mask.any():
+                    df.loc[mask, 'Volume_Ratio'] = df.loc[mask, 'Volume'] / df.loc[mask, 'Volume_MA']
+                
+                # Handle any infinity values
+                df['Volume_Ratio'].replace([np.inf, -np.inf], np.nan, inplace=True)
+                
+            except Exception as e:
+                logger.error(f"Error calculating volume indicators: {e}", exc_info=True)
+        
+    except Exception as e:
+        logger.error(f"Error calculating indicators: {e}")
+        
+    return df
+
+
+@robust_error_boundary
 @streamlit_cache  # Using our compatible cache decorator
 def load_data(ticker, start_date, end_date=None, interval="1d", training_mode=False):
-    """Load market data with caching and robust error handling"""
+    """Load market data with caching and robust error handling from multiple sources"""
     try:
+        # Determine the appropriate data source based on ticker and settings
+        data_source = st.session_state.get("data_source", "auto")
+        
+        # Auto-detect source based on ticker
+        if data_source == "auto":
+            if ticker.endswith("-USD") or ticker.endswith("USDT"):
+                data_source = "yfinance"  # Use Yahoo Finance for crypto
+            else:
+                data_source = "yfinance"  # Default to Yahoo Finance for stocks
+        
         # Convert string dates to datetime if needed
         if isinstance(start_date, str):
-            start_date = pd.to_datetime(start_date).date()
+            start_date = pd.to_datetime(start_date)
+            
         if isinstance(end_date, str) and end_date is not None:
-            end_date = pd.to_datetime(end_date).date()
+            end_date = pd.to_datetime(end_date)
 
         # Handle future dates - use current date as the end date for API call
         current_date = datetime.now().date()
-        if end_date and end_date > current_date:
-            logger.info(f"End date {end_date} is in the future. Using current date {current_date} for API call.")
+        if end_date and pd.to_datetime(end_date).date() > current_date:
             api_end_date = current_date
         else:
             api_end_date = end_date
+            
+        # Log data fetch attempt
+        logger.info(f"Fetching {ticker} data from {start_date} to {api_end_date} using {data_source}")
 
-        # Attempt to load data from the API using adjusted end date
-        df = fetch_data_from_api(
-            ticker, start_date, api_end_date, interval
-        )
+        # Attempt to load data from the selected API
+        df = None
+        if data_source == "yfinance":
+            # Use Yahoo Finance as the primary data source
+            import yfinance as yf
+            df = fetch_data_from_yfinance(ticker, start_date, api_end_date, interval)
+        elif data_source == "coingecko":
+            # Use CoinGecko for cryptocurrency data
+            df = fetch_data_from_coingecko(ticker, start_date, api_end_date, interval)
+        elif data_source == "alphavantage":
+            # Use Alpha Vantage for stock data
+            df = fetch_data_from_alphavantage(ticker, start_date, api_end_date, interval)
+        else:
+            # Default to Yahoo Finance
+            import yfinance as yf
+            df = fetch_data_from_yfinance(ticker, start_date, api_end_date, interval)
 
         if df is None or df.empty:
-            logging.warning(
-                f"No data received from API for {ticker} between {start_date} and {api_end_date}"
-            )
-            return None
+            logger.warning(f"No data received for {ticker}. Trying backup data sources...")
+            df = load_data_from_backup(ticker, start_date, end_date, interval)
             
         # Ensure the date column is properly handled
-        df, _ = ensure_date_column(df)
+        if df is not None and not df.empty:
+            df, date_col = ensure_date_column(df)
+            
+            # Store in session state for other components to use
+            st.session_state[f"{ticker}_{interval}_data"] = df
 
         return df
 
     except Exception as e:
-        logging.error(f"Error loading data from API for {ticker}: {e}", exc_info=True)
-        # Implement fallback mechanism (e.g., load from local backup)
-        df = load_data_from_backup(
-            ticker, start_date, end_date, interval
-        )
+        logger.error(f"Error loading data for {ticker}: {e}", exc_info=True)
+        # Try to load from backup
+        df = load_data_from_backup(ticker, start_date, end_date, interval)
 
         if df is None or df.empty:
-            logging.critical(f"Failed to load data from API and backup for {ticker}!")
-            st.error(f"Failed to load data for {ticker}. Please check the logs.")
+            logger.error(f"Failed to load data for {ticker} from all sources")
             return None
 
-        logging.warning(f"Successfully loaded data from backup for {ticker}.")
+        logger.info(f"Successfully loaded data from backup for {ticker}")
         return df
 
 
-def fetch_data_from_api(ticker, start_date, end_date, interval):
+def fetch_data_from_yfinance(ticker, start_date, end_date, interval):
     """Fetch data from yfinance API with robust error handling"""
     try:
         import yfinance as yf
 
-        # Ensure start_date and end_date are strings (yfinance expects string dates)
+        # Format dates for yfinance
         if not isinstance(start_date, str):
             start_date = start_date.strftime('%Y-%m-%d')
         
@@ -190,7 +307,7 @@ def fetch_data_from_api(ticker, start_date, end_date, interval):
             end_date = datetime.now().strftime('%Y-%m-%d')
 
         # Show a download message in the UI
-        with st.spinner(f"Downloading data for {ticker}..."):
+        with st.spinner(f"Downloading data from Yahoo Finance for {ticker}..."):
             data = yf.download(ticker, start=start_date, end=end_date, interval=interval)
         
         if data is not None and not data.empty:
@@ -198,10 +315,230 @@ def fetch_data_from_api(ticker, start_date, end_date, interval):
             data, _ = ensure_date_column(data)
             return data
         else:
-            logger.warning(f"No data received from API for {ticker} between {start_date} and {end_date}")
+            logger.warning(f"No data received from Yahoo Finance for {ticker} between {start_date} and {end_date}")
             return None
     except Exception as e:
         logger.error(f"Error fetching data from yfinance: {e}", exc_info=True)
+        return None
+
+
+def fetch_data_from_coingecko(ticker, start_date, end_date, interval):
+    """Fetch cryptocurrency data from CoinGecko API"""
+    try:
+        from pycoingecko import CoinGeckoAPI
+        
+        # Format ticker for CoinGecko (remove -USD suffix)
+        coin_id = ticker.replace("-USD", "").replace("USDT", "").lower()
+        
+        # Convert start_date and end_date to unix timestamps
+        if not isinstance(start_date, str):
+            start_timestamp = int(datetime.combine(start_date, datetime.min.time()).timestamp())
+        else:
+            start_timestamp = int(pd.to_datetime(start_date).timestamp())
+            
+        if end_date is None:
+            end_timestamp = int(datetime.now().timestamp())
+        elif not isinstance(end_date, str):
+            end_timestamp = int(datetime.combine(end_date, datetime.min.time()).timestamp())
+        else:
+            end_timestamp = int(pd.to_datetime(end_date).timestamp())
+        
+        # Initialize CoinGecko API
+        cg = CoinGeckoAPI()
+        
+        # Convert interval to days
+        if interval.endswith('d'):
+            days = int(interval[:-1])
+        elif interval.endswith('h'):
+            days = 1  # Default to daily for any hourly interval
+        else:
+            days = 1  # Default to daily
+        
+        # Show download message
+        with st.spinner(f"Downloading data from CoinGecko for {ticker}..."):
+            # Get market chart data
+            chart_data = cg.get_coin_market_chart_range_by_id(
+                id=coin_id,
+                vs_currency='usd',
+                from_timestamp=start_timestamp,
+                to_timestamp=end_timestamp
+            )
+            
+            # Convert to DataFrame
+            prices = chart_data.get('prices', [])
+            volumes = chart_data.get('total_volumes', [])
+            
+            # Create DataFrame
+            if prices:
+                df = pd.DataFrame(prices, columns=['timestamp', 'price'])
+                df['date'] = pd.to_datetime(df['timestamp'], unit='ms')
+                
+                # Add volume data if available
+                if volumes:
+                    volume_df = pd.DataFrame(volumes, columns=['timestamp', 'volume'])
+                    df = df.merge(volume_df, on='timestamp', how='left')
+                    
+                # Format OHLCV structure
+                df['Open'] = df['price']
+                df['High'] = df['price']
+                df['Low'] = df['price']
+                df['Close'] = df['price']
+                if 'volume' in df.columns:
+                    df['Volume'] = df['volume']
+                
+                # Remove temporary columns
+                df = df.drop(['timestamp', 'price'], axis=1)
+                if 'volume' in df.columns:
+                    df = df.drop(['volume'], axis=1)
+                
+                return df
+            else:
+                logger.warning(f"No price data received from CoinGecko for {coin_id}")
+                return None
+    except Exception as e:
+        logger.error(f"Error fetching data from CoinGecko: {e}", exc_info=True)
+        return None
+
+
+def fetch_data_from_alphavantage(ticker, start_date, end_date, interval):
+    """Fetch stock data from Alpha Vantage API"""
+    try:
+        from alpha_vantage.timeseries import TimeSeries
+        
+        # Get API key from session state or config
+        api_key = st.session_state.get("alphavantage_api_key")
+        if not api_key:
+            try:
+                from config.config_loader import get_value
+                api_key = get_value("api_keys.alphavantage", "demo")
+            except ImportError:
+                api_key = "demo"  # Use demo key as fallback
+        
+        # Initialize TimeSeries
+        ts = TimeSeries(key=api_key, output_format='pandas')
+        
+        # Map interval to Alpha Vantage function
+        if interval == '1d':
+            data_function = ts.get_daily_adjusted
+            time_param = 'full'
+        elif interval == '1h':
+            data_function = ts.get_intraday
+            time_param = '60min'
+        elif interval == '5min':
+            data_function = ts.get_intraday
+            time_param = '5min'
+        else:
+            data_function = ts.get_daily_adjusted
+            time_param = 'full'
+        
+        # Show download message
+        with st.spinner(f"Downloading data from Alpha Vantage for {ticker}..."):
+            # Get data
+            if data_function == ts.get_intraday:
+                data, meta_data = data_function(symbol=ticker, interval=time_param, outputsize='full')
+            else:
+                data, meta_data = data_function(symbol=ticker, outputsize=time_param)
+            
+            # Rename columns to match OHLCV format
+            data = data.rename(columns={
+                '1. open': 'Open',
+                '2. high': 'High',
+                '3. low': 'Low',
+                '4. close': 'Close',
+                '5. volume': 'Volume'
+            })
+            
+            # Add date column and filter by date range
+            data['date'] = data.index
+            
+            if start_date:
+                if isinstance(start_date, str):
+                    start_date = pd.to_datetime(start_date)
+                else:
+                    start_date = pd.to_datetime(start_date)
+                data = data[data['date'] >= start_date]
+                
+            if end_date:
+                if isinstance(end_date, str):
+                    end_date = pd.to_datetime(end_date)
+                else:
+                    end_date = pd.to_datetime(end_date)
+                data = data[data['date'] <= end_date]
+            
+            return data
+    except Exception as e:
+        logger.error(f"Error fetching data from Alpha Vantage: {e}", exc_info=True)
+        return None
+
+
+def fetch_data_from_finnhub(ticker, start_date, end_date, interval):
+    """Fetch stock data from Finnhub API"""
+    try:
+        import finnhub
+        
+        # Get API key from session state or config
+        api_key = st.session_state.get("finnhub_api_key")
+        if not api_key:
+            try:
+                from config.config_loader import get_value
+                api_key = get_value("api_keys.finnhub", "demo")
+            except ImportError:
+                api_key = "demo"  # Use demo key as fallback
+        
+        # Initialize client
+        finnhub_client = finnhub.Client(api_key=api_key)
+        
+        # Convert dates to Unix timestamps
+        if not isinstance(start_date, str):
+            start_timestamp = int(datetime.combine(start_date, datetime.min.time()).timestamp())
+        else:
+            start_timestamp = int(pd.to_datetime(start_date).timestamp())
+            
+        if end_date is None:
+            end_timestamp = int(datetime.now().timestamp())
+        elif not isinstance(end_date, str):
+            end_timestamp = int(datetime.combine(end_date, datetime.min.time()).timestamp())
+        else:
+            end_timestamp = int(pd.to_datetime(end_date).timestamp())
+        
+        # Map interval to Finnhub resolution
+        if interval == '1d':
+            resolution = 'D'
+        elif interval == '1h':
+            resolution = '60'
+        elif interval == '5min':
+            resolution = '5'
+        else:
+            resolution = 'D'
+        
+        # Show download message
+        with st.spinner(f"Downloading data from Finnhub for {ticker}..."):
+            # Get data
+            stock_data = finnhub_client.stock_candles(
+                ticker, 
+                resolution, 
+                start_timestamp, 
+                end_timestamp
+            )
+            
+            # Check if data is valid
+            if stock_data['s'] == 'ok':
+                # Create DataFrame
+                df = pd.DataFrame({
+                    'date': pd.to_datetime(stock_data['t'], unit='s'),
+                    'Open': stock_data['o'],
+                    'High': stock_data['h'],
+                    'Low': stock_data['l'],
+                    'Close': stock_data['c'],
+                    'Volume': stock_data['v']
+                })
+                
+                return df
+            else:
+                logger.warning(f"No data received from Finnhub for {ticker}")
+                return None
+    except Exception as e:
+        logger.error(f"Error fetching data from Finnhub: {e}", exc_info=True)
         return None
 
 
@@ -284,7 +621,7 @@ def calculate_indicators(df):
         df['BB_middle'] = df['Close'].rolling(window=20).mean()
         df['BB_std'] = df['Close'].rolling(window=20).std()
         df['BB_upper'] = df['BB_middle'] + 2 * df['BB_std']
-        df['BB_lower'] = df['BB_middle'] - 2 * df['BB_std']
+        df['BB_lower'] = df['BB_middle'] - df['BB_std']
         
         # Volume indicators - only if Volume column exists
         if 'Volume' in df.columns:
@@ -295,10 +632,27 @@ def calculate_indicators(df):
                 # Fix the Volume_Ratio calculation:
                 # 1. Extract Volume as Series to ensure it's not a DataFrame
                 volume_series = df['Volume'].astype(float)
-                # 2. Extract Volume_MA as Series
+                # 2. Extract Volume_MA as Series and replace zeros to avoid division by zero
                 volume_ma_series = df['Volume_MA'].replace(0, 0.001).astype(float)
-                # 3. Perform element-wise division between Series
-                df['Volume_Ratio'] = volume_series.div(volume_ma_series)
+                
+                # 3. Create a valid index mask to filter out NaN values
+                valid_idx = ~volume_series.isna() & ~volume_ma_series.isna()
+                
+                # 4. Initialize Volume_Ratio with NaN values
+                df['Volume_Ratio'] = np.nan
+                
+                # 5. Only calculate for valid indices
+                if len(valid_idx[valid_idx == True]) > 0:
+                    # For div operations that may return a DataFrame instead of Series,
+                    # select first column to maintain Series format
+                    division_result = volume_series[valid_idx].div(volume_ma_series[valid_idx])
+                    if isinstance(division_result, pd.DataFrame):
+                        df.loc[valid_idx, 'Volume_Ratio'] = division_result.iloc[:, 0]
+                    else:
+                        df.loc[valid_idx, 'Volume_Ratio'] = division_result
+                    
+                    # 6. Handle any infinity or NaN values that might result
+                    df['Volume_Ratio'].replace([np.inf, -np.inf], np.nan, inplace=True)
                 
             except Exception as e:
                 logger.error(f"Error calculating volume indicators: {e}", exc_info=True)
@@ -485,3 +839,45 @@ def generate_dashboard_forecast(model, df, feature_cols):
     except Exception as e:
         logger.error(f"Error generating dashboard forecast: {e}")
         return None
+
+
+def standardize_column_names(df, ticker=None):
+    """
+    Standardize column names by removing ticker-specific parts for OHLCV.
+    """
+    if df is None or df.empty:
+        return df
+    df_copy = df.copy()
+    
+    # First check if standard columns already exist
+    has_standard = all(col in df_copy.columns for col in ['Open', 'High', 'Low', 'Close'])
+    if has_standard:
+        return df_copy
+        
+    # Handle ticker-specific column names
+    if ticker:
+        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+            # Check for pattern like 'Close_ETH-USD'
+            if f"{col}_{ticker}" in df_copy.columns:
+                df_copy[col] = df_copy[f"{col}_{ticker}"]
+            # Check for pattern like 'ETH-USD_Close'
+            elif f"{ticker}_{col}" in df_copy.columns:
+                df_copy[col] = df_copy[f"{ticker}_{col}"]
+            # Check for pattern with underscores removed
+            ticker_nohyphen = ticker.replace("-", "")
+            if f"{col}_{ticker_nohyphen}" in df_copy.columns:
+                df_copy[col] = df_copy[f"{col}_{ticker_nohyphen}"]
+    
+    # Also handle lowercase variants
+    for old_col, std_col in [('open', 'Open'), ('high', 'High'), ('low', 'Low'), 
+                              ('close', 'Close'), ('volume', 'Volume')]:
+        if old_col in df_copy.columns and std_col not in df_copy.columns:
+            df_copy[std_col] = df_copy[old_col]
+    
+    # Log missing columns that we couldn't standardize
+    missing = [c for c in ['Open', 'High', 'Low', 'Close'] if c not in df_copy.columns]
+    if missing:
+        print(f"Warning: Missing required columns after standardization: {missing}")
+        print(f"Available columns: {df_copy.columns.tolist()}")
+        
+    return df_copy

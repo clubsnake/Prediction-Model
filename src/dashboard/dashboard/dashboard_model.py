@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from dashboard_error import robust_error_boundary, write_tuning_status
+from src.dashboard.dashboard.dashboard_error import robust_error_boundary, write_tuning_status
 from config.config_loader import (
     DATA_DIR, 
     N_STARTUP_TRIALS,
@@ -127,108 +127,53 @@ def generate_future_forecast(model, df, feature_cols, lookback=30, horizon=30):
 
 @robust_error_boundary
 def start_tuning(ticker, timeframe, multipliers=None):
-    """Start hyperparameter tuning with specified multipliers with proper thread safety"""
-    # Ensure we're not already running a tuning process
-    if st.session_state.get("tuning_in_progress", False):
-        st.warning("Tuning is already in progress. Please stop the current process first.")
-        return
-
-    # Default multipliers if none provided
-    if multipliers is None:
-        from config.config_loader import get_value
-        default_mode = get_value("hyperparameter.default_mode", "normal")
-        multipliers = get_value(f"hyperparameter.tuning_modes.{default_mode}", 
-                               {"trials_multiplier": 1.0, "epochs_multiplier": 1.0, "timeout_multiplier": 1.0})
+    """
+    Start hyperparameter tuning for the specified ticker and timeframe.
     
-    # Apply multipliers to tuning parameters
-    from config.config_loader import (TUNING_TRIALS_PER_CYCLE_min, 
-                                    TUNING_TRIALS_PER_CYCLE_max,
-                                    N_STARTUP_TRIALS)
-    
-    # Calculate adjusted trial counts
-    min_trials = max(1, int(TUNING_TRIALS_PER_CYCLE_min * multipliers["trials_multiplier"]))
-    max_trials = max(min_trials, int(TUNING_TRIALS_PER_CYCLE_max * multipliers["trials_multiplier"]))
-    
-    # Set number of trials, capped at N_STARTUP_TRIALS
-    n_trials = min(N_STARTUP_TRIALS, max_trials)
-    
-    # Set adjusted parameters in session state
-    st.session_state["tuning_multipliers"] = multipliers
-    st.session_state["tuning_trials_min"] = min_trials
-    st.session_state["tuning_trials_max"] = max_trials
-    
-    # Update epochs multiplier in session state for models to use
-    st.session_state["epochs_multiplier"] = multipliers["epochs_multiplier"]
-    
-    # Start tuning thread with better resource management
-    tuning_thread = threading.Thread(
-        target=safe_tune_for_combo,  # Use a wrapper function
-        args=(ticker, timeframe, "all", n_trials, 1),
-        daemon=True
-    )
-    tuning_thread.start()
-    
-    # Register thread for proper cleanup
-    from src.dashboard.dashboard.dashboard_shutdown import register_dashboard_thread
-    register_dashboard_thread(tuning_thread)
-    
-    # Update session state
+    Args:
+        ticker (str): The ticker symbol (e.g. "BTC-USD")
+        timeframe (str): The timeframe (e.g. "1d")
+        multipliers (dict, optional): Dictionary of multipliers for tuning parameters
+    """
+    # Update tuning status to prevent multiple tuning processes
     st.session_state["tuning_in_progress"] = True
-    st.session_state["tuning_thread"] = tuning_thread
     st.session_state["tuning_start_time"] = time.time()
     
-    # Set timeout based on multiplier
-    timeout_hours = 1.0 * multipliers["timeout_multiplier"]  # 1 hour baseline
-    st.session_state["tuning_timeout"] = timeout_hours * 3600  # Convert to seconds
+    # Write status to file so other processes know tuning is in progress
+    write_tuning_status(ticker, timeframe, is_running=True)
     
-    st.success(f"Started tuning")
-
-def safe_tune_for_combo(*args, **kwargs):
-    if "error_log" not in st.session_state:
-        st.session_state["error_log"] = []
     try:
-        from src.tuning.meta_tuning import tune_for_combo
-        return tune_for_combo(*args, **kwargs)
+        # Import tuning function only when needed
+        from src.tuning.meta_tuning import start_tuning_process
+        
+        # Start tuning in a separate process
+        start_tuning_process(ticker, timeframe, multipliers)
+        
+        st.success(f"Started hyperparameter tuning for {ticker} ({timeframe})")
     except Exception as e:
-        logger.error(f"Error in tuning thread: {e}", exc_info=True)
-        # Add to error log for UI display
-        if "error_log" in st.session_state:
-            st.session_state["error_log"].append({
-                "timestamp": datetime.now(),
-                "function": "safe_tune_for_combo",
-                "error": str(e),
-                "traceback": traceback.format_exc()
-            })
-    finally:
-        # Always mark tuning as complete and update status
+        st.error(f"Failed to start tuning: {e}")
+        # Reset status on error
         st.session_state["tuning_in_progress"] = False
-        from src.dashboard.dashboard.dashboard_error import write_tuning_status
-        write_tuning_status(False)
+        write_tuning_status(ticker, timeframe, is_running=False)
 
 
 @robust_error_boundary
 def stop_tuning():
-    """Thread-safe way to stop tuning process"""
+    """Stop the currently running hyperparameter tuning process."""
     try:
-        # Import here to avoid circular imports
-        from src.tuning.meta_tuning import set_stop_requested
-        # Use a single consistent method to request stop
-        set_stop_requested(True)
-
-        # Update UI state
-        st.warning(
-            "⚠️ Stop requested! Waiting for current trial to complete... This may take several minutes."
-        )
-        st.session_state["stop_request_time"] = datetime.now().strftime("%H:%M:%S")
-        st.session_state["tuning_in_progress"] = False  # Mark as stopped in UI immediately
-
-        # Update file-based flag
-        write_tuning_status(False)
-    except ImportError:
-        st.error("Meta tuning module not available. Cannot stop tuning.")
+        # Import tuning function only when needed
+        from src.tuning.meta_tuning import stop_tuning_process
+        
+        # Stop the tuning process
+        stop_tuning_process()
+        
+        # Reset tuning status
+        st.session_state["tuning_in_progress"] = False
+        write_tuning_status(None, None, is_running=False)
+        
+        st.success("Stopped hyperparameter tuning")
     except Exception as e:
-        st.error(f"Error stopping tuning: {e}")
-        logger.error(f"Error stopping tuning: {e}", exc_info=True)
+        st.error(f"Failed to stop tuning: {e}")
 
 
 @robust_error_boundary
@@ -300,7 +245,7 @@ def model_save_load_controls():
 
     if st.button("Save Current Model"):
         model = st.session_state.get("current_model")
-        if model is None:
+        if (model is None):
             st.warning("No model in session to save.")
         else:
             save_dir = st.session_state["saved_model_dir"]
@@ -364,7 +309,7 @@ def display_tested_models():
             with open(tested_models_file, "r") as f:
                 tested_models = yaml.safe_load(f) or []
     except Exception as e:
-        st.error(f"Error loading tested models: {e}")
+        st.error("Error loading tested models: %s" % str(e))
         tested_models = []
 
     if tested_models:
@@ -391,4 +336,39 @@ def train_model_with_params(model, X_train, y_train, X_val, y_val, params):
         model_type = params.get("model_type", "generic")
         model_config = training_optimizer.get_model_config(model_type, "medium")
         params["batch_size"] = model_config["batch_size"]
+
+
+@robust_error_boundary
+def write_tuning_status(ticker, timeframe, is_running=False):
+    """
+    Write tuning status to file for coordination between processes.
+    
+    Args:
+        ticker: The ticker being tuned
+        timeframe: The timeframe being tuned
+        is_running: Boolean indicating if tuning is active
+    """
+    status_info = {
+        "ticker": ticker,
+        "timeframe": timeframe,
+        "is_running": is_running,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    try:
+        from config.config_loader import TUNING_STATUS_FILE
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(TUNING_STATUS_FILE), exist_ok=True)
+        
+        with open(TUNING_STATUS_FILE, "w") as f:
+            yaml.dump(status_info, f)
+    except Exception as e:
+        # Handle missing config or write errors
+        logger.error(f"Error writing tuning status: {e}")
+        try:
+            # Try to write to a default location as fallback
+            with open(os.path.join(DATA_DIR, "tuning_status.yaml"), "w") as f:
+                yaml.dump(status_info, f)
+        except Exception as nested_e:
+            logger.error(f"Failed to write tuning status file: {nested_e}")
 

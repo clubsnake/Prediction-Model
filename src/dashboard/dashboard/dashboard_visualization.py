@@ -25,9 +25,19 @@ project_root = os.path.dirname(src_dir)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Import utilities and configurations
+# Import utilities, configurations and visualization functions
 try:
     from src.dashboard.dashboard.dashboard_error import robust_error_boundary
+    from src.dashboard.visualization import (
+        plot_combined_validation_and_forecast_plotly,
+        plot_training_history_plotly,
+        visualize_predictions_plotly,
+        visualize_weight_histograms_plotly,
+        visualize_neural_network_plotly,
+        normalize_series,
+        calculate_errors,
+        update_forecast_in_dashboard as base_update_forecast
+    )
     from config.logger_config import logger
 except ImportError:
     logging.basicConfig(level=logging.INFO)
@@ -415,15 +425,12 @@ def create_interactive_price_chart(df, options, future_forecast=None, indicators
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     
-    # Ensure we have valid data
     if df is None or df.empty:
         st.warning("No data available to display chart.")
         return
     
-    # Create a copy to avoid modifying the original
     df = df.copy()
         
-    # Set default indicators if None provided
     if indicators is None:
         indicators = {
             "show_ma": False,
@@ -435,7 +442,6 @@ def create_interactive_price_chart(df, options, future_forecast=None, indicators
             "show_forecast": True
         }
     
-    # Create figure with secondary y-axis for volume
     fig = make_subplots(
         rows=2, 
         cols=1, 
@@ -445,39 +451,63 @@ def create_interactive_price_chart(df, options, future_forecast=None, indicators
         specs=[[{"secondary_y": True}], [{"secondary_y": False}]]
     )
     
-    # Find the date column
     date_col = None
     for col in ['date', 'Date']:
         if col in df.columns:
             date_col = col
             break
     
-    # If date column exists, make sure it's datetime
     if date_col:
         df[date_col] = pd.to_datetime(df[date_col])
         x_values = df[date_col]
-    # If no date column but index is DatetimeIndex, use index
     elif isinstance(df.index, pd.DatetimeIndex):
         x_values = df.index
-    # Otherwise reset index to create a simple sequence
     else:
-        # Create a sequence of dates if no date column exists
         df['_date'] = pd.date_range(start='2000-01-01', periods=len(df))
         date_col = '_date'
         x_values = df[date_col]
     
-    # Candlestick chart - use x_values instead of string 'date'
-    fig.add_trace(go.Candlestick(
-        x=x_values,
-        open=df['Open'],
-        high=df['High'],
-        low=df['Low'],
-        close=df['Close'],
-        name="Price",
-        showlegend=True
-    ), row=1, col=1)
+    # Check for tuple column names and flatten them
+    if 'Open' not in df.columns and any(isinstance(col, tuple) for col in df.columns):
+        # Try to find OHLC columns that might be tuples
+        for col in df.columns:
+            if isinstance(col, tuple) and len(col) > 0:
+                if col[0] == 'Open':
+                    df['Open'] = df[col]
+                elif col[0] == 'High':
+                    df['High'] = df[col]
+                elif col[0] == 'Low':
+                    df['Low'] = df[col]
+                elif col[0] == 'Close':
+                    df['Close'] = df[col]
+                elif col[0] == 'Volume':
+                    df['Volume'] = df[col]
     
-    # Add volume as a bar chart on the secondary y-axis
+    # Now check if we have the necessary columns
+    if all(col in df.columns for col in ['Open', 'High', 'Low', 'Close']):
+        fig.add_trace(go.Candlestick(
+            x=x_values,
+            open=df['Open'],
+            high=df['High'],
+            low=df['Low'],
+            close=df['Close'],
+            name="Price",
+            showlegend=True
+        ), row=1, col=1)
+    else:
+        # Fallback to line chart if OHLC data is not available
+        if 'Close' in df.columns:
+            fig.add_trace(go.Scatter(
+                x=x_values,
+                y=df['Close'],
+                mode='lines',
+                name='Price',
+                line=dict(width=2, color='blue')
+            ), row=1, col=1)
+        else:
+            st.warning("Price data not available in the correct format.")
+            return
+    
     if 'Volume' in df.columns:
         fig.add_trace(go.Bar(
             x=x_values,
@@ -487,14 +517,10 @@ def create_interactive_price_chart(df, options, future_forecast=None, indicators
             showlegend=True
         ), row=2, col=1)
     
-    # Add indicators based on flag settings
-    
-    # Moving Averages
     if indicators.get("show_ma", False):
         for period, color in zip([20, 50, 200], ['blue', 'orange', 'red']):
             ma_col = f"MA{period}" if f"MA{period}" in df.columns else None
             
-            # Calculate MA if not in dataframe
             if ma_col is None:
                 df[f"MA{period}"] = df["Close"].rolling(window=period).mean()
                 ma_col = f"MA{period}"
@@ -507,7 +533,6 @@ def create_interactive_price_chart(df, options, future_forecast=None, indicators
                 line=dict(width=1, color=color)
             ), row=1, col=1)
     
-    # Bollinger Bands
     if indicators.get("show_bb", False) and all(col in df.columns for col in ["BB_upper", "BB_middle", "BB_lower"]):
         fig.add_trace(go.Scatter(
             x=x_values,
@@ -527,7 +552,6 @@ def create_interactive_price_chart(df, options, future_forecast=None, indicators
             fillcolor='rgba(200, 200, 200, 0.2)'
         ), row=1, col=1)
     
-    # RSI in separate subplot
     if indicators.get("show_rsi", False) and "RSI" in df.columns:
         fig.add_trace(go.Scatter(
             x=x_values,
@@ -537,11 +561,9 @@ def create_interactive_price_chart(df, options, future_forecast=None, indicators
             line=dict(color='purple')
         ), row=2, col=1)
         
-        # Add overbought/oversold lines
         fig.add_hline(y=70, line_width=1, line_dash="dash", line_color="red", row=2, col=1)
         fig.add_hline(y=30, line_width=1, line_dash="dash", line_color="green", row=2, col=1)
         
-    # MACD
     if indicators.get("show_macd", False):
         if all(col in df.columns for col in ["MACD", "MACD_signal"]):
             fig.add_trace(go.Scatter(
@@ -569,7 +591,6 @@ def create_interactive_price_chart(df, options, future_forecast=None, indicators
                 marker_color=colors
             ), row=2, col=1)
     
-    # Custom indicators
     if indicators.get("show_werpi", False) and "WERPI" in df.columns:
         fig.add_trace(go.Scatter(
             x=x_values,
@@ -588,21 +609,17 @@ def create_interactive_price_chart(df, options, future_forecast=None, indicators
             line=dict(color='darkgreen', width=1)
         ), row=2, col=1)
     
-    # Add future forecast if available
     if future_forecast is not None and indicators.get("show_forecast", True):
-        # Get the last date in our dataframe
         if date_col:
             last_date = df[date_col].iloc[-1]
         else:
             last_date = df.index[-1] if isinstance(df.index, pd.DatetimeIndex) else pd.Timestamp('today')
         
-        # Generate dates for forecast
         future_dates = pd.date_range(
             start=last_date + pd.Timedelta(days=1), 
             periods=len(future_forecast)
         )
         
-        # Create forecast trace with confidence intervals
         fig.add_trace(go.Scatter(
             x=future_dates,
             y=future_forecast,
@@ -611,7 +628,6 @@ def create_interactive_price_chart(df, options, future_forecast=None, indicators
             line=dict(color='rgb(31, 119, 180)', width=3)
         ), row=1, col=1)
     
-    # Update layout for better appearance
     fig.update_layout(
         title=f"{options['ticker']} - {options['timeframe']} Chart",
         xaxis_title="Date",
@@ -630,7 +646,6 @@ def create_interactive_price_chart(df, options, future_forecast=None, indicators
         margin=dict(l=20, r=20, t=50, b=20)
     )
     
-    # Set axis titles for second row
     indicator_title = ""
     if indicators.get("show_rsi", False):
         indicator_title = "RSI"
@@ -645,7 +660,6 @@ def create_interactive_price_chart(df, options, future_forecast=None, indicators
         
     fig.update_yaxes(title_text=indicator_title, row=2, col=1)
     
-    # Display the chart in Streamlit
     st.plotly_chart(fig, use_container_width=True)
 
 @robust_error_boundary
@@ -939,6 +953,7 @@ def render_html_table(data, title=None, max_rows=10):
 def update_forecast_in_dashboard(ensemble_model, df, feature_cols, ensemble_weights=None):
     """
     Update forecast in dashboard with predictions from the model.
+    Wrapper around the function from visualization.py that adds dashboard-specific functionality.
     
     Args:
         ensemble_model: The trained ensemble model
@@ -949,71 +964,15 @@ def update_forecast_in_dashboard(ensemble_model, df, feature_cols, ensemble_weig
     Returns:
         List of forecast values or None on error
     """
-    try:
-        import streamlit as st
-        from datetime import datetime
-        
-        # Get lookback and forecast window from session state or use defaults
-        lookback = st.session_state.get("lookback", 30)
-        forecast_window = st.session_state.get("forecast_window", 30)
-        
-        # Try to import generate_future_forecast from walk_forward
-        try:
-            from src.training.walk_forward import generate_future_forecast
-            
-            # Generate forecast with the ensemble model
-            future_forecast = generate_future_forecast(
-                ensemble_model, df, feature_cols, lookback, forecast_window
-            )
-            
-            # Update session state
-            st.session_state["future_forecast"] = future_forecast
-            st.session_state["last_forecast_update"] = datetime.now()
-            
-            # Also store the ensemble weights if provided
-            if ensemble_weights:
-                st.session_state["ensemble_weights"] = ensemble_weights
-            
-            # Save the prediction to the history
-            save_best_prediction(df, future_forecast)
-            
-            logger.info(f"Updated dashboard forecast with {len(future_forecast)} days")
-            return future_forecast
-            
-        except ImportError:
-            # Fall back to using prediction service if available
-            try:
-                from src.dashboard.prediction_service import PredictionService
-                
-                # Create prediction service with the model
-                prediction_service = PredictionService(model_instance=ensemble_model)
-                
-                # Generate forecast
-                future_forecast = prediction_service.generate_forecast(
-                    df, feature_cols, lookback, forecast_window
-                )
-                
-                # Update session state
-                st.session_state["future_forecast"] = future_forecast
-                st.session_state["last_forecast_update"] = datetime.now()
-                
-                # Store ensemble weights
-                if ensemble_weights:
-                    st.session_state["ensemble_weights"] = ensemble_weights
-                
-                # Save the prediction to the history
-                save_best_prediction(df, future_forecast)
-                
-                logger.info(f"Updated dashboard forecast with {len(future_forecast)} days using prediction service")
-                return future_forecast
-                
-            except ImportError:
-                logger.error("Could not import either walk_forward or prediction_service")
-                return None
-            
-    except Exception as e:
-        logger.error(f"Error updating forecast in dashboard: {e}", exc_info=True)
-        return None
+    # Call the base function from visualization.py
+    future_forecast = base_update_forecast(ensemble_model, df, feature_cols, ensemble_weights)
+    
+    # Add dashboard-specific functionality
+    if future_forecast is not None:
+        # Save the prediction to the history
+        save_best_prediction(df, future_forecast)
+    
+    return future_forecast
 
 # Add missing Color dictionary
 COLORS = {
@@ -1042,320 +1001,189 @@ COLORS = {
 }
 
 @robust_error_boundary
-def create_technical_indicators_chart(df, params):
-    """
-    Create technical indicators chart with interactive visualization.
-    
-    Args:
-        df: DataFrame with price and indicator data
-        params: Chart parameters
-        
-    Returns:
-        None (displays chart in Streamlit)
-    """
+def create_technical_indicators_chart(df, options=None):
+    """Create an interactive chart with technical indicators."""
     if df is None or df.empty:
-        st.warning("No data available to display technical indicators")
-        return
+        return None
     
-    # Ensure date column is properly formatted
-    df, date_col = ensure_date_column(df)
+    # Extract ticker from options
+    ticker = options.get('ticker', '') if options else ''
     
-    # Set up tabs for different indicator groups
-    tab_names = ["Moving Averages", "Oscillators", "Volume", "Custom"]
-    tabs = st.tabs(tab_names)
+    # Handle different column naming patterns
+    open_col = 'Open'
+    high_col = 'High'
+    low_col = 'Low'
+    close_col = 'Close'
+    volume_col = 'Volume'
     
-    # Tab 1: Moving Averages
-    with tabs[0]:
-        fig = go.Figure()
-        
-        # Add candlestick chart
-        fig.add_trace(go.Candlestick(
-            x=df[date_col],
-            open=df['Open'],
-            high=df['High'],
-            low=df['Low'],
-            close=df['Close'],
-            name='Price',
-            increasing=dict(line=dict(color=COLORS["candle_up"]), fillcolor=COLORS["candle_up"]),
-            decreasing=dict(line=dict(color=COLORS["candle_down"]), fillcolor=COLORS["candle_down"])
-        ))
-        
-        # Add Moving Averages
-        if 'MA20' in df.columns:
-            fig.add_trace(go.Scatter(
-                x=df[date_col], 
-                y=df['MA20'], 
-                name='20-day MA',
-                line=dict(color=COLORS["ma20"], width=1.5)
-            ))
-        
-        if 'MA50' in df.columns:
-            fig.add_trace(go.Scatter(
-                x=df[date_col], 
-                y=df['MA50'], 
-                name='50-day MA',
-                line=dict(color=COLORS["ma50"], width=1.5)
-            ))
-        
-        if 'MA200' in df.columns:
-            fig.add_trace(go.Scatter(
-                x=df[date_col], 
-                y=df['MA200'], 
-                name='200-day MA',
-                line=dict(color=COLORS["ma200"], width=1.5)
-            ))
-        
-        # Add Bollinger Bands
-        if all(col in df.columns for col in ['BB_upper', 'BB_middle', 'BB_lower']):
-            fig.add_trace(go.Scatter(
-                x=df[date_col], 
-                y=df['BB_upper'], 
+    # Check if we have ticker-suffixed columns
+    if f'Open_{ticker}' in df.columns:
+        open_col = f'Open_{ticker}'
+        high_col = f'High_{ticker}'
+        low_col = f'Low_{ticker}'
+        close_col = f'Close_{ticker}'
+        volume_col = f'Volume_{ticker}'
+    
+    # Create figure with secondary y-axis for volume
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    
+    # Add candlestick trace
+    fig.add_trace(
+        go.Candlestick(
+            x=df.index if isinstance(df.index, pd.DatetimeIndex) else df['date'],
+            open=df[open_col],
+            high=df[high_col],
+            low=df[low_col],
+            close=df[close_col],
+            name="Price"
+        )
+    )
+    
+    # Add volume trace
+    if volume_col in df.columns:
+        fig.add_trace(
+            go.Bar(
+                x=df.index if isinstance(df.index, pd.DatetimeIndex) else df['date'],
+                y=df[volume_col],
+                name="Volume",
+                marker_color='rgba(100, 100, 255, 0.3)'
+            ),
+            secondary_y=True
+        )
+    
+    # Add moving averages
+    for ma in [20, 50, 200]:
+        ma_col = f"MA{ma}"
+        if ma_col in df.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=df.index if isinstance(df.index, pd.DatetimeIndex) else df['date'],
+                    y=df[ma_col],
+                    mode='lines',
+                    name=f"{ma}-day MA",
+                    line=dict(width=1.5)
+                )
+            )
+    
+    # Add Bollinger Bands
+    if all(col in df.columns for col in ['BB_upper', 'BB_middle', 'BB_lower']):
+        fig.add_trace(
+            go.Scatter(
+                x=df.index if isinstance(df.index, pd.DatetimeIndex) else df['date'],
+                y=df['BB_upper'],
+                mode='lines',
                 name='Upper BB',
-                line=dict(color=COLORS["upper_band"], width=1, dash='dash')
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=df[date_col], 
-                y=df['BB_lower'], 
+                line=dict(color='rgba(255, 0, 0, 0.5)', dash='dash')
+            )
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=df.index if isinstance(df.index, pd.DatetimeIndex) else df['date'],
+                y=df['BB_lower'],
+                mode='lines',
                 name='Lower BB',
-                fill='tonexty',  # Fill area between upper and lower bands
-                fillcolor=COLORS["bb_band"],
-                line=dict(color=COLORS["lower_band"], width=1, dash='dash')
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=df[date_col], 
-                y=df['BB_middle'], 
+                fill='tonexty',
+                fillcolor='rgba(200, 200, 200, 0.2)',
+                line=dict(color='rgba(0, 255, 0, 0.5)', dash='dash')
+            )
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=df.index if isinstance(df.index, pd.DatetimeIndex) else df['date'],
+                y=df['BB_middle'],
+                mode='lines',
                 name='Middle BB',
-                line=dict(color=COLORS["middle_band"], width=1)
-            ))
-        
-        # Update layout
-        fig.update_layout(
-            title="Moving Averages & Bollinger Bands",
-            xaxis_title="Date",
-            yaxis_title="Price",
-            height=600,
-            hovermode="x unified",
-            template="plotly_white",
-            margin=dict(l=10, r=10, t=50, b=10),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                line=dict(color='rgba(255, 87, 34, 0.7)')
+            )
         )
-        
-        st.plotly_chart(fig, use_container_width=True)
     
-    # Tab 2: Oscillators
-    with tabs[1]:
-        fig = make_subplots(
-            rows=2, 
-            cols=1, 
-            shared_xaxes=True, 
-            vertical_spacing=0.1,
-            row_heights=[0.7, 0.3],
-            subplot_titles=["Price", "Oscillators"]
-        )
-        
-        # Add candlestick chart to first row
-        fig.add_trace(go.Candlestick(
-            x=df[date_col],
-            open=df['Open'],
-            high=df['High'],
-            low=df['Low'],
-            close=df['Close'],
-            name='Price',
-            increasing=dict(line=dict(color=COLORS["candle_up"]), fillcolor=COLORS["candle_up"]),
-            decreasing=dict(line=dict(color=COLORS["candle_down"]), fillcolor=COLORS["candle_down"])
-        ), row=1, col=1)
-        
-        # Add RSI to second row
-        if 'RSI' in df.columns:
-            fig.add_trace(go.Scatter(
-                x=df[date_col], 
-                y=df['RSI'], 
+    # Add RSI
+    if 'RSI' in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df.index if isinstance(df.index, pd.DatetimeIndex) else df['date'],
+                y=df['RSI'],
+                mode='lines',
                 name='RSI',
-                line=dict(color=COLORS["rsi"], width=1.5)
-            ), row=2, col=1)
-            
-            # Add overbought/oversold lines
-            fig.add_shape(
-                type='line',
-                x0=df[date_col].iloc[0],
-                x1=df[date_col].iloc[-1],
-                y0=70, y1=70,
-                line=dict(color='red', width=1, dash='dash'),
-                row=2, col=1
+                line=dict(color='purple')
             )
-            
-            fig.add_shape(
-                type='line',
-                x0=df[date_col].iloc[0],
-                x1=df[date_col].iloc[-1],
-                y0=30, y1=30,
-                line=dict(color='green', width=1, dash='dash'),
-                row=2, col=1
-            )
-            
-            # Add annotations for overbought/oversold
-            fig.add_annotation(
-                text="Overbought",
-                x=df[date_col].iloc[0],
-                y=70,
-                xanchor='left',
-                yanchor='bottom',
-                showarrow=False,
-                font=dict(size=10, color="red"),
-                row=2, col=1
-            )
-            
-            fig.add_annotation(
-                text="Oversold",
-                x=df[date_col].iloc[0],
-                y=30,
-                xanchor='left',
-                yanchor='top',
-                showarrow=False,
-                font=dict(size=10, color="green"),
-                row=2, col=1
-            )
-        
-        # Update layout
-        fig.update_layout(
-            title="Oscillators - RSI",
-            xaxis_title="Date",
-            yaxis2_title="RSI",
-            yaxis_title="Price",
-            height=700,
-            hovermode="x unified",
-            template="plotly_white",
-            margin=dict(l=10, r=10, t=50, b=10),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
         
-        # Set y-axis range for RSI
-        fig.update_yaxes(range=[0, 100], row=2, col=1)
-        
-        st.plotly_chart(fig, use_container_width=True)
+        fig.add_hline(y=70, line_width=1, line_dash="dash", line_color="red")
+        fig.add_hline(y=30, line_width=1, line_dash="dash", line_color="green")
     
-    # Tab 3: Volume Analysis
-    with tabs[2]:
-        if 'Volume' in df.columns:
-            fig = make_subplots(
-                rows=2, 
-                cols=1, 
-                shared_xaxes=True, 
-                vertical_spacing=0.05,
-                row_heights=[0.7, 0.3],
-                subplot_titles=["Price", "Volume"]
+    # Add MACD
+    if all(col in df.columns for col in ['MACD', 'MACD_signal', 'MACD_hist']):
+        fig.add_trace(
+            go.Scatter(
+                x=df.index if isinstance(df.index, pd.DatetimeIndex) else df['date'],
+                y=df['MACD'],
+                mode='lines',
+                name='MACD',
+                line=dict(color='blue')
             )
-            
-            # Add candlestick chart to first row
-            fig.add_trace(go.Candlestick(
-                x=df[date_col],
-                open=df['Open'],
-                high=df['High'],
-                low=df['Low'],
-                close=df['Close'],
-                name='Price',
-                increasing=dict(line=dict(color=COLORS["candle_up"]), fillcolor=COLORS["candle_up"]),
-                decreasing=dict(line=dict(color=COLORS["candle_down"]), fillcolor=COLORS["candle_down"])
-            ), row=1, col=1)
-            
-            # Add volume bars to second row with colors based on price movement
-            colors = [COLORS["volume_up"] if df['Close'].iloc[i] > df['Close'].iloc[i-1] 
-                     else COLORS["volume_down"] for i in range(1, len(df))]
-            colors.insert(0, "gray")  # Add color for first bar
-            
-            fig.add_trace(go.Bar(
-                x=df[date_col],
-                y=df['Volume'],
-                name='Volume',
-                marker=dict(color=colors)
-            ), row=2, col=1)
-            
-            # Add volume moving average if available
-            if 'Volume_MA' in df.columns:
-                fig.add_trace(go.Scatter(
-                    x=df[date_col],
-                    y=df['Volume_MA'],
-                    name='Volume MA (20)',
-                    line=dict(color='rgba(255, 255, 255, 0.5)', width=2)
-                ), row=2, col=1)
-            
-            # Update layout
-            fig.update_layout(
-                title="Volume Analysis",
-                xaxis_title="Date",
-                yaxis_title="Price",
-                yaxis2_title="Volume",
-                height=700,
-                hovermode="x unified",
-                template="plotly_white",
-                margin=dict(l=10, r=10, t=50, b=10),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=df.index if isinstance(df.index, pd.DatetimeIndex) else df['date'],
+                y=df['MACD_signal'],
+                mode='lines',
+                name='MACD Signal',
+                line=dict(color='red')
             )
-            
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("Volume data is not available")
+        )
+        
+        colors = ["green" if val > 0 else "red" for val in df['MACD_hist']]
+        fig.add_trace(
+            go.Bar(
+                x=df.index if isinstance(df.index, pd.DatetimeIndex) else df['date'],
+                y=df['MACD_hist'],
+                name='MACD Histogram',
+                marker_color=colors
+            )
+        )
     
-    # Tab 4: Custom Indicators
-    with tabs[3]:
-        # Create multi-plot figure for custom indicators
-        custom_indicators = []
-        
-        if 'WERPI' in df.columns:
-            custom_indicators.append(('WERPI', 'werpi'))
-        
-        if 'VMLI' in df.columns:
-            custom_indicators.append(('VMLI', 'vmli'))
-        
-        if custom_indicators:
-            fig = make_subplots(
-                rows=len(custom_indicators) + 1, 
-                cols=1, 
-                shared_xaxes=True,
-                vertical_spacing=0.05,
-                row_heights=[0.6] + [0.4/len(custom_indicators)] * len(custom_indicators),
-                subplot_titles=["Price"] + [ind[0] for ind in custom_indicators]
+    # Add WERPI
+    if 'WERPI' in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df.index if isinstance(df.index, pd.DatetimeIndex) else df['date'],
+                y=df['WERPI'],
+                mode='lines',
+                name='WERPI',
+                line=dict(color='darkblue', width=1.5)
             )
-            
-            # Add candlestick chart to first row
-            fig.add_trace(go.Candlestick(
-                x=df[date_col],
-                open=df['Open'],
-                high=df['High'],
-                low=df['Low'],
-                close=df['Close'],
-                name='Price',
-                increasing=dict(line=dict(color=COLORS["candle_up"]), fillcolor=COLORS["candle_up"]),
-                decreasing=dict(line=dict(color=COLORS["candle_down"]), fillcolor=COLORS["candle_down"])
-            ), row=1, col=1)
-            
-            # Add each custom indicator on its own row
-            for i, (indicator_name, color_key) in enumerate(custom_indicators):
-                fig.add_trace(go.Scatter(
-                    x=df[date_col],
-                    y=df[indicator_name],
-                    name=indicator_name,
-                    line=dict(color=COLORS[color_key], width=1.5)
-                ), row=i+2, col=1)
-            
-            # Update layout
-            fig.update_layout(
-                title="Custom Technical Indicators",
-                xaxis_title="Date",
-                yaxis_title="Price",
-                height=800,
-                hovermode="x unified",
-                template="plotly_white",
-                margin=dict(l=10, r=10, t=50, b=10),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+    
+    # Add VMLI
+    if 'VMLI' in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df.index if isinstance(df.index, pd.DatetimeIndex) else df['date'],
+                y=df['VMLI'],
+                mode='lines',
+                name='VMLI',
+                line=dict(color='darkgreen', width=1.5)
             )
-            
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No custom indicators available")
-
+        )
+    
+    # Update layout
+    fig.update_layout(
+        title=f"{ticker} Technical Indicators",
+        xaxis_title="Date",
+        yaxis_title="Price",
+        yaxis2_title="Volume",
+        height=600,
+        hovermode="x unified",
+        template="plotly_white",
+        margin=dict(l=10, r=10, t=50, b=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
 
 @robust_error_boundary
 def prepare_dataframe_for_display(df):
@@ -1375,13 +1203,108 @@ def prepare_dataframe_for_display(df):
     display_df = df.copy()
     
     # Set date as index if present
-    date_cols = [col for col in display_df.columns if 'date' in col.lower()]
+    date_cols = [col for col in display_df.columns if isinstance(col, str) and 'date' in col.lower()]
     if date_cols:
         date_col = date_cols[0]
         display_df.set_index(date_col, inplace=True)
     
     return display_df
 
+
+@robust_error_boundary
+def show_advanced_dashboard_tabs(df):
+    """Show advanced analysis tabs with additional visualizations"""
+    # Create tabs for different analysis types
+    tabs = st.tabs(["📊 Distribution Analysis", "🔄 Autocorrelation", "🔍 Volatility", "📉 Drawdowns"])
+    
+    with tabs[0]:
+        # Distribution Analysis
+        st.subheader("Returns Distribution Analysis")
+        
+        # Calculate returns safely
+        if len(df) > 1 and 'Close' in df.columns:
+            # Create a safe copy of the data
+            prices = df['Close'].copy().dropna()
+            
+            # Only calculate if we have enough data
+            if len(prices) > 5:
+                # Calculate returns with proper error handling
+                try:
+                    returns = prices.pct_change().dropna().values
+                    
+                    # Create columns for the charts
+                    col1, col2 = st.columns(2)
+                    
+                    # Create histogram
+                    with col1:
+                        st.subheader("Returns Histogram")
+                        try:
+                            import matplotlib.pyplot as plt
+                            fig = plt.figure(figsize=(10, 6))
+                            plt.hist(returns, bins=50, alpha=0.7, color='steelblue')
+                            plt.axvline(returns.mean(), color='red', linestyle='dashed', linewidth=1)
+                            plt.xlabel('Return')
+                            plt.ylabel('Frequency')
+                            plt.title('Distribution of Returns')
+                            plt.grid(True, alpha=0.3)
+                            st.pyplot(fig)
+                        except Exception as e:
+                            st.error(f"Error creating histogram: {str(e)}")
+                    
+                    # Create Q-Q plot
+                    with col2:
+                        st.subheader("Q-Q Plot (vs Normal)")
+                        try:
+                            # Import stats here to avoid potential import errors
+                            from scipy import stats as scipy_stats
+                            
+                            # Create figure
+                            fig = plt.figure(figsize=(10, 6))
+                            
+                            # Fix: Properly reshape data for Q-Q plot to avoid dimension error
+                            # The issue is with arrays having mismatched dimensions
+                            if len(returns) > 0:
+                                # Ensure returns is a 1D array with proper shape
+                                returns_1d = returns.flatten()
+                                
+                                # Use scipy's probplot with proper data preparation
+                                qq_data = scipy_stats.probplot(returns_1d, dist="norm")
+                                plt.plot(qq_data[0][0], qq_data[0][1], 'o', markersize=5)
+                                plt.plot(qq_data[0][0], qq_data[0][0] * qq_data[1][0] + qq_data[1][1], 'r-')
+                                plt.title('Q-Q Plot vs. Normal Distribution')
+                                plt.xlabel('Theoretical Quantiles')
+                                plt.ylabel('Sample Quantiles')
+                                plt.grid(True, alpha=0.3)
+                                st.pyplot(fig)
+                            else:
+                                st.warning("Not enough data for Q-Q plot")
+                        except Exception as e:
+                            st.error(f"Error creating Q-Q plot: {str(e)}")
+                            import traceback
+                            st.code(traceback.format_exc())
+                    
+                    # Add distribution metrics
+                    st.subheader("Distribution Statistics")
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Mean Return", f"{returns.mean():.4%}")
+                    with col2:
+                        st.metric("Std Dev", f"{returns.std():.4%}")
+                    with col3:
+                        from scipy import stats
+                        st.metric("Skewness", f"{stats.skew(returns):.4f}")
+                    with col4:
+                        st.metric("Kurtosis", f"{stats.kurtosis(returns):.4f}")
+                    
+                except Exception as e:
+                    st.error(f"Error calculating returns: {str(e)}")
+            else:
+                st.warning("Not enough data for distribution analysis")
+        else:
+            st.warning("Price data not available for distribution analysis")
+
+    # ...existing code...
 
 @robust_error_boundary
 def show_advanced_dashboard_tabs(df):
@@ -1468,6 +1391,8 @@ def show_advanced_dashboard_tabs(df):
             col1, col2 = st.columns([2, 3])
             
             with col1:
+                # Convert Value column to numeric before formatting
+                stats_df['Value'] = pd.to_numeric(stats_df['Value'], errors='coerce')
                 st.dataframe(stats_df.style.format({"Value": "{:.6f}"}), height=300)
             
             with col2:
@@ -1609,6 +1534,47 @@ def show_advanced_dashboard_tabs(df):
                 margin=dict(l=10, r=10, t=50, b=10),
                 yaxis=dict(tickformat=".1%")
             )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Add rolling metrics
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            
+            # Add rolling return
+            fig.add_trace(
+                go.Scatter(
+                    x=df_perf.index,
+                    y=df_perf['Rolling_Return'],
+                    name="Rolling Return (Ann.)",
+                    line=dict(color='green', width=1.5)
+                ),
+                secondary_y=False,
+            )
+            
+            # Add rolling volatility
+            fig.add_trace(
+                go.Scatter(
+                    x=df_perf.index,
+                    y=df_perf['Rolling_Volatility'],
+                    name="Rolling Volatility (Ann.)",
+                    line=dict(color='red', width=1.5)
+                ),
+                secondary_y=True,
+            )
+            
+            # Add figure labels and formatting
+            fig.update_layout(
+                title="Rolling Metrics (20-Day Window)",
+                template="plotly_white",
+                height=300,
+                margin=dict(l=10, r=10, t=50, b=10),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                hovermode="x unified"
+            )
+            
+            # Set y-axes titles
+            fig.update_yaxes(title_text="Return", secondary_y=False, tickformat=".1%")
+            fig.update_yaxes(title_text="Volatility", secondary_y=True, tickformat=".1%")
             
             st.plotly_chart(fig, use_container_width=True)
             

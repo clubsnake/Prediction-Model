@@ -4,6 +4,7 @@ Enhanced UI components for the Streamlit dashboard.
 
 import os
 import sys
+import time
 from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
@@ -31,13 +32,24 @@ from src.dashboard.dashboard.dashboard_visualization import (
     plot_feature_importance,
     plot_model_performance,
     generate_correlation_heatmap,
-    create_interactive_price_chart # Make sure this is imported
+    create_interactive_price_chart 
 )
 from src.dashboard.dashboard.dashboard_data import calculate_indicators
 from src.dashboard.prediction_service import generate_predictions
 
 # Update N_STARTUP_TRIALS to 10000
 N_STARTUP_TRIALS = 10000
+
+# Define start_tuning and stop_tuning functions
+def start_tuning():
+    """Start the hyperparameter tuning process"""
+    st.session_state["tuning_in_progress"] = True
+    # Add logic to start the tuning process
+
+def stop_tuning():
+    """Stop the hyperparameter tuning process"""
+    st.session_state["tuning_in_progress"] = False
+    # Add logic to stop the tuning process
 
 @robust_error_boundary
 def create_header():
@@ -61,16 +73,14 @@ def create_header():
         # Status indicator with dynamic styling - adjust vertical position
         if st.session_state.get("tuning_in_progress", False):
             st.markdown("""
-            <div style="background-color: rgba(76, 175, 80, 0.1); border-left: 4px solid #4CAF50; 
-                        padding: 10px; border-radius: 4px; margin-top: 20px;">
-                <span style="font-weight: bold; color: #4CAF50;">🔄 Tuning Active</span>
+            <div style="text-align: center; color: #FF9800; font-size: 1.1em;">
+                <strong>Tuning in Progress</strong>
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown("""
-            <div style="background-color: rgba(30, 136, 229, 0.1); border-left: 4px solid #1E88E5; 
-                        padding: 10px; border-radius: 4px; margin-top: 20px;">
-                <span style="font-weight: bold; color: #1E88E5;">⏸️ Tuning Inactive</span>
+            <div style="text-align: center; color: #4CAF50; font-size: 1.1em;">
+                <strong>Ready</strong>
             </div>
             """, unsafe_allow_html=True)
     
@@ -101,20 +111,28 @@ def create_control_panel():
     """, unsafe_allow_html=True)
     
     # Add tuning controls at the top
-    if not st.session_state.get("tuning_in_progress", False):
-        # If not currently tuning, show a Start button
-        if st.sidebar.button("🚀 Start Hyperparameter Tuning", key="btn_start_tuning", use_container_width=True):
-            from dashboard_model import start_tuning
-            start_tuning(st.session_state.get("selected_ticker", "BTC-USD"), 
-                        st.session_state.get("selected_timeframe", "1d"))
-            # Reset best_metrics since a new tuning session starts
-            st.session_state["best_metrics"] = {}
-    else:
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if not st.session_state.get("tuning_in_progress", False):
+            if st.sidebar.button("🚀 Start Tuning", key="sidebar_btn_start_tuning", use_container_width=True):
+                try:
+                    from src.dashboard.dashboard.dashboard_model import start_tuning
+                    start_tuning(st.session_state.get("selected_ticker", "BTC-USD"), 
+                               st.session_state.get("selected_timeframe", "1d"))
+                    # Reset best_metrics since a new tuning session starts
+                    st.session_state["best_metrics"] = {}
+                except Exception as e:
+                    st.error(f"Failed to start tuning: {str(e)}")
+    with col2:
         # If tuning is ongoing, give option to stop
-        if st.sidebar.button("⏹️ Stop Tuning", key="btn_stop_tuning", use_container_width=True):
-            from dashboard_model import stop_tuning
-            stop_tuning()
-            
+        if st.session_state.get("tuning_in_progress", False):
+            if st.sidebar.button("⏹️ Stop Tuning", key="sidebar_btn_stop_tuning", use_container_width=True):
+                try:
+                    from src.dashboard.dashboard.dashboard_model import stop_tuning
+                    stop_tuning()
+                except Exception as e:
+                    st.error(f"Failed to stop tuning: {str(e)}")
+
     # Add some space
     st.sidebar.markdown("<br>", unsafe_allow_html=True)
     
@@ -123,14 +141,14 @@ def create_control_panel():
     
     # Add custom ticker input option
     use_custom_ticker = st.sidebar.checkbox("Use custom ticker", 
-                                           key="cb_use_custom_ticker",
+                                           key="sidebar_cb_use_custom_ticker",
                                            value=st.session_state.get("use_custom_ticker", False))
     
     if use_custom_ticker:
         # Text input for custom ticker
         ticker = st.sidebar.text_input(
             "Enter ticker symbol:",
-            key="input_custom_ticker",
+            key="sidebar_input_custom_ticker",
             value=st.session_state.get("custom_ticker", ""),
             help="Example: AAPL, MSFT, BTC-USD, ETH-USD"
         )
@@ -140,7 +158,7 @@ def create_control_panel():
         # Standard dropdown selection
         ticker = st.sidebar.selectbox(
             "Select ticker:",
-            key="select_ticker",
+            key="sidebar_select_ticker",
             options=TICKERS,
             index=TICKERS.index(st.session_state.get("selected_ticker", TICKER))
             if st.session_state.get("selected_ticker", TICKER) in TICKERS
@@ -161,7 +179,7 @@ def create_control_panel():
     timeframe = st.sidebar.selectbox(
         "Select Timeframe",
         TIMEFRAMES,
-        key="select_timeframe",
+        key="sidebar_select_timeframe",
         index=selected_timeframe_index,
         help="Choose data frequency/interval"
     )
@@ -174,7 +192,7 @@ def create_control_panel():
     default_start = datetime.now().date() - timedelta(days=30)
     start_date = st.sidebar.date_input(
         "Start Date",
-        key="input_start_date",
+        key="sidebar_input_start_date",
         value=st.session_state.get("start_date_user", default_start),
         help="Starting date for visualization"
     )
@@ -186,7 +204,7 @@ def create_control_panel():
     default_end = datetime.now().date() + timedelta(days=30)
     end_date = st.sidebar.date_input(
         "Forecast End Date",
-        key="input_end_date",
+        key="sidebar_input_end_date",
         value=st.session_state.get("end_date_user", default_end),
         help="End date for forecast visualization (future date for predictions)"
     )
@@ -200,7 +218,7 @@ def create_control_panel():
     default_training_start = datetime.now().date() - timedelta(days=365*5)
     training_start_date = st.sidebar.date_input(
         "Training Start Date",
-        key="input_training_start_date",
+        key="sidebar_input_training_start_date",
         value=st.session_state.get("training_start_date_user", default_training_start),
         help="Starting date for training data (earlier means more data)"
     )
@@ -221,27 +239,27 @@ def create_control_panel():
     
     # Custom indicators first
     st.sidebar.write("**Custom Indicators:**")
-    show_werpi = st.sidebar.checkbox("WERPI", key="cb_show_werpi", value=False, 
+    show_werpi = st.sidebar.checkbox("WERPI", key="sidebar_cb_show_werpi", value=st.session_state.get("show_werpi", False), 
                                    help="Wavelet-based Encoded Relative Price Indicator")
-    show_vmli = st.sidebar.checkbox("VMLI", key="cb_show_vmli", value=False, 
+    show_vmli = st.sidebar.checkbox("VMLI", key="sidebar_cb_show_vmli", value=st.session_state.get("show_vmli", False), 
                                   help="Volatility-Momentum-Liquidity Indicator")
     
     # Standard indicators - all off by default
     st.sidebar.write("**Technical Indicators:**")
-    show_ma = st.sidebar.checkbox("Moving Averages", key="cb_show_ma", value=False)
-    show_bb = st.sidebar.checkbox("Bollinger Bands", key="cb_show_bb", value=False)
-    show_rsi = st.sidebar.checkbox("RSI", key="cb_show_rsi", value=False)
-    show_macd = st.sidebar.checkbox("MACD", key="cb_show_macd", value=False)
+    show_ma = st.sidebar.checkbox("Moving Averages", key="sidebar_cb_show_ma", value=st.session_state.get("show_ma", False))
+    show_bb = st.sidebar.checkbox("Bollinger Bands", key="sidebar_cb_show_bb", value=st.session_state.get("show_bb", False))
+    show_rsi = st.sidebar.checkbox("RSI", key="sidebar_cb_show_rsi", value=st.session_state.get("show_rsi", False))
+    show_macd = st.sidebar.checkbox("MACD", key="sidebar_cb_show_macd", value=st.session_state.get("show_macd", False))
     
     # Forecast options
     st.sidebar.write("**Forecast Options:**")
-    show_forecast = st.sidebar.checkbox("Show Forecast", key="cb_show_forecast", value=True)
+    show_forecast = st.sidebar.checkbox("Show Forecast", key="sidebar_cb_show_forecast", value=st.session_state.get("show_forecast", True))
     
     # Auto-refresh settings moved here
     st.sidebar.write("**Auto-Refresh Settings:**")
     auto_refresh = st.sidebar.checkbox(
         "Enable Auto-Refresh",
-        key="cb_auto_refresh",
+        key="sidebar_cb_auto_refresh",
         value=st.session_state.get("auto_refresh", True),
         help="Automatically refresh the dashboard"
     )
@@ -250,11 +268,10 @@ def create_control_panel():
     if auto_refresh:
         refresh_interval = st.sidebar.slider(
             "Refresh Interval (seconds)",
-            key="slider_refresh_interval",
             min_value=10,
-            max_value=300,
+            max_value=600,
             value=st.session_state.get("refresh_interval", 30),
-            help="How often to refresh the dashboard"
+            step=10
         )
         st.session_state["refresh_interval"] = refresh_interval
         
@@ -278,6 +295,11 @@ def create_control_panel():
         "show_vmli": show_vmli,
         "show_forecast": show_forecast
     }
+    
+    # Update individual indicator flags in session state
+    for key, value in indicators.items():
+        st.session_state[key] = value
+        
     st.session_state["indicators"] = indicators
     
     # Add some helpful information
@@ -292,8 +314,6 @@ def create_control_panel():
         </ul>
     </div>
     """, unsafe_allow_html=True)
-
-    # Removed "Active Model Types" section from sidebar
     
     # Add hyperparameter tuning link at the bottom of the sidebar
     st.sidebar.markdown("---")
@@ -356,12 +376,13 @@ def create_hyperparameter_tuning_panel():
                 options=list(tuning_modes.keys()),
                 index=list(tuning_modes.keys()).index(default_mode) if default_mode in tuning_modes else 1,
                 format_func=lambda x: x.capitalize(),
-                help="Controls tuning intensity (trials, epochs, timeout)"
+                help="Controls tuning intensity (trials, epochs, timeout)",
+                key="hp_tuning_mode_select"
             )
         
         with col2:
             # Store the selected mode in session state
-            if st.button("Apply Mode", use_container_width=True):
+            if st.button("Apply Mode", use_container_width=True, key="hp_apply_mode_btn"):
                 st.session_state["tuning_mode"] = mode
                 st.session_state["tuning_multipliers"] = tuning_modes[mode]
                 st.success(f"Set to {mode.capitalize()} mode")
@@ -391,7 +412,8 @@ def create_hyperparameter_tuning_panel():
                                max_value=100.0, 
                                value=float(rmse_threshold),
                                step=0.1,
-                               help="Target RMSE threshold for stopping tuning")
+                               help="Target RMSE threshold for stopping tuning",
+                               key="hp_rmse_target_input")
         
         with col2:
             mape_target = st.number_input("Target MAPE (%)", 
@@ -399,28 +421,31 @@ def create_hyperparameter_tuning_panel():
                                max_value=50.0, 
                                value=float(mape_threshold),
                                step=0.1,
-                               help="Target MAPE threshold for stopping tuning")
+                               help="Target MAPE threshold for stopping tuning",
+                               key="hp_mape_target_input")
         
         # Save thresholds button
-        if st.button("Save Thresholds", use_container_width=True):
+        if st.button("Save Thresholds", use_container_width=True, key="hp_save_thresholds_btn"):
             from config.config_loader import set_value
             set_value("hyperparameter.thresholds.rmse", float(rmse_target))
             set_value("hyperparameter.thresholds.mape", float(mape_target))
             st.success("Thresholds updated!")
         
-        # Adaptive Parameters Section (NEW)
+        # Adaptive Parameters Section
         st.subheader("Adaptive Parameters")
         
         use_adaptive_window = st.checkbox("Use Adaptive Window Size", 
                                          value=get_value("hyperparameter.adaptive.window_size", False),
-                                         help="Automatically adjust window size based on market volatility")
+                                         help="Automatically adjust window size based on market volatility",
+                                         key="hp_adaptive_window_cb")
         
         use_adaptive_threshold = st.checkbox("Use Adaptive Retraining Threshold", 
                                            value=get_value("hyperparameter.adaptive.threshold", False),
-                                           help="Automatically adjust retraining threshold based on performance and volatility")
+                                           help="Automatically adjust retraining threshold based on performance and volatility",
+                                           key="hp_adaptive_threshold_cb")
         
         # Save adaptive settings
-        if st.button("Save Adaptive Settings", use_container_width=True):
+        if st.button("Save Adaptive Settings", use_container_width=True, key="hp_save_adaptive_btn"):
             from config.config_loader import set_value
             set_value("hyperparameter.adaptive.window_size", bool(use_adaptive_window))
             set_value("hyperparameter.adaptive.threshold", bool(use_adaptive_threshold))
@@ -450,10 +475,10 @@ def create_hyperparameter_tuning_panel():
         
         with col1:
             if not st.session_state.get("tuning_in_progress", False):
-                if st.button("Start Tuning", use_container_width=True):
-                    from dashboard_ui import start_tuning
+                if st.button("Start Tuning", use_container_width=True, key="hp_start_tuning_btn"):
+                    from src.dashboard.dashboard.dashboard_model import start_tuning as model_start_tuning
                     # Pass the mode multipliers to the tuning function
-                    start_tuning(
+                    model_start_tuning(
                         st.session_state.get("selected_ticker", "BTC-USD"), 
                         st.session_state.get("selected_timeframe", "1d"),
                         multipliers=current_multipliers
@@ -461,8 +486,8 @@ def create_hyperparameter_tuning_panel():
         
         with col2:
             if st.session_state.get("tuning_in_progress", False):
-                if st.button("Stop Tuning", use_container_width=True):
-                    from dashboard_model import stop_tuning
+                if st.button("Stop Tuning", use_container_width=True, key="hp_stop_tuning_btn"):
+                    from src.dashboard.dashboard.dashboard_model import stop_tuning
                     stop_tuning()
     
     with tab2:
@@ -472,8 +497,12 @@ def create_hyperparameter_tuning_panel():
         # Get model types from config
         from config.config_loader import MODEL_TYPES, ACTIVE_MODEL_TYPES
         
-        # Add CNN to model types
-        MODEL_TYPES.append("cnn")
+        
+        if "cnn" not in MODEL_TYPES:
+            MODEL_TYPES.append("cnn")
+        
+
+        MODEL_TYPES = list(dict.fromkeys(MODEL_TYPES))
         
         # Create checkboxes for each model type
         model_type_states = {}
@@ -484,14 +513,16 @@ def create_hyperparameter_tuning_panel():
             col_idx = i % 2
             with cols[col_idx]:
                 is_active = model_type in ACTIVE_MODEL_TYPES
+                # Use a truly unique key with timestamp and position
+                unique_key = f"hp_model_{model_type}_{i}_{id(model_type)}"
                 model_type_states[model_type] = st.checkbox(
                     f"{model_type.upper()}", 
                     value=is_active,
-                    key=f"hp_model_{model_type}"
+                    key=unique_key
                 )
         
         # Apply button for model types
-        if st.button("Apply Model Selection", use_container_width=True):
+        if st.button("Apply Model Selection", use_container_width=True, key="apply_model_selection"):
             # Update session state for active model types
             active_models = [model for model, is_active in model_type_states.items() if is_active]
             
@@ -832,824 +863,3 @@ def create_metrics_cards():
         ''', unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
-
-"""
-Main UI component for the dashboard.
-Provides the layout and UI elements for the prediction model dashboard.
-"""
-
-import streamlit as st
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import plotly.graph_objects as go
-import plotly.express as px
-from datetime import datetime, timedelta
-import os
-import sys
-import logging
-
-# Add project directory to path for imports
-current_file = os.path.abspath(__file__)
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))
-if project_root not in sys.path:
-    sys.path.append(project_root)
-
-# Import dashboard components
-from src.dashboard.dashboard.dashboard_visualization import (
-    plot_price_history_with_predictions,
-    plot_feature_importance,
-    plot_model_performance,
-    generate_correlation_heatmap
-)
-
-# Import training resource optimizer dashboard
-from src.dashboard.training_resource_optimizer_dashboard import render_training_optimizer_tab
-
-# Import other pages/tabs
-from src.dashboard.pattern_discovery.pattern_discovery_tab import add_pattern_discovery_tab
-from src.dashboard.explainable_ai_tab import render_explainable_ai_tab  # Updated import
-from src.dashboard.monitoring import PredictionMonitor
-
-# Initialize logger
-logger = logging.getLogger(__name__)
-
-# Add imports for monitoring and prediction service
-try:
-    from src.dashboard.monitoring import PredictionMonitor
-    from src.dashboard.prediction_service import PredictionService, update_dashboard_forecast
-    HAS_PREDICTION_SERVICE = True
-except ImportError:
-    logger.warning("PredictionService not available")
-    HAS_PREDICTION_SERVICE = False
-
-# Import centralized state management
-from src.dashboard.dashboard.dashboard_state import (
-    get_state, set_state,
-    get_prediction_monitor, get_prediction_service,
-    get_ensemble_weights, update_ensemble_weights,
-    get_current_ticker, get_current_timeframe,
-    get_lookback_period, get_forecast_window
-)
-
-def render_dashboard_header():
-    """Render the dashboard header with title and description."""
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.title("Stock Price Prediction Dashboard")
-        st.markdown("""
-        This dashboard provides real-time insights into stock price predictions using 
-        an ensemble of machine learning models including LSTM, RNN, TFT, Random Forest, XGBoost, and TabNet.
-        """)
-    with col2:
-        # Add logo or other visual element if available
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-        st.write(f"Last updated: {current_time}")
-        
-        # Add refresh button
-        if st.button("🔄 Refresh Data", key="refresh_dashboard"):
-            st.session_state["refresh_requested"] = True
-            st.experimental_rerun()
-
-def render_sidebar():
-    """Render the sidebar with navigation and controls."""
-    st.sidebar.title("Navigation")
-    
-    # Main page selection
-    page_options = [
-        "Dashboard", 
-        "Pattern Discovery",
-        "Explainable AI",
-        "Model Performance",
-        "Training Optimizer",
-        "Settings"
-    ]
-    
-    selected_page = st.sidebar.radio("Select Page", page_options)
-    
-    # Ticker selection
-    tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA"]
-    selected_ticker = st.sidebar.selectbox(
-        "Select Stock Ticker",
-        tickers,
-        key="selected_ticker"
-    )
-    
-    # Timeframe selection
-    timeframes = ["1d", "1h", "15min", "5min"]
-    selected_timeframe = st.sidebar.selectbox(
-        "Select Timeframe",
-        timeframes,
-        key="selected_timeframe"
-    )
-    
-    # Date range for analysis
-    st.sidebar.subheader("Analysis Period")
-    
-    # Default to last 365 days
-    default_start_date = datetime.now() - timedelta(days=365)
-    start_date = st.sidebar.date_input(
-        "Start Date",
-        value=default_start_date,
-        key="training_start_date"
-    )
-    
-    end_date = st.sidebar.date_input(
-        "End Date", 
-        value=datetime.now(),
-        key="training_end_date"
-    )
-    
-    # Forecast window
-    forecast_days = st.sidebar.slider(
-        "Forecast Window (Days)", 
-        min_value=1, 
-        max_value=90, 
-        value=30,
-        key="forecast_window"
-    )
-    
-    # Model selection
-    st.sidebar.subheader("Model Settings")
-    
-    # Available model types
-    model_types = ["lstm", "rnn", "tft", "random_forest", "xgboost", "tabnet", "cnn", "ltc"]
-    
-    # Create a container to display model weights
-    with st.sidebar.expander("Ensemble Model Weights", expanded=False):
-        # Get current weights from session state or initialize
-        if "ensemble_weights" not in st.session_state:
-            st.session_state["ensemble_weights"] = {
-                model: 1.0/len(model_types) for model in model_types
-            }
-        
-        # Allow user to adjust model weights
-        new_weights = {}
-        for model in model_types:
-            current_weight = st.session_state["ensemble_weights"].get(model, 0.0)
-            new_weights[model] = st.slider(
-                f"{model.upper()} Weight",
-                min_value=0.0,
-                max_value=1.0,
-                value=float(current_weight),
-                format="%.2f",
-                key=f"weight_{model}"
-            )
-        
-        # Normalize weights to sum to 1
-        weight_sum = sum(new_weights.values())
-        if weight_sum > 0:
-            normalized_weights = {k: v/weight_sum for k, v in new_weights.items()}
-            st.session_state["ensemble_weights"] = normalized_weights
-        else:
-            st.warning("Total weight must be greater than 0")
-    
-    # Training button
-    if st.sidebar.button("Train Models"):
-        st.session_state["training_requested"] = True
-        
-    # Return the selected options
-    return {
-        "page": selected_page,
-        "ticker": selected_ticker,
-        "timeframe": selected_timeframe,
-        "start_date": start_date,
-        "end_date": end_date,
-        "forecast_window": forecast_days,
-    }
-
-def render_main_dashboard(options):
-    """Render the main dashboard page with current predictions and charts."""
-    
-    # Check if data is available
-    if "df" not in st.session_state or st.session_state["df"] is None:
-        st.warning("No data available. Please fetch data first.")
-        return
-    
-    df = st.session_state["df"]
-    
-    # Display tabs for different dashboard views
-    tab1, tab2, tab3, tab4 = st.tabs(["Forecast", "Technical Indicators", "Correlations", "Raw Data"])
-    
-    with tab1:
-        st.subheader(f"{options['ticker']} Price Forecast")
-        
-        # Get past predictions from session state
-        past_predictions = st.session_state.get("past_predictions", {})
-        
-        # Display price chart with predictions
-        # USE THE CORRECT FUNCTION HERE
-        # fig = plot_price_history_with_predictions(
-        #     df, 
-        #     future_predictions=st.session_state.get("future_forecast", []),
-        #     ticker=options["ticker"],
-        #     past_predictions=past_predictions
-        # )
-        
-        # Calculate indicators and plot the chart
-        df_indicators = calculate_indicators(df)
-        
-        # Initialize future_forecast as None before attempting to generate it
-        future_forecast = None
-        
-        # Only attempt forecast if model exists and user wants to see it
-        model = st.session_state.get('model')
-        if model and indicators.get("show_forecast", True):
-            with st.spinner("Generating forecast..."):
-                # Determine feature columns (exclude date and target 'Close')
-                feature_cols = [col for col in df.columns if col not in ["date", "Date", "Close"]]
-                future_forecast = generate_forecast(model, df, feature_cols)
-        
-        # Get indicator preferences from options
-        indicators = options.get("indicators", {})
-        
-        # Pass indicator options to visualization function
-        create_interactive_price_chart(df_indicators, options, 
-                                     future_forecast=future_forecast, 
-                                     indicators=indicators,
-                                     height=700)  # Increase height for better visualization
-        
-        # Display forecast metrics
-        if "metrics" in st.session_state:
-            metrics = st.session_state["metrics"]
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("RMSE", f"{metrics.get('rmse', 0):.4f}")
-            with col2:
-                st.metric("MAPE", f"{metrics.get('mape', 0):.2f}%")
-            with col3:
-                last_price = df["Close"].iloc[-1] if len(df) > 0 else 0
-                last_pred = st.session_state.get("future_forecast", [0])[0]
-                change = ((last_pred - last_price) / last_price) * 100 if last_price > 0 else 0
-                st.metric(
-                    "Next Day Forecast", 
-                    f"${last_pred:.2f}", 
-                    f"{change:.2f}%",
-                    delta_color="normal" if change >= 0 else "inverse"
-                )
-        
-        # Add a section to show past prediction accuracy
-        if past_predictions:
-            st.subheader("Past Prediction Accuracy")
-            
-            # Create a dataframe with past predictions
-            past_pred_data = []
-            for date_str, pred_info in past_predictions.items():
-                if pred_info['actual'] is not None:
-                    past_pred_data.append({
-                        'Date': date_str,
-                        'Predicted': f"${pred_info['predicted']:.2f}",
-                        'Actual': f"${pred_info['actual']:.2f}",
-                        'Error': f"${pred_info['error']:.2f}",
-                        'Error (%)': f"{pred_info['pct_error']:.2f}%"
-                    })
-            
-            if past_pred_data:
-                past_df = pd.DataFrame(past_pred_data)
-                st.dataframe(past_df.sort_values('Date', ascending=False).head(10), use_container_width=True)
-                
-                # Show accuracy metrics
-                if len(past_pred_data) >= 3:  # Need at least a few data points
-                    # Calculate accuracy metrics
-                    pct_errors = [abs(p['pct_error']) for d, p in past_predictions.items() 
-                                if p.get('pct_error') is not None]
-                    
-                    mape = sum(pct_errors) / len(pct_errors) if pct_errors else 0
-                    
-                    # For direction accuracy, we need at least 2 consecutive predictions
-                    direction_correct = sum(1 for d, p in past_predictions.items() 
-                                         if p.get('actual') is not None and p.get('predicted') is not None and 
-                                         len(df) > 2 and 
-                                         ((p['actual'] > df['Close'].iloc[-2] and p['predicted'] > df['Close'].iloc[-2]) or
-                                          (p['actual'] < df['Close'].iloc[-2] and p['predicted'] < df['Close'].iloc[-2])))
-                    
-                    direction_accuracy = direction_correct / len([p for d, p in past_predictions.items() 
-                                                               if p.get('actual') is not None]) * 100 if direction_correct > 0 else 0
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("Historical MAPE", f"{mape:.2f}%")
-                    with col2:
-                        st.metric("Direction Accuracy", f"{direction_accuracy:.1f}%")
-
-def render_settings_page():
-    """Render the settings page for configuring the dashboard."""
-    st.header("Dashboard Settings")
-    
-    # Model training settings
-    st.subheader("Model Training Settings")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Lookback window for sequence models
-        lookback = st.slider(
-            "Lookback Window (Days)",
-            min_value=5,
-            max_value=120,
-            value=st.session_state.get("lookback", 30),
-            key="lookback"
-        )
-        
-        # Batch size for neural models
-        batch_size = st.select_slider(
-            "Batch Size",
-            options=[8, 16, 32, 64, 128, 256, 512],
-            value=st.session_state.get("batch_size", 32),
-            key="batch_size"
-        )
-    
-    with col2:
-        # Walk-forward window size
-        wf_size = st.slider(
-            "Walk Forward Window",
-            min_value=1,
-            max_value=30,
-            value=st.session_state.get("wf_size", 5),
-            key="wf_size"
-        )
-        
-        # Learning rate for neural models
-        learning_rate = st.select_slider(
-            "Learning Rate",
-            options=[0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05],
-            value=st.session_state.get("learning_rate", 0.001),
-            format="%.4f",
-            key="learning_rate"
-        )
-    
-    # Advanced settings
-    with st.expander("Advanced Settings", expanded=False):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Epochs for training
-            epochs = st.slider(
-                "Training Epochs",
-                min_value=1,
-                max_value=50,
-                value=st.session_state.get("epochs", 10),
-                key="epochs"
-            )
-            
-            # Dropout rate
-            dropout = st.slider(
-                "Dropout Rate",
-                min_value=0.0,
-                max_value=0.8,
-                value=st.session_state.get("dropout", 0.2),
-                step=0.05,
-                format="%.2f",
-                key="dropout"
-            )
-            
-        with col2:
-            # Early stopping patience
-            patience = st.slider(
-                "Early Stopping Patience",
-                min_value=1,
-                max_value=20,
-                value=st.session_state.get("patience", 5),
-                key="patience"
-            )
-            
-            # Loss function selection
-            loss_function = st.selectbox(
-                "Loss Function",
-                ["mean_squared_error", "mean_absolute_error", "huber_loss", "log_cosh"],
-                index=0,
-                key="loss_function"
-            )
-    
-    # Data preprocessing settings
-    st.subheader("Data Preprocessing Settings")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Scaling method
-        scaling_method = st.selectbox(
-            "Scaling Method",
-            ["StandardScaler", "MinMaxScaler", "RobustScaler", "None"],
-            index=0,
-            key="scaling_method"
-        )
-        
-        # Handle missing data
-        handle_missing = st.selectbox(
-            "Handle Missing Data",
-            ["Forward Fill", "Backward Fill", "Mean", "Median", "Drop"],
-            index=0,
-            key="handle_missing"
-        )
-        
-    with col2:
-        # Outlier treatment
-        outlier_treatment = st.selectbox(
-            "Outlier Treatment",
-            ["None", "Winsorize", "Remove", "Cap"],
-            index=0,
-            key="outlier_treatment"
-        )
-        
-        # Feature engineering
-        feature_engineering = st.multiselect(
-            "Feature Engineering",
-            ["Technical Indicators", "Date Features", "Lagged Features", "Returns", "Volatility"],
-            default=["Technical Indicators", "Date Features", "Returns"],
-            key="feature_engineering"
-        )
-    
-    # Save settings
-    if st.button("Save Settings"):
-        st.success("Settings saved successfully!")
-
-def plot_rsi(df):
-    """Plot Relative Strength Index chart."""
-    if "RSI" not in df.columns:
-        st.warning("RSI indicator not available in data")
-        return
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI", line=dict(color="purple")))
-    
-    # Add overbought/oversold lines
-    fig.add_hline(y=70, line_width=1, line_dash="dash", line_color="red")
-    fig.add_hline(y=30, line_width=1, line_dash="dash", line_color="green")
-    
-    fig.update_layout(
-        title="Relative Strength Index (RSI)",
-        xaxis_title="Date",
-        yaxis_title="RSI Value",
-        height=400
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-def plot_macd(df):
-    """Plot MACD chart."""
-    required_cols = ["MACD", "MACD_signal", "MACD_hist"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    
-    if missing_cols:
-        st.warning(f"Missing MACD columns: {missing_cols}")
-        return
-    
-    fig = go.Figure()
-    
-    # Plot MACD line
-    fig.add_trace(go.Scatter(x=df.index, y=df["MACD"], name="MACD", line=dict(color="blue")))
-    
-    # Plot Signal line
-    fig.add_trace(go.Scatter(x=df.index, y=df["MACD_signal"], name="Signal", line=dict(color="red")))
-    
-    # Plot Histogram
-    colors = ["green" if val > 0 else "red" for val in df["MACD_hist"]]
-    fig.add_trace(go.Bar(x=df.index, y=df["MACD_hist"], name="Histogram", marker_color=colors))
-    
-    fig.update_layout(
-        title="MACD (Moving Average Convergence Divergence)",
-        xaxis_title="Date",
-        yaxis_title="Value",
-        height=400
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-def plot_bollinger_bands(df):
-    """Plot Bollinger Bands chart."""
-    required_cols = ["boll_upper", "boll_middle", "boll_lower"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    
-    if missing_cols:
-        st.warning(f"Missing Bollinger Bands columns: {missing_cols}")
-        return
-    
-    fig = go.Figure()
-    
-    # Plot Price
-    fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name="Price", line=dict(color="black")))
-    
-    # Plot Upper Band
-    fig.add_trace(go.Scatter(x=df.index, y=df["boll_upper"], name="Upper Band", 
-                            line=dict(color="red", dash="dash")))
-    
-    # Plot Middle Band (SMA)
-    fig.add_trace(go.Scatter(x=df.index, y=df["boll_middle"], name="SMA", 
-                            line=dict(color="blue")))
-    
-    # Plot Lower Band
-    fig.add_trace(go.Scatter(x=df.index, y=df["boll_lower"], name="Lower Band", 
-                            line=dict(color="green", dash="dash")))
-    
-    fig.update_layout(
-        title="Bollinger Bands",
-        xaxis_title="Date",
-        yaxis_title="Price",
-        height=400
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-def plot_moving_averages(df):
-    """Plot Moving Averages chart."""
-    fig = go.Figure()
-    
-    # Plot Price
-    fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name="Price", line=dict(color="black")))
-    
-    # Calculate and plot SMAs if not available
-    ma_periods = [5, 20, 50, 200]
-    ma_colors = ["blue", "green", "orange", "red"]
-    
-    for period, color in zip(ma_periods, ma_colors):
-        col_name = f"SMA_{period}"
-        if col_name not in df.columns:
-            # Calculate SMA if not in dataframe
-            df[col_name] = df["Close"].rolling(period).mean()
-        
-        fig.add_trace(go.Scatter(
-            x=df.index, 
-            y=df[col_name], 
-            name=f"SMA {period}", 
-            line=dict(color=color)
-        ))
-    
-    fig.update_layout(
-        title="Moving Averages",
-        xaxis_title="Date",
-        yaxis_title="Price",
-        height=400
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-def plot_atr(df):
-    """Plot Average True Range chart."""
-    if "ATR" not in df.columns:
-        st.warning("ATR indicator not available in data")
-        return
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["ATR"], name="ATR", line=dict(color="purple")))
-    
-    fig.update_layout(
-        title="Average True Range (ATR)",
-        xaxis_title="Date",
-        yaxis_title="ATR Value",
-        height=300
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-def plot_obv(df):
-    """Plot On-Balance Volume chart."""
-    if "OBV" not in df.columns:
-        # Calculate OBV if not available
-        df["OBV"] = (np.sign(df["Close"].diff()) * df["Volume"]).fillna(0).cumsum()
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["OBV"], name="OBV", line=dict(color="blue")))
-    
-    fig.update_layout(
-        title="On-Balance Volume (OBV)",
-        xaxis_title="Date",
-        yaxis_title="OBV Value",
-        height=300
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-def render_model_performance_page():
-    """Render the model performance page with metrics and comparisons."""
-    st.header("Model Performance")
-    
-    # Get model metrics if available
-    if "model_metrics" not in st.session_state:
-        st.warning("No model metrics available yet. Train models first.")
-        return
-    
-    metrics = st.session_state["model_metrics"]
-    
-    # Display overall metrics
-    st.subheader("Overall Model Performance")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("RMSE", f"{metrics.get('rmse', 0):.4f}")
-    with col2:
-        st.metric("MAPE", f"{metrics.get('mape', 0):.2f}%")
-    with col3:
-        st.metric("R²", f"{metrics.get('r2', 0):.4f}")
-    with col4:
-        st.metric("MAE", f"{metrics.get('mae', 0):.4f}")
-    
-    # Plot performance metrics
-    performance_fig = plot_model_performance(metrics)
-    st.plotly_chart(performance_fig, use_container_width=True)
-    
-    # Model comparison
-    st.subheader("Model Comparison")
-    
-    # Get individual model metrics if available
-    if "submodel_metrics" in st.session_state:
-        submodel_metrics = st.session_state["submodel_metrics"]
-        
-        # Create dataframe for comparison
-        comparison_data = []
-        for model_type, model_metrics in submodel_metrics.items():
-            comparison_data.append({
-                "Model": model_type,
-                "RMSE": model_metrics.get("rmse", 0),
-                "MAPE": model_metrics.get("mape", 0),
-                "R²": model_metrics.get("r2", 0),
-                "MAE": model_metrics.get("mae", 0),
-                "Training Time": f"{model_metrics.get('training_time', 0):.2f}s"
-            })
-        
-        # Create and display comparison table
-        comparison_df = pd.DataFrame(comparison_data)
-        st.dataframe(comparison_df, use_container_width=True)
-        
-        # Plot comparison chart
-        st.subheader("RMSE by Model Type")
-        
-        fig = px.bar(
-            comparison_df,
-            x="Model",
-            y="RMSE",
-            color="Model",
-            title="RMSE Comparison by Model Type"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Individual model metrics not available")
-    
-    # Prediction Monitor
-    st.subheader("Prediction Monitoring")
-    
-    # Get monitor from state management
-    monitor = get_prediction_monitor()
-    
-    if monitor:
-        # Get accuracy metrics for current ticker/timeframe
-        ticker = get_current_ticker()
-        timeframe = get_current_timeframe()
-        
-        metrics_24h = monitor.get_accuracy_metrics("24h", ticker, timeframe)
-        metrics_7d = monitor.get_accuracy_metrics("7d", ticker, timeframe)
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("24h MAPE", f"{metrics_24h.get('mean_error', 0):.2f}%")
-            
-        with col2:
-            st.metric("7d MAPE", f"{metrics_7d.get('mean_error', 0):.2f}%")
-            
-        with col3:
-            st.metric("Direction Accuracy", f"{metrics_24h.get('correct_direction', 0)*100:.1f}%")
-        
-        # Show recent predictions
-        st.subheader("Recent Predictions")
-        recent_predictions = monitor.get_recent_predictions(10, ticker, timeframe)
-        if not recent_predictions.empty:
-            st.dataframe(recent_predictions)
-        else:
-            st.info("No prediction history available yet")
-    else:
-        st.info("Prediction monitoring is not initialized")
-
-def render_dashboard():
-    """Main function to render the dashboard UI."""
-    # Set page config
-    st.set_page_config(
-        page_title="Stock Price Prediction Dashboard",
-        page_icon="📈",
-        layout="wide"
-    )
-    
-    # Initialize dashboard state
-    from src.dashboard.dashboard.dashboard_state import initialize_state
-    initialize_state()
-    
-    # Handle auto-refresh if enabled
-    if get_state("auto_refresh", False):
-        current_time = time.time()
-        last_refresh = get_state("last_refresh", 0)
-        refresh_interval = get_state("refresh_interval", 30)
-        
-        if current_time - last_refresh > refresh_interval:
-            set_state("last_refresh", current_time)
-            set_state("refresh_requested", True)
-    
-    # REMOVED: Redundant initialization of prediction_monitor
-    # The monitor is now managed by dashboard_state.py
-    
-    # Get the prediction service for this session
-    prediction_service = get_prediction_service()
-    
-    # Set the correct ticker and timeframe on the service
-    if prediction_service:
-        prediction_service.current_ticker = get_current_ticker()
-        prediction_service.current_timeframe = get_current_timeframe()
-        
-        # Update monitor reference if needed
-        if prediction_service.monitor is None:
-            prediction_service.monitor = get_prediction_monitor()
-    
-    # Render sidebar and get options
-    options = render_sidebar()
-    
-    # Display appropriate page based on selection
-    if options["page"] == "Dashboard":
-        render_dashboard_header()
-        render_main_dashboard(options)
-    elif options["page"] == "Pattern Discovery":
-        if "df" in st.session_state:
-            add_pattern_discovery_tab(st.session_state["df"])
-        else:
-            st.warning("Please load data first to discover patterns.")
-    elif options["page"] == "Explainable AI":
-        render_explainable_ai_tab()
-    elif options["page"] == "Model Performance":
-        render_model_performance_page()
-    elif options["page"] == "Training Optimizer":
-        render_training_optimizer_tab()
-    elif options["page"] == "Settings":
-        render_settings_page()
-    
-    # Handle refresh request
-    if st.session_state["refresh_requested"]:
-        # Reset the flag
-        st.session_state["refresh_requested"] = False
-        
-        # Save current predictions before fetching new data
-        if "df" in st.session_state and st.session_state["df"] is not None:
-            if "future_forecast" in st.session_state and st.session_state["future_forecast"]:
-                from src.dashboard.dashboard.dashboard_visualization import save_best_prediction
-                save_best_prediction(st.session_state["df"], st.session_state["future_forecast"])
-        
-        # Fetch new data here
-        with st.spinner("Fetching latest data..."):
-            try:
-                from src.data.data import fetch_data
-                
-                df = fetch_data(
-                    ticker=options["ticker"],
-                    start=options["start_date"].strftime("%Y-%m-%d"),
-                    end=options["end_date"].strftime("%Y-%m-%d"),
-                    interval=options["timeframe"]
-                )
-                
-                if df is not None and not df.empty:
-                    st.session_state["df"] = df
-                    st.success("Data refreshed successfully!")
-                else:
-                    st.error("Failed to fetch data.")
-            except Exception as e:
-                st.error(f"Error refreshing data: {e}")
-    
-    # Handle training request
-    if st.session_state["training_requested"]:
-        # Reset the flag
-        st.session_state["training_requested"] = False
-        
-        # Check if data is available
-        if "df" not in st.session_state or st.session_state["df"] is None:
-            st.error("No data available. Please fetch data first.")
-            return
-        
-        # Start model training
-        with st.spinner("Training models..."):
-            try:
-                from src.training.walk_forward import unified_walk_forward_optimized
-                from src.features.features import get_feature_list
-
-                # Get feature columns
-                feature_cols = get_feature_list(st.session_state["df"])
-                
-                # Get ensemble weights
-                ensemble_weights = st.session_state.get("ensemble_weights", None)
-                
-                # Train models using walk-forward validation
-                ensemble_model, metrics = unified_walk_forward_optimized(
-                    df=st.session_state["df"],
-                    feature_cols=feature_cols,
-                    ensemble_weights=ensemble_weights,
-                    window_size=st.session_state.get("wf_size", 5),
-                    update_dashboard=True
-                )
-                
-                # Store model and metrics
-                st.session_state["current_model"] = ensemble_model
-                st.session_state["metrics"] = metrics
-                
-                st.success(f"Models trained successfully! RMSE: {metrics.get('rmse', 0):.4f}, MAPE: {metrics.get('mape', 0):.2f}%")
-            except Exception as e:
-                logger.exception("Error during model training")
-                st.error(f"Error training models: {e}")
-
-if __name__ == "__main__":
-    render_dashboard()

@@ -1,1 +1,4 @@
-False
+is_running: false
+ticker: ETH-USD
+timeframe: 1d
+timestamp: '2025-03-08T22:04:40.508300'

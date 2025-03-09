@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # Try importing the XAIExplainer
 try:
-    from explainable_ai import XAIExplainer, explain_model_prediction, get_feature_importance
+    from src.dashboard.explainable_ai import XAIExplainer, explain_model_prediction, get_feature_importance
     HAS_XAI = True
 except ImportError:
     logger.warning("Could not import XAIExplainer from Scripts.explainable_ai. XAI functionality will be limited.")

@@ -259,7 +259,7 @@ def init_session_state():
     # Set default values
     default_values = {
         "initialized": True,
-        "tuning_in_progress": read_tuning_status(),  # Read from file for persistence
+        "tuning_in_progress": False,  # Default to False if can't read from file
         "best_metrics": {},
         "model_history": [],
         "last_refresh": time.time(),
@@ -274,18 +274,18 @@ def init_session_state():
         "df_raw": None,
         "historical_window": 30,
         "forecast_window": 30,
-        "trials_per_cycle": N_STARTUP_TRIALS,
-        "initial_trials": N_STARTUP_TRIALS,
+        "trials_per_cycle": 1000,  # Default value
+        "initial_trials": 1000,  # Default value
         "saved_model_dir": "saved_models",
         # Auto-refresh intervals (in seconds)
-        "progress_refresh_sec": 2,
+        "progress_refresh_sec": 1,
         "full_refresh_sec": 30,
         "last_progress_refresh": time.time(),
         "last_full_refresh": time.time(),
         "update_heavy_components": True,
         # UI Control state
-        "selected_ticker": TICKER,
-        "selected_timeframe": TIMEFRAMES[0] if TIMEFRAMES else "1d",
+        "selected_ticker": "ETH-USD",  # Default if TICKER not available
+        "selected_timeframe": "1d",  # Default if TIMEFRAMES not available
         "start_date": datetime.now() - timedelta(days=30),
         "end_date": datetime.now(),
         "auto_refresh": True,
@@ -302,57 +302,18 @@ def init_session_state():
         "live_progress": {},
     }
 
+    # Try to read tuning status from file
+    try:
+        from src.dashboard.dashboard.dashboard_error import read_tuning_status
+        default_values["tuning_in_progress"] = read_tuning_status()
+    except ImportError:
+        logger.warning("Could not import read_tuning_status")
+
     # Set defaults only for keys not already in session_state
     for key, value in default_values.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
     # Check if the load path exists before attempting to load the model
-    if not os.path.exists(st.session_state["saved_model_dir"]):
+    if "saved_model_dir" in st.session_state and not os.path.exists(st.session_state["saved_model_dir"]):
         st.session_state["model_loaded"] = False
-
-
-@robust_error_boundary
-def handle_auto_refresh():
-    """More efficient auto-refresh with memory management"""
-    if "auto_refresh" not in st.session_state:
-        st.session_state["auto_refresh"] = False
-
-    if not st.session_state.get("auto_refresh", False):
-        return False
-
-    now = time.time()
-
-    # Get refresh intervals with defaults
-    progress_refresh_sec = st.session_state.get("progress_refresh_sec", 5)
-    full_refresh_sec = st.session_state.get("full_refresh_sec", 30)
-
-    # Get last refresh times with defaults
-    last_progress_refresh = st.session_state.get("last_progress_refresh", 0)
-    last_full_refresh = st.session_state.get("last_full_refresh", 0)
-
-    # Check if progress refresh is needed
-    time_since_progress = now - last_progress_refresh
-    if time_since_progress >= progress_refresh_sec:
-        st.session_state["last_progress_refresh"] = now
-
-        # Clean up memory before updating display
-        from dashboard_utils import clean_memory
-        clean_memory(force_gc=False)
-
-        # Update only the progress components
-        from dashboard_data import update_progress_display
-        update_progress_display()
-
-    # Check if full refresh is needed
-    time_since_full = now - last_full_refresh
-    if time_since_full >= full_refresh_sec:
-        st.session_state["last_full_refresh"] = now
-
-        # Clean up memory before full refresh
-        from dashboard_utils import clean_memory
-        clean_memory(force_gc=True)
-
-        return True  # Signal for full refresh
-
-    return False  # No full refresh needed

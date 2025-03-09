@@ -9,8 +9,15 @@ import sys
 # Add the project root to the Python path
 config_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(config_dir)
+PROJECT_ROOT = project_root  # Expose PROJECT_ROOT as top-level constant
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
+
+# Function to get system configuration
+def get_system_config():
+    """Get the current system configuration."""
+    from .resource_config import load_system_config
+    return load_system_config()
 
 # Import key components from config_loader
 try:
@@ -112,3 +119,11 @@ except ImportError as e:
         if not new_logger.handlers:
             new_logger.addHandler(handler)
         return new_logger
+    
+    
+MODEL_TYPES = ["lstm", "rnn", "xgboost", "random_forest", "nbeats", "ltc", "tft"]
+ACTIVE_MODEL_TYPES = ["lstm", "rnn", "xgboost", "random_forest", "nbeats", "ltc", "tft"]
+MAPE_THRESHOLD = 5.0
+RMSE_THRESHOLD = 0.05
+TUNING_TRIALS_PER_CYCLE_min = 10
+TUNING_TRIALS_PER_CYCLE_max = 5000

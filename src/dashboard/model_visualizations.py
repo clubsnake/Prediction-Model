@@ -468,8 +468,10 @@ class ModelVisualizationDashboard:
         """Render visualizations related to model architecture"""
         st.header("Model Architecture Visualization")
         
+        # Get model types and filter out 'transformer' if it exists since it's the same as 'tft'
+        model_types = [model for model in self.weighter.base_weights.keys() if model != 'transformer']
+        
         # Select model to visualize
-        model_types = list(self.weighter.base_weights.keys())
         selected_model = st.selectbox("Select Model to Visualize", model_types)
         
         # Architecture visualization based on model type

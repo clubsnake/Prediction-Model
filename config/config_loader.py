@@ -90,19 +90,21 @@ PRUNING_ABSOLUTE_MAPE_FACTOR = system_config.get('hyperparameter', {}).get('prun
 
 # Constants for loss functions
 LOSS_FUNCTIONS = system_config.get('loss_functions', {}).get('available', ['mean_squared_error', 'mean_absolute_error'])
-RMSE_THRESHOLD = 5.0  # Default threshold
+RMSE_THRESHOLD = 0.05  # Default threshold
 MAPE_THRESHOLD = 5.0  # Default threshold
 
 # Directory paths
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+TUNING_STATUS_FILE = os.path.join(DATA_DIR, "tuning_status.txt")
 DB_DIR = os.path.join(DATA_DIR, "DB")
-LOGS_DIR = os.path.join(DATA_DIR, "Logs")
 MODELS_DIR = os.path.join(DATA_DIR, "Models")
 HYPERPARAMS_DIR = os.path.join(DATA_DIR, "Hyperparameters")
 RAW_DATA_DIR = os.path.join(DATA_DIR, "Raw")
 PROCESSED_DATA_DIR = os.path.join(DATA_DIR, "Processed")
 PRICE_CACHE_DIR = os.path.join(DATA_DIR, "Prices")
 PROGRESS_FILE = os.path.join(DATA_DIR, "progress.yaml")
+TESTED_MODELS_FILE = os.path.join(DATA_DIR, "tested_models.yaml")
+LOGS_DIR = os.path.join(DATA_DIR, "Logs")
 
 # Constants for visualization
 SHOW_PREDICTION_PLOTS = user_config.get('dashboard', {}).get('show_prediction_plots', True)
@@ -124,6 +126,12 @@ TFT_GRID = {}
 
 # Caching settings
 USE_CACHING = system_config.get('data', {}).get('use_caching', True)
+
+API_KEYS = {
+    "alphavantage": user_config.get('api_keys', {}).get('alphavantage', "demo"),
+    "finnhub": user_config.get('api_keys', {}).get('finnhub', "demo"),
+    "coingecko": user_config.get('api_keys', {}).get('coingecko', "")  # CoinGecko has a free tier without API key
+}
 
 # Function to get data directory path
 def get_data_dir(subdir=None):
@@ -388,3 +396,15 @@ def get_active_feature_names():
     
     # Return unique features (in case of duplicates)
     return list(dict.fromkeys(active_features))
+
+def get_api_key(service):
+    """
+    Get API key for the specified service.
+    
+    Args:
+        service: Service name (e.g., 'alphavantage', 'finnhub')
+        
+    Returns:
+        str: API key for the service or None if not found
+    """
+    return API_KEYS.get(service.lower())

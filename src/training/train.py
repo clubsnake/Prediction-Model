@@ -1,5 +1,6 @@
 import sys
 import os
+import yaml
 
 # Fix import path
 try:

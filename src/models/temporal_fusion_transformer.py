@@ -289,12 +289,14 @@ class TemporalFusionTransformer(tf.keras.Model):
 
         self.output_layer = Dense(forecast_horizon)
 
-    def call(self, inputs, training=None):
+    def call(self, inputs, training=None, mask=None):
         """
         Forward pass of the TFT model.
 
         Args:
             inputs: Input tensor of shape [batch_size, seq_len, num_features]
+            training: Boolean indicating whether in training mode
+            mask: Input mask tensor (optional)
 
         Returns:
             Forecasted values
@@ -339,8 +341,16 @@ class TemporalFusionTransformer(tf.keras.Model):
         return config
 
     @classmethod
-    def from_config(cls, config):
-        """Create model instance from saved configuration."""
+    def from_config(cls, config, custom_objects=None):
+        """Create model instance from saved configuration.
+        
+        Args:
+            config: Dictionary containing model configuration
+            custom_objects: Dictionary mapping names to custom classes or functions
+            
+        Returns:
+            A model instance.
+        """
         return cls(**config)
 
 
@@ -407,7 +417,7 @@ def add_tft_to_model_types():
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(current_dir)
-    if parent_dir not in sys.path:
+    if (parent_dir not in sys.path):
         sys.path.append(parent_dir)
 
     # Add the model type to the global model types list
