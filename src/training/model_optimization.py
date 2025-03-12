@@ -1,5 +1,3 @@
-# Add this to a new file Scripts/model_optimization.py
-
 import os
 import time
 from datetime import datetime

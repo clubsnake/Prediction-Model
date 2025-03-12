@@ -2,4 +2,4 @@ ticker: ETH-USD
 timeframe: 1d
 is_running: False
 error: name 'logger' is not defined
-timestamp: 2025-03-11T20:29:47.568203
+timestamp: 2025-03-11T22:54:11.148070

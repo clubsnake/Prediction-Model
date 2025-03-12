@@ -1,6 +1,5 @@
 # prediction_service.py
 """
-Unified prediction service combining functionality from prediction.py and app.py.
 Provides interfaces for both programmatic and web-based prediction.
 """
 

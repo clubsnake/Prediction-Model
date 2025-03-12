@@ -1,12 +1,13 @@
 # Study Manager for hyperparameter optimization
 # Provides centralized management of Optuna studies for different model types
 
-import logging
+# Imports
 import os
 import sys
-from datetime import datetime
-
+import logging
+import traceback
 import optuna
+from datetime import datetime
 
 # Configure logger before using it
 logger = logging.getLogger(__name__)

@@ -148,7 +148,7 @@ def create_control_panel():
 
                     # Start tuning with the current parameters
                     start_tuning(
-                        st.session_state.get("selected_ticker", "BTC-USD"),
+                        st.session_state.get("selected_ticker", "ETH-USD"),
                         st.session_state.get("selected_timeframe", "1d"),
                         st.session_state.get("tuning_multipliers"),
                     )
@@ -406,31 +406,46 @@ def create_control_panel():
     """,
         unsafe_allow_html=True,
     )
-
     if st.sidebar.button(
         "🛑 Shutdown Application",
         key="shutdown_button",
         help="Safely shutdown the application",
     ):
         try:
-            # First stop tuning if it's running
+            # Stop tuning if it's running
             if st.session_state.get("tuning_in_progress", False):
                 from src.dashboard.dashboard.dashboard_model import stop_tuning
-
                 stop_tuning()
 
-            # Display shutdown message and initiate shutdown
             st.sidebar.warning("Shutting down application... Please wait.")
-            from src.dashboard.dashboard.dashboard_shutdown import (
-                initiate_shutdown,
-                show_shutdown_message,
-            )
 
-            show_shutdown_message()
+            # Initiate shutdown tasks in the Python process
+            from src.dashboard.dashboard.dashboard_shutdown import initiate_shutdown
             initiate_shutdown(source="User requested shutdown")
 
-            # Use streamlit stop to terminate the app
-            st.stop()
+            # Inject JavaScript to try closing the browser tab (may not work in every browser)
+            import streamlit.components.v1 as components
+            components.html(
+                """
+                <script>
+                    // Attempt to close the window after a short delay
+                    setTimeout(() => {
+                        window.open('', '_self', '');
+                        window.close();
+                    }, 500);
+                </script>
+                """,
+                height=0,
+                width=0,
+            )
+
+            # Give a small delay for the JS to run, then force termination of the process
+            import time
+            time.sleep(1)
+
+            # Force exit the python process
+            import os
+            os._exit(0)
         except Exception as e:
             st.sidebar.error(f"Error shutting down: {e}")
 
