@@ -16,7 +16,9 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # Directly use paths instead of importing them to avoid circular imports
-DATA_DIR = os.path.join(project_root, "Data")  # Capital D to match system_config  # lowercase 'data'
+DATA_DIR = os.path.join(
+    project_root, "Data"
+)  # Capital D to match system_config  # lowercase 'data'
 LOGS_DIR = os.path.join(DATA_DIR, "Logs")
 
 # Make sure logs directory exists
@@ -33,12 +35,16 @@ if not logger.handlers:
     console_formatter = logging.Formatter("%(levelname)s: %(message)s")
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
-    
+
     # Try to add file handler
     try:
-        log_file = os.path.join(LOGS_DIR, f"prediction_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+        log_file = os.path.join(
+            LOGS_DIR, f"prediction_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        )
         file_handler = logging.FileHandler(log_file)
-        file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        file_formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
         logger.info(f"Logging to file: {log_file}")
@@ -72,6 +78,7 @@ def setup_logger(
     if level is None:
         try:
             from config.config_loader import get_value
+
             level_name = get_value("logger.default_level", "INFO")
             level = getattr(logging, level_name)
         except ImportError:
@@ -88,13 +95,14 @@ def setup_logger(
     # Get log format
     try:
         from config.config_loader import get_value
+
         log_format = get_value(
             "logger.default_format",
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
     except ImportError:
         log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        
+
     formatter = logging.Formatter(log_format)
 
     # Add console handler if requested

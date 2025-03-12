@@ -7,9 +7,9 @@ import pandas as pd
 import seaborn as sns
 import streamlit as st
 import yaml
-
+import altair as alt
 from config import MAPE_THRESHOLD, MODEL_TYPES, RMSE_THRESHOLD
-from config.config_loader import DATA_DIR, DB_DIR, HYPERPARAMS_DIR
+from config.config_loader import DB_DIR, HYPERPARAMS_DIR
 
 # Define the directory for database files - update to use Models folder
 # DB_DIR = os.path.join(DATA_DIR, "Models", "DB")
@@ -266,6 +266,10 @@ def create_presets_tab():
 
             # Request page refresh to show updated ranges
             st.experimental_rerun()
+
+    st.info(
+        "⚠️ To start tuning with these settings, use the Start Tuning button in the Control Panel sidebar."
+    )
 
 
 def apply_preset_to_ranges(preset_key):
@@ -673,7 +677,7 @@ def show_current_config():
                     with col2:
                         if param["type"] == "bool":
                             st.checkbox(
-                                f"",
+                                "",
                                 value=param["default"],
                                 key=f"param_{name}",
                                 disabled=True,
@@ -1022,7 +1026,7 @@ def create_optuna_run_ui():
     with col1:
         n_trials = st.number_input("Number of trials", min_value=10, value=100, step=10)
         study_name = st.text_input(
-            "Study name", value=f"study_{datetime.now().strftime('%Y%m%d%H%M')}"
+            "Study name", value=f"{datetime.now().strftime('%Y%m%d%H%M')}_ensemble"
         )
 
     with col2:
@@ -1052,56 +1056,65 @@ def create_optuna_run_ui():
         "Timeframe", options=st.session_state.get("available_timeframes", ["1d"])
     )
 
-    # Start optimization
-    if st.button("Start Optimization"):
-        # Check if we have required modules
-        try:
-            pass
-        except ImportError:
-            st.error("Optuna not found. Please install it with `pip install optuna`")
+    # Replace the start button with a message directing to the control panel
+    st.info(
+        """
+    ### ⚠️ Important
+    To start tuning, please use the **Start Tuning** button in the Control Panel sidebar.
+    This ensures proper cycle tracking and consistent user experience.
+    """
+    )
+
+    # Display current config that will be used
+    st.subheader("Current Configuration Summary")
+    st.write(f"**Ticker:** {ticker}")
+    st.write(f"**Timeframe:** {timeframe}")
+    st.write(f"**Trials:** {n_trials}")
+    st.write(f"**Preset:** {preset if preset != 'custom' else 'Custom configuration'}")
+
+
+# Fix potential unused variables
+def render_parameter_importance_chart(study, top_n=10):
+    """
+    Render a chart showing parameter importance.
+    
+    Args:
+        study: Optuna study
+        top_n: Number of parameters to display
+    """
+    try:
+        # Only proceed if we have completed trials
+        if not study.trials:
+            st.info("No trials available to analyze parameter importance")
             return
-
-        # Create and run the study
-        with st.spinner("Running Optuna optimization..."):
-            try:
-                from src.tuning.meta_tuning import tune_for_combo
-
-                # Call the tuning function
-                result = tune_for_combo(
-                    ticker=ticker,
-                    timeframe=timeframe,
-                    n_trials=n_trials,
-                    range_cat="all",
-                )
-
-                st.success("Optimization completed!")
-
-                # Show best parameters
-                st.subheader("Best Parameters")
-
-                if hasattr(result, "best_params"):
-                    # Display parameters as a nice table
-                    param_df = pd.DataFrame(
-                        result.best_params.items(), columns=["Parameter", "Value"]
-                    )
-                    st.dataframe(param_df)
-
-                    # Option to save best parameters to file
-                    if st.button("Save Best Parameters"):
-                        best_params_path = os.path.join(
-                            HYPERPARAMS_DIR, f"best_params_{ticker}_{timeframe}.yaml"
-                        )
-                        with open(best_params_path, "w") as f:
-                            yaml.dump(result.best_params, f)
-                        st.success(f"Saved to {best_params_path}")
-                else:
-                    st.error("Optimization did not return best parameters")
-
-            except Exception as e:
-                st.error(f"Error during optimization: {e}")
-                import traceback
-
-                st.code(traceback.format_exc())
-
-
-# ...existing code...
+            
+        # Calculate parameter importance
+        importances = optuna.importance.get_param_importances(study)
+        
+        # Convert to DataFrame for plotting
+        importance_df = pd.DataFrame({
+            'Parameter': list(importances.keys())[:top_n],
+            'Importance': list(importances.values())[:top_n]
+        })
+        
+        if importance_df.empty:
+            st.info("No parameter importance data available")
+            return
+            
+        # Sort by importance
+        importance_df = importance_df.sort_values('Importance', ascending=False)
+        
+        # Create chart
+        chart = alt.Chart(importance_df).mark_bar().encode(
+            x=alt.X('Importance:Q'),
+            y=alt.Y('Parameter:N', sort='-x'),
+            tooltip=['Parameter', 'Importance']
+        ).properties(
+            title='Parameter Importance',
+            height=min(400, len(importance_df) * 30)  # Adjust height based on number of parameters
+        )
+        
+        st.altair_chart(chart, use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"Error rendering parameter importance: {e}")

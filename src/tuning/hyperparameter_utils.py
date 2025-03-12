@@ -1,145 +1,248 @@
-# Scripts/hyperparameter_utils.py
+"""
+Utilities for hyperparameter management and experiment reproducibility.
+"""
 
-import ast
 import logging
-import os
+import random
 
+import numpy as np
+import tensorflow as tf
 
-def scan_codebase_for_parameters():
-    """Scan Python files for potential parameters to tune."""
-    parameters = []
-
-    for root, dirs, files in os.walk("."):
-        for file in files:
-            if file.endswith(".py"):
-                try:
-                    with open(os.path.join(root, file), "r") as f:
-                        tree = ast.parse(f.read())
-                        for node in ast.walk(tree):
-                            # Look for assignments with numeric/boolean literals
-                            if isinstance(node, ast.Assign):
-                                for target in node.targets:
-                                    if isinstance(target, ast.Name):
-                                        if isinstance(
-                                            node.value, ast.Num
-                                        ) or isinstance(node.value, ast.NameConstant):
-                                            param_name = target.id
-                                            if (
-                                                param_name.isupper()
-                                            ):  # Likely a constant
-                                                parameters.append(
-                                                    {
-                                                        "file": file,
-                                                        "name": param_name,
-                                                        "value": ast.literal_eval(
-                                                            node.value
-                                                        ),
-                                                    }
-                                                )
-                except Exception as e:
-                    logging.warning(f"Error parsing {file}: {e}")
-
-    return parameters
-
-
-def suggest_parameter_registration():
-    """Print suggested parameter registrations."""
-    params = scan_codebase_for_parameters()
-
-    print("# Add these to config.py\n")
-    for param in params:
-        value = param["value"]
-        param_type = type(value).__name__
-
-        if param_type == "int":
-            range_values = [max(0, value // 2), value * 2]
-        elif param_type == "float":
-            range_values = [max(0.0, value / 2), value * 2]
-        elif param_type == "bool":
-            range_values = [True, False]
-        else:
-            range_values = None
-
-        print(
-            f"{param['name']} = register_param(\"{param['name'].lower()}\", {value}, \"{param_type}\", {range_values})"
-        )
+logger = logging.getLogger(__name__)
 
 
 class HyperparameterManager:
-    """Manage all hyperparameters across the system."""
+    """
+    Central registry for hyperparameter definitions to maintain consistency
+    across different optimization and training modules.
+    """
 
-    def __init__(self, registry=None):
-        """Initialize with optional registry."""
-        from config import HYPERPARAMETER_REGISTRY
+    def __init__(self):
+        self.parameter_registry = {}
+        self._initialize_default_registry()
 
-        self.registry = registry or HYPERPARAMETER_REGISTRY
-        self.current_values = {}
+    def _initialize_default_registry(self):
+        """Initialize the registry with default parameter definitions."""
+        # LSTM parameters
+        self.register_parameter(
+            "lstm_lr",
+            {
+                "type": "float",
+                "range": [1e-5, 1e-2],
+                "default": 0.001,
+                "log_scale": True,
+                "description": "Learning rate for LSTM models",
+            },
+        )
 
-    def suggest_all(self, trial):
-        """Suggest all registered hyperparameters."""
-        for name, config in self.registry.items():
-            param_type = config["type"]
-            default = config["default"]
-            range_values = config["range"]
+        self.register_parameter(
+            "lstm_dropout",
+            {
+                "type": "float",
+                "range": [0.0, 0.5],
+                "default": 0.2,
+                "description": "Dropout rate for LSTM models",
+            },
+        )
 
-            if param_type == "int":
-                if range_values:
-                    self.current_values[name] = trial.suggest_int(
-                        name, range_values[0], range_values[1]
-                    )
-                else:
-                    # Default range based on value
-                    self.current_values[name] = trial.suggest_int(
-                        name, max(1, default // 2), default * 2
-                    )
+        self.register_parameter(
+            "lstm_units",
+            {
+                "type": "int",
+                "range": [16, 256],
+                "default": 64,
+                "log_scale": True,
+                "description": "Number of units in LSTM layers",
+            },
+        )
 
-            elif param_type == "float":
-                if range_values:
-                    self.current_values[name] = trial.suggest_float(
-                        name, range_values[0], range_values[1]
-                    )
-                else:
-                    # Default range with log scale for small values
-                    if default < 0.01:
-                        self.current_values[name] = trial.suggest_float(
-                            name, default / 10, default * 10, log=True
-                        )
-                    else:
-                        self.current_values[name] = trial.suggest_float(
-                            name, max(0.0001, default / 2), default * 2
-                        )
+        # CNN parameters
+        self.register_parameter(
+            "cnn_num_conv_layers",
+            {
+                "type": "int",
+                "range": [1, 5],
+                "default": 3,
+                "description": "Number of convolutional layers in CNN",
+            },
+        )
 
-            elif param_type == "categorical":
-                if range_values:
-                    self.current_values[name] = trial.suggest_categorical(
-                        name, range_values
-                    )
-                else:
-                    # Default to the original value if no range specified
-                    self.current_values[name] = default
+        self.register_parameter(
+            "cnn_num_filters",
+            {
+                "type": "int",
+                "range": [16, 256],
+                "default": 64,
+                "log_scale": True,
+                "description": "Number of filters in CNN layers",
+            },
+        )
 
-        return self.current_values
+        self.register_parameter(
+            "cnn_kernel_size",
+            {
+                "type": "int",
+                "range": [2, 7],
+                "default": 3,
+                "description": "Kernel size for CNN layers",
+            },
+        )
 
-    def get(self, name):
-        """Get current value for a parameter."""
-        return self.current_values.get(name, self.registry.get(name, {}).get("default"))
+        # Random Forest parameters
+        self.register_parameter(
+            "rf_n_est",
+            {
+                "type": "int",
+                "range": [50, 500],
+                "default": 100,
+                "log_scale": True,
+                "description": "Number of estimators in Random Forest",
+            },
+        )
+
+        self.register_parameter(
+            "rf_mdepth",
+            {
+                "type": "int",
+                "range": [3, 25],
+                "default": 10,
+                "description": "Maximum depth of trees in Random Forest",
+            },
+        )
+
+        # XGBoost parameters
+        self.register_parameter(
+            "xgb_lr",
+            {
+                "type": "float",
+                "range": [1e-4, 0.5],
+                "default": 0.1,
+                "log_scale": True,
+                "description": "Learning rate for XGBoost",
+            },
+        )
+
+        # Generic parameters
+        self.register_parameter(
+            "lookback",
+            {
+                "type": "int",
+                "range": [7, 90],
+                "default": 30,
+                "description": "Number of past time steps to consider",
+            },
+        )
+
+        # Add more parameters as needed...
+
+    def register_parameter(self, name, config):
+        """
+        Register a hyperparameter with its configuration.
+
+        Args:
+            name: Parameter name
+            config: Dictionary with parameter configuration
+                - type: Parameter type ('int', 'float', 'categorical', 'bool')
+                - range: List with [min, max] or categorical options
+                - default: Default value
+                - log_scale: Whether to use log scale for numerical parameters
+                - description: Parameter description
+        """
+        self.parameter_registry[name] = config
+        logger.debug(f"Registered parameter: {name}")
+
+    def get_parameter_config(self, name):
+        """Get the configuration for a parameter."""
+        if name not in self.parameter_registry:
+            logger.warning(f"Parameter '{name}' not found in registry")
+            return None
+        return self.parameter_registry[name]
+
+    def suggest_parameter(self, trial, name, override_range=None):
+        """
+        Suggest a parameter value using Optuna trial.
+
+        Args:
+            trial: Optuna trial object
+            name: Parameter name
+            override_range: Optional override for parameter range
+
+        Returns:
+            Suggested parameter value
+        """
+        if name not in self.parameter_registry:
+            logger.warning(f"Parameter '{name}' not found in registry")
+            return None
+
+        config = self.parameter_registry[name]
+        param_type = config["type"]
+        param_range = override_range or config.get("range")
+        use_log = config.get("log_scale", False)
+
+        if param_type == "int":
+            if param_range:
+                return trial.suggest_int(
+                    name, param_range[0], param_range[1], log=use_log
+                )
+            else:
+                return config["default"]
+        elif param_type == "float":
+            if param_range:
+                return trial.suggest_float(
+                    name, param_range[0], param_range[1], log=use_log
+                )
+            else:
+                return config["default"]
+        elif param_type == "categorical":
+            if param_range:
+                return trial.suggest_categorical(name, param_range)
+            else:
+                return config["default"]
+        elif param_type == "bool":
+            return trial.suggest_categorical(name, [True, False])
+
+        return config["default"]
 
 
 def set_all_random_states(seed):
-    """Set random state for all libraries."""
-    import random
+    """
+    Set random seeds for all relevant libraries to ensure reproducibility.
 
-    import numpy as np
-    import tensorflow as tf
+    Args:
+        seed: Random seed to use
 
-    # Python's random
+    Returns:
+        The seed used
+    """
+    # Set Python's random seed
     random.seed(seed)
 
-    # NumPy
+    # Set NumPy's random seed
     np.random.seed(seed)
 
-    # TensorFlow
-    tf.random.set_seed(seed)
+    # Set TensorFlow's random seed
+    try:
+        tf.random.set_seed(seed)
+    except:
+        # Fall back to older TensorFlow versions
+        try:
+            tf.set_random_seed(seed)
+        except:
+            logger.warning("Could not set TensorFlow random seed")
 
-    # Return the seed for tracking
+    # Try to set PyTorch seed if available
+    try:
+        import torch
+
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            # For reproducibility
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+    except ImportError:
+        pass
+
+    logger.info(f"Set all random states to seed: {seed}")
     return seed

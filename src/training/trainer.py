@@ -1,18 +1,19 @@
+import logging
 import os
 import sys
 import time
 from typing import Any, Dict, List, Optional
-import logging
+
 import numpy as np
 import streamlit as st
 import tensorflow as tf
 
 # Add project root to sys.path for absolute imports
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(project_root)
 
-from src.models.model_factory import BaseModel
 from src.dashboard import visualization
+from src.models.model_factory import BaseModel
 from src.utils.training_optimizer import get_training_optimizer
 
 
@@ -26,10 +27,10 @@ class ModelTrainer:
         self.model = model
         self.config = config
         self.history = {"train_loss": [], "val_loss": [], "train_time": []}
-        
+
         # Initialize training optimizer
         self.training_optimizer = get_training_optimizer()
-        
+
     def train(
         self,
         X_train: np.ndarray,
@@ -39,12 +40,14 @@ class ModelTrainer:
     ) -> Dict[str, List[float]]:
         """Train the model and track metrics"""
         epochs = self.config.get("epochs", 10)
-        
+
         # Get optimized batch size from training optimizer
         model_type = self.config.get("model_type", "generic")
         model_complexity = self.config.get("model_complexity", "medium")
-        optimized_config = self.training_optimizer.get_model_config(model_type, model_complexity)
-        
+        optimized_config = self.training_optimizer.get_model_config(
+            model_type, model_complexity
+        )
+
         # Use batch size from config if specified, otherwise use optimized batch size
         batch_size = self.config.get("batch_size", optimized_config["batch_size"])
 
@@ -98,10 +101,12 @@ class ModelTrainer:
         predictions = self.model.predict(X)
         visualization.plot_predictions(y, predictions, save_path)
 
-    def train_model(self, model_type, X_train, y_train, X_val=None, y_val=None, trial=None):
+    def train_model(
+        self, model_type, X_train, y_train, X_val=None, y_val=None, trial=None
+    ):
         """
         Train a single model of the specified type.
-        
+
         Args:
             model_type: Type of model to train
             X_train: Training features
@@ -109,24 +114,30 @@ class ModelTrainer:
             X_val: Validation features (optional)
             y_val: Validation targets (optional)
             trial: Optuna trial object (optional)
-            
+
         Returns:
             Trained model
         """
         # Check if model type is active
         if model_type not in st.session_state.get("ACTIVE_MODEL_TYPES", []):
-            logging.warning(f"Model type {model_type} is not active. Skipping training.")
+            logging.warning(
+                f"Model type {model_type} is not active. Skipping training."
+            )
             return None
-        
+
         # Get optimized configuration for this model type
         model_complexity = "medium"
-        optimized_config = self.training_optimizer.get_model_config(model_type, model_complexity)
-        
+        optimized_config = self.training_optimizer.get_model_config(
+            model_type, model_complexity
+        )
+
         # Apply optimized settings if not explicitly specified in params
         params = {}
         params["batch_size"] = params.get("batch_size", optimized_config["batch_size"])
-        params["learning_rate"] = params.get("learning_rate", optimized_config["learning_rate"])
-        
+        params["learning_rate"] = params.get(
+            "learning_rate", optimized_config["learning_rate"]
+        )
+
         # Enable mixed precision if available
         if optimized_config["mixed_precision"]:
             try:
@@ -135,5 +146,5 @@ class ModelTrainer:
                 logging.info(f"Mixed precision enabled for {model_type} model")
             except Exception as e:
                 logging.warning(f"Could not enable mixed precision: {e}")
-        
+
         # ...existing model training code...

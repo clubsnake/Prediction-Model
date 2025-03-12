@@ -5,6 +5,7 @@ import logging
 import multiprocessing
 import os
 import pickle
+import sys
 import threading
 import uuid
 from functools import partial
@@ -14,8 +15,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from tensorflow.keras.callbacks import CSVLogger  # type: ignore
-from tensorflow.keras.models import Model, load_model, model_from_json  # type: ignore
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Import configuration settings
+from config.config_loader import (
+    INCREMENTAL_RETRAINING_THRESHOLD,
+    MAX_SAVED_MODELS,
+)
 
 # Import optimized utilities
 from src.data.sequence_utils import batch_sequence_creation
@@ -23,6 +32,7 @@ from src.utils.memory_utils import adaptive_memory_clean
 
 # Add training optimizer import
 from src.utils.training_optimizer import get_training_optimizer
+
 
 # Define register_shutdown_callback if it's not available
 def register_shutdown_callback(callback_func):
@@ -47,6 +57,7 @@ logger = logging.getLogger("IncrementalLearning")
 
 class ModelLoadError(Exception):
     """Exception raised when a model cannot be loaded."""
+
     pass
 
 
@@ -67,7 +78,7 @@ class ModelRegistry:
         self,
         registry_dir="model_registry",
         create_if_missing=True,
-        max_models_per_type=10,
+        max_models_per_type=None,
     ):
         """
         Initialize the model registry.
@@ -75,10 +86,10 @@ class ModelRegistry:
         Args:
             registry_dir: Base directory for the model registry
             create_if_missing: Whether to create the directory if it doesn't exist
-            max_models_per_type: Maximum number of models to keep per type
+            max_models_per_type: Maximum number of models to keep per type (uses config if None)
         """
         self.registry_dir = registry_dir
-        self.max_models_per_type = max_models_per_type
+        self.max_models_per_type = max_models_per_type or MAX_SAVED_MODELS
         self.logger = logging.getLogger("ModelRegistry")
 
         # Create registry directory if needed
@@ -209,7 +220,7 @@ class ModelRegistry:
         Returns:
             model: The loaded model
             metadata: Metadata dictionary (if with_metadata=True)
-            
+
         Raises:
             ModelLoadError: If the model cannot be loaded
         """
@@ -231,16 +242,20 @@ class ModelRegistry:
             # Load the model based on its type
             if model_type == "tensorflow":
                 import tensorflow as tf
+
                 model = tf.keras.models.load_model(model_path)
             elif model_type == "sklearn":
                 import joblib
+
                 model = joblib.load(model_path)
             elif model_type == "xgboost":
                 import xgboost as xgb
+
                 model = xgb.Booster()
                 model.load_model(model_path)
             elif model_type == "ensemble":
                 import pickle
+
                 with open(model_path, "rb") as f:
                     model = pickle.load(f)
             else:
@@ -1080,7 +1095,7 @@ class IncrementalLearner:
 
         # Clean memory before data processing
         adaptive_memory_clean("small")
-        
+
         # Prepare data for training using optimized sequence creation
         X = df[feature_cols].values
         y = df[target_col].values
@@ -1090,9 +1105,9 @@ class IncrementalLearner:
             if len(model.input_shape) > 2:  # Sequential data expected
                 # Replace this block with optimized version
                 X_reshaped, y_reshaped = batch_sequence_creation(
-                    np.column_stack((y.reshape(-1, 1), X)), 
-                    lookback=model.input_shape[1], 
-                    horizon=model.output_shape[1]
+                    np.column_stack((y.reshape(-1, 1), X)),
+                    lookback=model.input_shape[1],
+                    horizon=model.output_shape[1],
                 )
                 X = X_reshaped
                 y = y_reshaped
@@ -1300,92 +1315,103 @@ class IncrementalLearner:
         try:
             # Group configurations for optimal resource utilization
             training_groups = self.training_optimizer.parallel_training_groups(configs)
-            
+
             future_ids = {}
-            
+
             # Process each group sequentially to avoid resource contention
             for group_idx, group in enumerate(training_groups):
-                self.logger.info(f"Training group {group_idx+1}/{len(training_groups)} with {len(group)} models")
-                
+                self.logger.info(
+                    f"Training group {group_idx+1}/{len(training_groups)} with {len(group)} models"
+                )
+
                 # Create a thread pool for this group
-                with concurrent.futures.ThreadPoolExecutor(max_workers=len(group)) as executor:
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=len(group)
+                ) as executor:
                     group_futures = {}
-                    
+
                     for config in group:
                         # Create a partial function with the configuration
                         train_fn = partial(self.train_incrementally, **config)
-                        
+
                         # Submit the task
                         future = executor.submit(train_fn)
-                        
+
                         # Generate a future ID
                         future_id = str(uuid.uuid4())[:8]
-                        
+
                         # Store the future
                         self.futures[future_id] = {
                             "future": future,
                             "config": config,
                             "status": "pending",
                         }
-                        
+
                         group_futures[future_id] = future
                         future_ids[future_id] = future
-                
+
                 # Wait for all futures in this group to complete before moving to next group
                 for future_id, future in group_futures.items():
                     try:
                         future.result()  # This blocks until the future completes
                         self.futures[future_id]["status"] = "completed"
                     except Exception as e:
-                        self.logger.error(f"Training error in future {future_id}: {str(e)}")
+                        self.logger.error(
+                            f"Training error in future {future_id}: {str(e)}"
+                        )
                         self.futures[future_id]["status"] = "error"
                         self.futures[future_id]["error"] = str(e)
-                
+
                 # Clean GPU memory between groups
                 if self.training_optimizer.has_gpu:
                     self._clean_gpu_memory()
-            
+
             return future_ids
-            
+
         except Exception as e:
             self.logger.error(f"Error in parallel training: {str(e)}")
-            
+
             # Fall back to original implementation
             # Use a thread pool with configured max_workers
             if max_workers is None:
-                max_workers = self.training_optimizer.config.get("num_parallel_models", 
-                                                             multiprocessing.cpu_count())
-            
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                max_workers = self.training_optimizer.config.get(
+                    "num_parallel_models", multiprocessing.cpu_count()
+                )
+
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_workers
+            ) as executor:
                 future_ids = {}
-                
+
                 for config in configs:
                     # Create a partial function with the configuration
                     train_fn = partial(self.train_incrementally, **config)
-                    
+
                     # Submit the task
                     future = executor.submit(train_fn)
-                    
+
                     # Generate a future ID
                     future_id = str(uuid.uuid4())[:8]
-                    
+
                     # Store the future
                     self.futures[future_id] = {
                         "future": future,
                         "config": config,
                         "status": "pending",
                     }
-                    
+
                     future_ids[future_id] = future
-                
+
             return future_ids
-    
+
     def _clean_gpu_memory(self):
         """Clean GPU memory between training runs"""
         try:
             import tensorflow as tf
+
             tf.keras.backend.clear_session()
             import gc
+
             gc.collect()
             self.logger.debug("GPU memory cleaned")
         except Exception as e:
@@ -1650,7 +1676,7 @@ class IncrementalLearner:
         fetch_data_fn=None,
         feature_engineering_fn=None,
         metric="rmse",
-        threshold=0.1,
+        threshold=None,  # Now optional, will use config value if None
         retrain=True,
         **retrain_kwargs,
     ):
@@ -1664,7 +1690,7 @@ class IncrementalLearner:
             fetch_data_fn: Function to fetch new data
             feature_engineering_fn: Function to perform feature engineering
             metric: Metric to monitor ("rmse", "mape")
-            threshold: Relative threshold for performance degradation
+            threshold: Relative threshold for performance degradation (uses config if None)
             retrain: Whether to automatically retrain on degradation
             **retrain_kwargs: Additional arguments for train_incrementally
 
@@ -1674,6 +1700,11 @@ class IncrementalLearner:
         if fetch_data_fn is None:
             self.logger.error("fetch_data_fn is required for monitoring")
             return None
+
+        # Use config threshold if none provided
+        if threshold is None:
+            threshold = INCREMENTAL_RETRAINING_THRESHOLD
+            self.logger.info(f"Using configured retraining threshold: {threshold}")
 
         try:
             # Load the model
@@ -1888,9 +1919,8 @@ def example_usage():
         data_cache_dir="data_cache",
     )
 
+    from src.data.data import fetch_data
     from src.features.features import feature_engineering
-
-    from data.data import fetch_data
 
     # Fetch data
     ticker = "ETH-USD"

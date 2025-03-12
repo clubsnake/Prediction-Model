@@ -6,13 +6,16 @@ import atexit
 import functools
 import logging
 import signal
+import sys
 import threading
 import traceback
 from contextlib import contextmanager
-from typing import Any, Callable
+from typing import Callable
 
-# Set up logger
+# Configure logger
 logger = logging.getLogger(__name__)
+
+# Global state tracking
 _shutdown_callbacks = []
 _registered_threads = []
 _shutdown_initiated = False
@@ -20,133 +23,125 @@ _shutdown_lock = threading.Lock()
 
 
 class GracefulShutdownHandler:
-    """
-    Handles graceful shutdown of the application.
-    Manages stopping threads and processes in an orderly fashion.
-    """
+    """Handles graceful shutdown of the application with resource cleanup."""
 
-    def __init__(self):
-        """Initialize the shutdown handler."""
-        self.stop_event = threading.Event()
-        self.resources = {}
-        self.shutdown_initiated = False
+    @staticmethod
+    def register_handler():
+        """Register signal handlers for graceful shutdown."""
+        # Only register signal handlers in main thread to avoid the ValueError
+        if threading.current_thread() is threading.main_thread():
+            try:
+                # Handle keyboard interrupts (CTRL+C)
+                signal.signal(signal.SIGINT, GracefulShutdownHandler.handle_signal)
 
-        # Register signal handlers
-        signal.signal(signal.SIGINT, self._handle_signal)
-        signal.signal(signal.SIGTERM, self._handle_signal)
+                # Handle termination signals
+                if hasattr(signal, "SIGTERM"):
+                    signal.signal(signal.SIGTERM, GracefulShutdownHandler.handle_signal)
 
-        # Register atexit
-        atexit.register(self._handle_atexit)
+                logger.info("Graceful shutdown handler registered")
+            except ValueError as e:
+                logger.warning(f"Could not register signal handlers: {e}")
+        else:
+            logger.info("Skipping signal handler registration (not in main thread)")
 
-    def _handle_signal(self, signum, frame):
-        """Handle termination signals."""
-        sig_name = signal.Signals(signum).name
-        logger.info(f"Received signal {sig_name}")
-        self.initiate_shutdown(f"Signal {sig_name}")
+        # Register with atexit to ensure cleanup on normal exit (works in any thread)
+        atexit.register(GracefulShutdownHandler.cleanup)
 
-    def _handle_atexit(self):
-        """Handle atexit event."""
-        if not self.shutdown_initiated:
-            self.initiate_shutdown("atexit")
+    @staticmethod
+    def handle_signal(sig_num, frame):
+        """Handle termination signals by initiating shutdown."""
+        signal_name = (
+            signal.Signals(sig_num).name
+            if hasattr(signal, "Signals")
+            else f"signal {sig_num}"
+        )
+        logger.info(f"Received {signal_name}, initiating graceful shutdown")
 
-    def register_resource(self, name: str, resource: Any, cleanup_func: Callable):
-        """
-        Register a resource that needs to be cleaned up during shutdown.
+        # Call the central shutdown function
+        initiate_shutdown(source=f"Signal: {signal_name}")
 
-        Args:
-            name: Identifier for the resource
-            resource: The resource object
-            cleanup_func: Function to call to clean up the resource
-        """
-        self.resources[name] = {"resource": resource, "cleanup": cleanup_func}
-        logger.debug(f"Registered resource {name} for shutdown")
+        # Exit with a specific code for signal handling
+        sys.exit(128 + sig_num)
 
-    def register_thread(self, thread: threading.Thread):
-        """
-        Register a thread that should be joined during shutdown.
+    @staticmethod
+    def cleanup():
+        """Perform cleanup operations during shutdown."""
+        logger.info("Performing final cleanup on application exit")
 
-        Args:
-            thread: Thread to join during shutdown
-        """
-        register_thread(thread)  # Use the global registration
-
-    def initiate_shutdown(self, source: str = "unknown"):
-        """
-        Initiate graceful shutdown process.
-
-        Args:
-            source: Source of the shutdown request
-        """
-        if self.shutdown_initiated:
-            logger.info(f"Shutdown already initiated. Ignoring request from {source}")
-            return
-
-        self.shutdown_initiated = True
-        self.stop_event.set()
-
-        # Call the global shutdown function
-        initiate_shutdown(source)
+        # Call all registered shutdown callbacks
+        for callback in _shutdown_callbacks:
+            try:
+                callback()
+            except Exception as e:
+                logger.error(f"Error in shutdown callback: {e}")
 
 
 def register_shutdown_callback(callback: Callable) -> None:
-    """
-    Register a function to be called during shutdown.
-
-    Args:
-        callback: Function to call during shutdown
-    """
-    global _shutdown_callbacks
-    _shutdown_callbacks.append(callback)
-    logger.debug(f"Registered shutdown callback: {callback.__name__}")
+    """Register a callback to be executed during shutdown."""
+    if callable(callback) and callback not in _shutdown_callbacks:
+        _shutdown_callbacks.append(callback)
+        logger.debug(f"Registered shutdown callback: {callback.__name__}")
 
 
 def register_thread(thread: threading.Thread) -> None:
-    """
-    Register a thread that should be joined during shutdown.
-
-    Args:
-        thread: Thread to join during shutdown
-    """
-    global _registered_threads
+    """Register a thread to be monitored during shutdown."""
     _registered_threads.append(thread)
-    logger.debug(f"Registered thread for shutdown: {thread.name}")
 
 
 def initiate_shutdown(source: str = "unknown") -> None:
     """
-    Initiate graceful shutdown process.
+    Initiate a graceful shutdown of the application.
 
     Args:
-        source: Source of the shutdown request
+        source: Description of what triggered the shutdown
     """
-    global _shutdown_initiated, _shutdown_lock
+    global _shutdown_initiated
 
+    # Use a lock to prevent multiple simultaneous shutdown attempts
     with _shutdown_lock:
         if _shutdown_initiated:
-            logger.info(f"Shutdown already initiated. Ignoring request from {source}")
+            logger.info(f"Shutdown already in progress, ignoring request from {source}")
             return
+
+        logger.info(f"Initiating graceful shutdown from {source}")
         _shutdown_initiated = True
 
-    logger.info(f"Initiating graceful shutdown (source: {source})")
+    # First, stop any tuning processes
+    try:
+        # Import here to avoid circular imports
+        from src.tuning.meta_tuning import stop_tuning_process
+
+        logger.info("Stopping any running tuning processes")
+        stop_tuning_process()
+    except ImportError:
+        logger.warning("Could not import tuning module")
+    except Exception as e:
+        logger.error(f"Error stopping tuning: {e}")
 
     # Call all registered shutdown callbacks
     for callback in _shutdown_callbacks:
         try:
-            logger.info(f"Running shutdown callback: {callback.__name__}")
             callback()
         except Exception as e:
-            logger.error(f"Error in shutdown callback {callback.__name__}: {str(e)}")
+            logger.error(f"Error in shutdown callback: {e}")
 
-    # Join all registered threads
+    # Wait for registered threads to finish (with timeout)
     for thread in _registered_threads:
-        try:
-            if thread.is_alive():
-                logger.info(f"Waiting for thread to finish: {thread.name}")
-                thread.join(timeout=5.0)
-        except Exception as e:
-            logger.error(f"Error joining thread {thread.name}: {str(e)}")
+        if thread.is_alive():
+            try:
+                logger.info(f"Waiting for thread {thread.name} to finish")
+                thread.join(timeout=3.0)  # 3 second timeout per thread
+            except Exception as e:
+                logger.error(f"Error waiting for thread {thread.name}: {e}")
 
-    logger.info("Graceful shutdown completed")
+
+def is_shutdown_in_progress() -> bool:
+    """Check if shutdown is in progress."""
+    return _shutdown_initiated
+
+
+# Initialize the handler
+GracefulShutdownHandler.register_handler()
 
 
 # Define error boundary decorator

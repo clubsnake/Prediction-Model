@@ -1,6 +1,16 @@
 """
-Config package initialization.
-Imports and exposes key configuration functions and constants.
+Configuration package initialization.
+
+This module initializes the configuration package and provides convenient access
+to configuration functions and constants. It handles:
+
+1. Adding the project root to the Python path
+2. Importing and exposing key configuration functions from config_loader.py
+3. Providing fallback values and functions if imports fail
+4. Initializing the logging system
+
+The config package is a critical dependency for all other modules in the project,
+providing centralized configuration management and logging setup.
 """
 
 import os
@@ -13,42 +23,43 @@ PROJECT_ROOT = project_root  # Expose PROJECT_ROOT as top-level constant
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+
 # Function to get system configuration
 def get_system_config():
     """Get the current system configuration."""
     from .resource_config import load_system_config
+
     return load_system_config()
+
 
 # Import key components from config_loader
 try:
     from .config_loader import (
-        # Functions
-        get_config,
-        get_value,
-        set_value,
-        get_random_state,
-        get_data_dir,
-        get_active_feature_names,
-        # Constants
         DATA_DIR,
-        DB_DIR,
+        DB_DIR,  # Functions; Constants
+        HYPERPARAMS_DIR,
         LOGS_DIR,
         MODELS_DIR,
-        HYPERPARAMS_DIR,
+        N_STARTUP_TRIALS,
         PROGRESS_FILE,
         TESTED_MODELS_FILE,
-        TUNING_STATUS_FILE,
         TICKER,
         TICKERS,
         TIMEFRAMES,
-        N_STARTUP_TRIALS,
+        TUNING_STATUS_FILE,
+        get_active_feature_names,
+        get_config,
+        get_data_dir,
+        get_random_state,
+        get_value,
+        set_value,
     )
 except ImportError as e:
     print(f"Error importing from config_loader: {e}")
-    
+
     # Define fallback constants if imports fail
     import os
-    
+
     # Base directories
     ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DATA_DIR = os.path.join(ROOT_DIR, "data")
@@ -60,7 +71,15 @@ except ImportError as e:
     VISUALIZATIONS_DIR = os.path.join(MODELS_DIR, "visualizations")
 
     # Ensure directories exist
-    for directory in [DATA_DIR, LOGS_DIR, DB_DIR, MODELS_DIR, HYPERPARAMS_DIR, WEIGHTS_DIR, VISUALIZATIONS_DIR]:
+    for directory in [
+        DATA_DIR,
+        LOGS_DIR,
+        DB_DIR,
+        MODELS_DIR,
+        HYPERPARAMS_DIR,
+        WEIGHTS_DIR,
+        VISUALIZATIONS_DIR,
+    ]:
         os.makedirs(directory, exist_ok=True)
 
     # Files
@@ -73,54 +92,58 @@ except ImportError as e:
     # Default parameters
     DEFAULT_TICKER = "BTC-USD"
     DEFAULT_TIMEFRAMES = ["1d", "1h", "15m"]
-    
+
     # Define fallback functions
     def get_config():
         return {}
-        
+
     def get_value(path, default=None):
         return default
-        
+
     def set_value(path, value, save=True, target="user"):
         return False
-        
+
     def get_random_state():
         return 42
-        
+
     def get_data_dir(subdir=None):
         if subdir:
             path = os.path.join(DATA_DIR, subdir)
             os.makedirs(path, exist_ok=True)
             return path
         return DATA_DIR
-        
+
     def get_active_feature_names():
         return ["Open", "High", "Low", "Close", "Volume"]
+
 
 # Import logger
 try:
     from .logger_config import logger, setup_logger
 except ImportError as e:
     print(f"Error importing from logger_config: {e}")
-    
+
     # Define a basic logger if imports fail
     import logging
-    logger = logging.getLogger('prediction_model')
+
+    logger = logging.getLogger("prediction_model")
     logger.setLevel(logging.INFO)
-    
+
     if not logger.handlers:
         handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
         logger.addHandler(handler)
-    
+
     def setup_logger(name, level=None, **kwargs):
         new_logger = logging.getLogger(name)
         new_logger.setLevel(level or logging.INFO)
         if not new_logger.handlers:
             new_logger.addHandler(handler)
         return new_logger
-    
-    
+
+
 MODEL_TYPES = ["lstm", "rnn", "xgboost", "random_forest", "nbeats", "ltc", "tft"]
 ACTIVE_MODEL_TYPES = ["lstm", "rnn", "xgboost", "random_forest", "nbeats", "ltc", "tft"]
 MAPE_THRESHOLD = 5.0

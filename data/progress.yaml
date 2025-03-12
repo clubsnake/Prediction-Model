@@ -1,7 +1,6 @@
-current_mape: 999
-current_rmse: 31622.776601683792
-current_trial: 3457
+current_trial: 0
 cycle: 1
-timestamp: 1740951062.4665747
-total_trials: 5000
-trial_progress: 0.6914
+ticker: ETH-USD
+timeframe: 1d
+timestamp: 1741739387.5083768
+total_trials: 10000

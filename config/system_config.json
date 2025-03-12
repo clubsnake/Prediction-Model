@@ -2,21 +2,21 @@
   "project": {
     "name": "Prediction Model",
     "data_dirs": {
-      "data": "__project_root__/Data",
-      "db": "__project_root__/Data/DB",
-      "logs": "__project_root__/Data/Logs",
-      "models": "__project_root__/Data/Models",
-      "hyperparams": "__project_root__/Data/Hyperparameters",
-      "raw_data": "__project_root__/Data/Raw",
-      "processed_data": "__project_root__/Data/Processed"
+      "data": "__project_root__/data",
+      "db": "__project_root__/data/DB",
+      "logs": "__project_root__/data/Logs",
+      "models": "__project_root__/data/Models",
+      "hyperparams": "__project_root__/data/Models/Hyperparameters",
+      "raw_data": "__project_root__/data/Raw",
+      "processed_data": "__project_root__/data/Processed"
     },
     "files": {
-      "progress_file": "__project_root__/Data/progress.yaml",
-      "tested_models_file": "__project_root__/Data/tested_models.yaml",
-      "tuning_status_file": "__project_root__/Data/tuning_status.txt",
-      "cycle_metrics_file": "__project_root__/Data/cycle_metrics.yaml",
-      "best_params_file": "__project_root__/Data/best_params.yaml",
-      "log_file": "__project_root__/Data/Logs/prediction_model.log"
+      "progress_file": "__project_root__/data/progress.yaml",
+      "tested_models_file": "__project_root__/data/tested_models.yaml",
+      "tuning_status_file": "__project_root__/data/tuning_status.txt",
+      "cycle_metrics_file": "__project_root__/data/cycle_metrics.yaml",
+      "best_params_file": "__project_root__/data/Models/Hyperparameters/best_params.yaml",
+      "log_file": "__project_root__/data/Logs/prediction_model.log"
     }
   },
   "hardware": {
@@ -34,9 +34,9 @@
     "walk_forward": {
       "enabled": true,
       "default_days": 30,
-      "min_days": 3,
+      "min_days": 7,
       "max_days": 180,
-      "min_window": 3,
+      "min_window": 7,
       "max_window": 180,
       "default_window": 30
     }

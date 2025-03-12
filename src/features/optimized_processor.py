@@ -1,6 +1,7 @@
-from src.features.optimized_params import load_optimized_params  # updated relative import
-
 from features import feature_engineering_with_params  # updated relative import
+from src.features.optimized_params import (
+    load_optimized_params,
+)  # updated relative import
 
 
 def process_ticker_with_optimized_params(ticker, timeframe, df):
@@ -14,6 +15,7 @@ def process_ticker_with_optimized_params(ticker, timeframe, df):
     df_with_features = feature_engineering_with_params(
         df,
         ticker=ticker,
+        timeframe=timeframe,  # Pass timeframe to support auto-adjustment
         use_vmli=True,
         vmli_window_mom=params["vmli_window_mom"],
         vmli_window_vol=params["vmli_window_vol"],

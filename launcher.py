@@ -1,8 +1,8 @@
 """
 Simple launcher for the Streamlit dashboard
 """
+
 import os
-import sys
 import subprocess
 from pathlib import Path
 
@@ -10,7 +10,9 @@ from pathlib import Path
 os.environ["MPLBACKEND"] = "Agg"  # Fix for matplotlib.use() error
 
 # Get dashboard path
-dashboard_path = Path(__file__).parent / "src" / "dashboard" / "dashboard" / "dashboard_core.py"
+dashboard_path = (
+    Path(__file__).parent / "src" / "dashboard" / "dashboard" / "dashboard_core.py"
+)
 
 # Launch the dashboard
 print("\n🚀 Starting Streamlit dashboard...")

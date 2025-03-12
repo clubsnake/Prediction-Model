@@ -5,16 +5,30 @@ Utility functions for the dashboard that don't fit in other categories.
 """
 
 import base64
-import io
 import os
-import tempfile
 from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 
-from dashboard_error import robust_error_boundary
 from config.logger_config import logger
+
+# Use absolute imports for dashboard components
+from src.dashboard.dashboard.dashboard_error import robust_error_boundary
+
+# Add paths to project root if needed
+try:
+    current_file = os.path.abspath(__file__)
+    dashboard_dir = os.path.dirname(current_file)
+    dashboard_parent = os.path.dirname(dashboard_dir)
+    src_dir = os.path.dirname(dashboard_parent)
+    project_root = os.path.dirname(src_dir)
+
+    # Define common paths
+    DATA_DIR = os.path.join(project_root, "data")
+except Exception as e:
+    logger.warning(f"Error setting up paths in dashboard_utils: {e}")
+    DATA_DIR = "data"  # Fallback
 
 
 def safe_mkdir(directory):
@@ -128,7 +142,72 @@ def get_cache_function():
         elif hasattr(st, "cache_resource"):
             return st.cache_resource
         else:
-            return lambda **kwargs: (lambda f: f)  # Return identity decorator as fallback
+            return lambda **kwargs: (
+                lambda f: f
+            )  # Return identity decorator as fallback
     except Exception as e:
         logger.error(f"Error setting up cache function: {e}")
         return lambda f: f  # Return identity function as fallback
+
+
+@robust_error_boundary
+def detect_streamlit_version():
+    """Detect Streamlit version and capabilities"""
+    try:
+        import streamlit as st
+
+        version = st.__version__
+
+        features = {
+            "cache_data": hasattr(st, "cache_data"),
+            "cache_resource": hasattr(st, "cache_resource"),
+            "checkbox": hasattr(st, "checkbox"),
+            "columns": hasattr(st, "columns"),
+            "session_state": hasattr(st, "session_state"),
+        }
+
+        return version, features
+    except Exception as e:
+        logger.error(f"Error detecting Streamlit version: {e}")
+        return "unknown", {}
+
+
+@robust_error_boundary
+def check_file_access(filepath):
+    """Check if a file exists and is accessible"""
+    try:
+        exists = os.path.exists(filepath)
+        readable = os.access(filepath, os.R_OK) if exists else False
+        writable = os.access(filepath, os.W_OK) if exists else False
+
+        return {
+            "exists": exists,
+            "readable": readable,
+            "writable": writable,
+            "error": None,
+        }
+    except Exception as e:
+        logger.error(f"Error checking file access for {filepath}: {e}")
+        return {"exists": False, "readable": False, "writable": False, "error": str(e)}
+
+
+@robust_error_boundary
+def get_dashboard_status():
+    """Get current status of dashboard components"""
+    status = {
+        "timestamp": datetime.now().isoformat(),
+        "session_state_keys": (
+            list(st.session_state.keys()) if hasattr(st, "session_state") else []
+        ),
+        "components": {
+            "model_loaded": st.session_state.get("model_loaded", False),
+            "tuning_in_progress": st.session_state.get("tuning_in_progress", False),
+            "watchdog_active": "watchdog" in st.session_state
+            and st.session_state["watchdog"] is not None,
+            "data_loaded": "df_raw" in st.session_state
+            and st.session_state["df_raw"] is not None,
+        },
+        "streamlit": detect_streamlit_version(),
+    }
+
+    return status

@@ -787,11 +787,8 @@ class XAIExplainer:
             # Take absolute value for saliency
             saliency = tf.abs(gradients).numpy()
 
-            # For sequential models, average across timesteps
-            if self.is_sequential and len(saliency.shape) > 2:
-                # Get feature axis
-                feature_axis = 2 if len(saliency.shape) == 3 else -1
-
+            # Check if we have sequential data
+            if self.is_sequential:
                 # Average across samples (batch) if needed
                 if saliency.shape[0] > 1:
                     saliency = np.mean(saliency, axis=0, keepdims=True)
@@ -1403,42 +1400,43 @@ def render_explainable_ai_tab():
     This function provides an interactive interface for exploring model explanations.
     """
     import streamlit as st
-    
+
     st.header("Explainable AI Analysis")
-    
+
     # Get the current model from session state
-    model = st.session_state.get('model')
-    
+    model = st.session_state.get("model")
+
     if model is None:
         st.warning("Please load or train a model to use Explainable AI features.")
         return
-    
+
     # Get sample data for explanation
-    df = st.session_state.get('df_raw')
+    df = st.session_state.get("df_raw")
     if df is None or df.empty:
         st.warning("No data available for analysis.")
         return
-    
+
     # Determine feature columns (exclude date and target)
     feature_cols = [col for col in df.columns if col not in ["date", "Date", "Close"]]
-    
+
     # Use XAIWrapper from xai_integration to create interface
     try:
-        from src.dashboard.xai_integration import XAIWrapper, create_xai_explorer
-        
+        from src.dashboard.xai_integration import create_xai_explorer
+
         # Create sample data for explanation (last 30 days)
         X_sample = df.iloc[-30:][feature_cols].values
-        
+
         # Get feature names
         feature_names = feature_cols
-        
+
         # Create the XAI explorer
         xai_wrapper = create_xai_explorer(st, model, X_sample, feature_names)
-        
+
         # Add additional XAI information
         st.subheader("Understanding Model Decisions")
-        
-        st.markdown("""
+
+        st.markdown(
+            """
         Explainable AI helps us understand how the model makes predictions. Use the tools above to:
         
         1. **SHAP Analysis** - See how each feature contributes to predictions
@@ -1447,8 +1445,9 @@ def render_explainable_ai_tab():
         4. **What-If Analysis** - Explore how changing inputs affects the output
         
         These techniques help build trust in the model by making its decision-making process transparent.
-        """)
-        
+        """
+        )
+
     except Exception as e:
         st.error(f"Error initializing Explainable AI components: {str(e)}")
         st.info("The XAI module may not be properly installed or configured.")

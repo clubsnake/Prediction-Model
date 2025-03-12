@@ -4,11 +4,12 @@ of models and creates a weighted ensemble predictor.
 """
 
 import logging
-from typing import Dict
 import threading
-from src.utils.training_optimizer import get_training_optimizer
+from typing import Dict
 
 import numpy as np
+
+from src.utils.training_optimizer import get_training_optimizer
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -69,45 +70,55 @@ def train_ensemble_models(submodel_params, X_train, y_train, feature_cols, horiz
 
     # Get model builder using LazyImportManager
     build_model_by_type = LazyImportManager.get_model_builder()
-    
+
     # Group models for efficient parallel training
     model_configs = []
     for model_type, params in submodel_params.items():
-        model_configs.append({
-            "model_type": model_type,
-            "params": params
-        })
-    
+        model_configs.append({"model_type": model_type, "params": params})
+
     # Use training optimizer to determine optimal grouping
     training_groups = training_optimizer.parallel_training_groups(model_configs)
-    
+
     # Train each group in sequence
     for group_idx, group in enumerate(training_groups):
-        logger.info(f"Training ensemble model group {group_idx+1}/{len(training_groups)}")
+        logger.info(
+            f"Training ensemble model group {group_idx+1}/{len(training_groups)}"
+        )
         threads = []
-        
+
         for model_config in group:
             model_type = model_config["model_type"]
             params = model_config["params"]
-            
+
             # Create training thread for this model
             thread = threading.Thread(
                 target=_train_ensemble_model,
-                args=(model_type, params, X_train, y_train, feature_cols, horizon, models, model_lock)
+                args=(
+                    model_type,
+                    params,
+                    X_train,
+                    y_train,
+                    feature_cols,
+                    horizon,
+                    models,
+                    model_lock,
+                ),
             )
             threads.append(thread)
             thread.start()
-        
+
         # Wait for all threads in this group to complete
         for thread in threads:
             thread.join()
-            
+
         # Clean GPU memory between groups
         if training_optimizer.has_gpu:
             try:
                 import tensorflow as tf
+
                 tf.keras.backend.clear_session()
                 import gc
+
                 gc.collect()
             except Exception as e:
                 logger.warning(f"Error cleaning GPU memory: {e}")
@@ -131,15 +142,18 @@ def train_ensemble_models(submodel_params, X_train, y_train, feature_cols, horiz
 
     return ensemble_predict, models
 
-def _train_ensemble_model(model_type, params, X_train, y_train, feature_cols, horizon, models, model_lock):
+
+def _train_ensemble_model(
+    model_type, params, X_train, y_train, feature_cols, horizon, models, model_lock
+):
     """Helper function to train a single ensemble model in a thread"""
     try:
         # Get model builder using LazyImportManager
         build_model_by_type = LazyImportManager.get_model_builder()
-        
+
         # Get optimal configuration for this model type
         model_config = training_optimizer.get_model_config(model_type, "medium")
-        
+
         # Build the model using builder from LazyImportManager
         model = build_model_by_type(
             model_type=model_type,
@@ -163,7 +177,7 @@ def _train_ensemble_model(model_type, params, X_train, y_train, feature_cols, ho
         logger.info(f"Training {model_type} model...")
         model.fit(X_train, y_train, **training_params)
         logger.info(f"Completed training {model_type} model")
-        
+
         # Store the model in the shared models dictionary
         with model_lock:
             models[model_type] = model

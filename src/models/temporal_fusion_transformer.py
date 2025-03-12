@@ -2,17 +2,11 @@
 
 import tensorflow as tf
 from tensorflow.keras.layers import ( # type: ignore
-    Concatenate,
-    Conv1D,  # type: ignore
-    Dense,
+    Dense,  
     Dropout,
-    Embedding,
-    GlobalAveragePooling1D,
-    Input,
     LayerNormalization,
     MultiHeadAttention,
 )
-from tensorflow.keras.models import Model  # type: ignore
 
 
 class PositionalEncoding(tf.keras.layers.Layer):
@@ -343,11 +337,11 @@ class TemporalFusionTransformer(tf.keras.Model):
     @classmethod
     def from_config(cls, config, custom_objects=None):
         """Create model instance from saved configuration.
-        
+
         Args:
             config: Dictionary containing model configuration
             custom_objects: Dictionary mapping names to custom classes or functions
-            
+
         Returns:
             A model instance.
         """
@@ -363,6 +357,7 @@ def build_tft_model(
     num_heads=4,
     dropout_rate=0.1,
     loss_function="mse",
+    max_positions=100,  # new hyperparameter added
 ):
     """
     Build and compile a Temporal Fusion Transformer model.
@@ -376,6 +371,7 @@ def build_tft_model(
         num_heads: Number of attention heads
         dropout_rate: Dropout rate
         loss_function: Loss function to use
+        max_positions: Maximum number of positions for positional encoding
 
     Returns:
         Compiled TFT model
@@ -387,6 +383,7 @@ def build_tft_model(
         lstm_units=lstm_units,
         num_heads=num_heads,
         dropout_rate=dropout_rate,
+        max_positions=max_positions,  # now tunable
     )
 
     # Define input shape and do a forward pass to build the model
@@ -417,7 +414,7 @@ def add_tft_to_model_types():
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(current_dir)
-    if (parent_dir not in sys.path):
+    if parent_dir not in sys.path:
         sys.path.append(parent_dir)
 
     # Add the model type to the global model types list
@@ -455,6 +452,9 @@ def add_tft_to_model_types():
                 hidden_size = architecture_params.get("hidden_size", 64)
                 lstm_units = architecture_params.get("lstm_units", 128)
                 num_heads = architecture_params.get("num_heads", 4)
+                max_positions = architecture_params.get(
+                    "max_positions", 100
+                )  # new hyperparameter
 
                 return build_tft_model(
                     num_features=num_features,
@@ -465,6 +465,7 @@ def add_tft_to_model_types():
                     num_heads=num_heads,
                     dropout_rate=dropout_rate,
                     loss_function=loss_function,
+                    max_positions=max_positions,
                 )
             else:
                 # Call the original function for other model types
@@ -559,26 +560,3 @@ def add_tft_to_optuna_search(meta_tuning_module):
     meta_tuning_module.ensemble_with_walkforward_objective = extended_objective
 
     print("TFT hyperparameters added to Optuna search space.")
-
-
-# Example usage
-if __name__ == "__main__":
-    # Test the TFT model
-    model = build_tft_model(
-        num_features=10,
-        horizon=5,
-        hidden_size=64,
-        lstm_units=128,
-        num_heads=4,
-        dropout_rate=0.1,
-    )
-
-    model.summary()
-
-    # Test predictions
-    x = tf.random.normal(
-        (32, 30, 10)
-    )  # Batch size of 32, sequence length of 30, 10 features
-    y = model(x)
-    print(f"Input shape: {x.shape}")
-    print(f"Output shape: {y.shape}")

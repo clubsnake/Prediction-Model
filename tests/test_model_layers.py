@@ -125,50 +125,50 @@ class TestModelLayers(unittest.TestCase):
         """Test the ensemble weighter class"""
         try:
             from src.models.ensemble_weighting import EnsembleWeighter
-            
+
             # Create a simple ensemble
             ensemble = EnsembleWeighter()
-            
+
             # Create mock models
             class MockModel:
                 def predict(self, X):
                     return X.sum(axis=1)
-            
+
             # Add mock models to ensemble
             ensemble.add_model(MockModel(), "model1")
             ensemble.add_model(MockModel(), "model2")
-            
+
             # Create test data
             X = np.array([[1, 2], [3, 4], [5, 6]])
             y = np.array([5, 10, 15])
-            
+
             # Test weight optimization
             weights = ensemble.optimize_weights(X, y)
             self.assertEqual(len(weights), 2)
-            
+
             # Test prediction
             preds = ensemble.predict(X)
             self.assertEqual(len(preds), len(y))
-            
+
         except ImportError:
             self.skipTest("Ensemble weighter not available")
-    
+
     def test_model_evaluation(self):
         """Test the model evaluation class"""
         try:
             from src.tuning.model_evaluation import ModelEvaluator
-            
+
             # Test data
             y_true = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
             y_pred = np.array([1.1, 2.1, 2.9, 4.2, 5.0])
-            
+
             # Calculate metrics
             metrics = ModelEvaluator.calculate_metrics(y_true, y_pred)
-            
+
             # Check metrics
-            self.assertIn('rmse', metrics)
-            self.assertIn('mae', metrics)
-            
+            self.assertIn("rmse", metrics)
+            self.assertIn("mae", metrics)
+
         except ImportError:
             self.skipTest("Model evaluator not available")
 

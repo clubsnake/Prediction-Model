@@ -6,6 +6,7 @@ Enhanced to work with PyTorch models through adapter layer.
 
 import datetime
 import logging
+
 import numpy as np
 import tensorflow as tf
 import torch
@@ -18,7 +19,16 @@ class DynamicLearningRateScheduler(tf.keras.callbacks.Callback):
     Dynamically adjusts learning rate when monitored metric stops improving.
     Works with both TensorFlow and PyTorch models.
     """
-    def __init__(self, initial_lr=0.001, factor=0.5, patience=5, min_lr=1e-6, monitor='val_loss', verbose=0):
+
+    def __init__(
+        self,
+        initial_lr=0.001,
+        factor=0.5,
+        patience=5,
+        min_lr=1e-6,
+        monitor="val_loss",
+        verbose=0,
+    ):
         super().__init__()
         self.initial_lr = initial_lr
         self.factor = factor
@@ -26,17 +36,17 @@ class DynamicLearningRateScheduler(tf.keras.callbacks.Callback):
         self.min_lr = min_lr
         self.monitor = monitor
         self.verbose = verbose
-        self.best = float('inf')
+        self.best = float("inf")
         self.wait = 0
         self.history = []  # Track LR changes
-        
+
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
         current = logs.get(self.monitor, None)
-        
+
         if current is None:
             return
-            
+
         if current < self.best:
             self.best = current
             self.wait = 0
@@ -50,7 +60,9 @@ class DynamicLearningRateScheduler(tf.keras.callbacks.Callback):
                     tf.keras.backend.set_value(self.model.optimizer.lr, new_lr)
                     self.history.append(new_lr)
                     if self.verbose > 0:
-                        logger.info(f"Epoch {epoch+1}: reducing learning rate from {old_lr} to {new_lr}")
+                        logger.info(
+                            f"Epoch {epoch+1}: reducing learning rate from {old_lr} to {new_lr}"
+                        )
                     self.wait = 0
 
 
@@ -79,23 +91,25 @@ class AdaptiveDropout(tf.keras.callbacks.Callback):
         self.step_adjust_factor = step_adjust_factor
         self.max_step = max_step
         self.min_step = min_step
-        self.prev_loss = float('inf')
+        self.prev_loss = float("inf")
         self.current_dropout = min_rate
         self.pytorch_model = None
         self.dropout_changes = []
 
     def on_train_begin(self, logs=None):
         # Check if model is PyTorch
-        if hasattr(self.model, 'model_') and isinstance(self.model.model_, torch.nn.Module):
+        if hasattr(self.model, "model_") and isinstance(
+            self.model.model_, torch.nn.Module
+        ):
             self.pytorch_model = self.model.model_
 
     def on_epoch_end(self, epoch, logs=None):
-        if logs is None or 'val_loss' not in logs:
+        if logs is None or "val_loss" not in logs:
             return
-            
-        current_loss = logs['val_loss']
+
+        current_loss = logs["val_loss"]
         loss_diff = self.prev_loss - current_loss
-        
+
         # Modify dropout rate based on loss change
         if loss_diff < self.improvement_threshold:
             # Loss is not improving enough, increase dropout for regularization
@@ -103,7 +117,7 @@ class AdaptiveDropout(tf.keras.callbacks.Callback):
         else:
             # Loss is improving, decrease dropout to let model learn more
             self.current_dropout = max(self.current_dropout - self.step, self.min_rate)
-        
+
         # Apply to TensorFlow model
         if self.pytorch_model is None:
             for layer in self.model.layers:
@@ -114,7 +128,7 @@ class AdaptiveDropout(tf.keras.callbacks.Callback):
             for module in self.pytorch_model.modules():
                 if isinstance(module, torch.nn.Dropout):
                     module.p = self.current_dropout
-        
+
         self.dropout_changes.append((epoch, self.current_dropout))
         # Update previous loss
         self.prev_loss = current_loss
@@ -146,7 +160,9 @@ class AdaptiveOptimizer(tf.keras.callbacks.Callback):
 
     def on_train_begin(self, logs=None):
         # Check if we're using PyTorch
-        if hasattr(self.model, 'optimizer') and isinstance(self.model.optimizer, torch.optim.Optimizer):
+        if hasattr(self.model, "optimizer") and isinstance(
+            self.model.optimizer, torch.optim.Optimizer
+        ):
             self.pytorch_optimizer = self.model.optimizer
             # Set optimizer if not already set
             if self.optimizer is None:
@@ -157,40 +173,52 @@ class AdaptiveOptimizer(tf.keras.callbacks.Callback):
         current_loss = logs.get("val_loss") or logs.get("loss")
         if current_loss is None:
             return
-        
+
         is_improvement = current_loss < self.best_loss
         if is_improvement:
             self.best_loss = current_loss
             momentum_factor = self.momentum_increase
         else:
             momentum_factor = self.momentum_decrease
-            
+
         # Handle TensorFlow optimizer
         if self.pytorch_optimizer is None and self.optimizer:
             if hasattr(self.optimizer, "momentum"):
                 current_momentum = float(self.optimizer.momentum)
-                new_m = min(max(current_momentum * momentum_factor, self.min_momentum), self.max_momentum)
+                new_m = min(
+                    max(current_momentum * momentum_factor, self.min_momentum),
+                    self.max_momentum,
+                )
                 tf.keras.backend.set_value(self.optimizer.momentum, new_m)
-                self.momentum_changes.append((epoch, 'momentum', new_m))
+                self.momentum_changes.append((epoch, "momentum", new_m))
             elif hasattr(self.optimizer, "beta_1"):
                 current_beta1 = float(self.optimizer.beta_1)
-                new_b1 = min(max(current_beta1 * momentum_factor, self.min_momentum), self.max_momentum)
+                new_b1 = min(
+                    max(current_beta1 * momentum_factor, self.min_momentum),
+                    self.max_momentum,
+                )
                 tf.keras.backend.set_value(self.optimizer.beta_1, new_b1)
-                self.momentum_changes.append((epoch, 'beta_1', new_b1))
-        
+                self.momentum_changes.append((epoch, "beta_1", new_b1))
+
         # Handle PyTorch optimizer
         elif self.pytorch_optimizer:
             for param_group in self.pytorch_optimizer.param_groups:
-                if 'momentum' in param_group:
-                    current_momentum = param_group['momentum']
-                    new_m = min(max(current_momentum * momentum_factor, self.min_momentum), self.max_momentum)
-                    param_group['momentum'] = new_m
-                    self.momentum_changes.append((epoch, 'momentum', new_m))
-                elif 'betas' in param_group:
-                    current_beta1 = param_group['betas'][0]
-                    new_b1 = min(max(current_beta1 * momentum_factor, self.min_momentum), self.max_momentum)
-                    param_group['betas'] = (new_b1, param_group['betas'][1])
-                    self.momentum_changes.append((epoch, 'beta_1', new_b1))
+                if "momentum" in param_group:
+                    current_momentum = param_group["momentum"]
+                    new_m = min(
+                        max(current_momentum * momentum_factor, self.min_momentum),
+                        self.max_momentum,
+                    )
+                    param_group["momentum"] = new_m
+                    self.momentum_changes.append((epoch, "momentum", new_m))
+                elif "betas" in param_group:
+                    current_beta1 = param_group["betas"][0]
+                    new_b1 = min(
+                        max(current_beta1 * momentum_factor, self.min_momentum),
+                        self.max_momentum,
+                    )
+                    param_group["betas"] = (new_b1, param_group["betas"][1])
+                    self.momentum_changes.append((epoch, "beta_1", new_b1))
 
 
 class WarmupCosineDecayScheduler(tf.keras.callbacks.Callback):
@@ -224,7 +252,9 @@ class WarmupCosineDecayScheduler(tf.keras.callbacks.Callback):
 
     def on_train_begin(self, logs=None):
         # Check if model is PyTorch
-        if hasattr(self.model, 'optimizer') and isinstance(self.model.optimizer, torch.optim.Optimizer):
+        if hasattr(self.model, "optimizer") and isinstance(
+            self.model.optimizer, torch.optim.Optimizer
+        ):
             self.pytorch_optimizer = self.model.optimizer
 
     def on_epoch_begin(self, epoch, logs=None):
@@ -249,8 +279,8 @@ class WarmupCosineDecayScheduler(tf.keras.callbacks.Callback):
         # Apply to PyTorch optimizer
         else:
             for param_group in self.pytorch_optimizer.param_groups:
-                param_group['lr'] = lr
-        
+                param_group["lr"] = lr
+
         self.history.append(lr)
         if self.verbose > 0:
             print(f"\nEpoch {epoch+1}: WarmupCosineDecay set learning rate to {lr:.6f}")
@@ -260,7 +290,7 @@ class WarmupCosineDecayScheduler(tf.keras.callbacks.Callback):
         if self.pytorch_optimizer is None:
             logs["lr"] = tf.keras.backend.get_value(self.model.optimizer.learning_rate)
         else:
-            logs["lr"] = self.pytorch_optimizer.param_groups[0]['lr']
+            logs["lr"] = self.pytorch_optimizer.param_groups[0]["lr"]
 
 
 class CyclicalLearningRate(tf.keras.callbacks.Callback):
@@ -316,7 +346,9 @@ class CyclicalLearningRate(tf.keras.callbacks.Callback):
 
     def on_train_begin(self, logs=None):
         # Check if model is PyTorch
-        if hasattr(self.model, 'optimizer') and isinstance(self.model.optimizer, torch.optim.Optimizer):
+        if hasattr(self.model, "optimizer") and isinstance(
+            self.model.optimizer, torch.optim.Optimizer
+        ):
             self.pytorch_optimizer = self.model.optimizer
 
     def clr(self):
@@ -341,8 +373,8 @@ class CyclicalLearningRate(tf.keras.callbacks.Callback):
         # Apply to PyTorch optimizer
         else:
             for param_group in self.pytorch_optimizer.param_groups:
-                param_group['lr'] = lr
-                
+                param_group["lr"] = lr
+
         self.lrs.append(lr)
         self.batch_idx += 1
 
@@ -351,7 +383,7 @@ class CyclicalLearningRate(tf.keras.callbacks.Callback):
         if self.pytorch_optimizer is None:
             logs["lr"] = tf.keras.backend.get_value(self.model.optimizer.learning_rate)
         else:
-            logs["lr"] = self.pytorch_optimizer.param_groups[0]['lr']
+            logs["lr"] = self.pytorch_optimizer.param_groups[0]["lr"]
 
 
 class AdaptiveBatchNormScheduler(tf.keras.callbacks.Callback):
@@ -370,7 +402,9 @@ class AdaptiveBatchNormScheduler(tf.keras.callbacks.Callback):
 
     def on_train_begin(self, logs=None):
         # Check if model is PyTorch
-        if hasattr(self.model, 'model_') and isinstance(self.model.model_, torch.nn.Module):
+        if hasattr(self.model, "model_") and isinstance(
+            self.model.model_, torch.nn.Module
+        ):
             self.pytorch_model = self.model.model_
 
     def on_epoch_begin(self, epoch, logs=None):
@@ -379,7 +413,7 @@ class AdaptiveBatchNormScheduler(tf.keras.callbacks.Callback):
             self.start_momentum - self.end_momentum
         )
         self.momentum_history.append((epoch, new_momentum))
-        
+
         # Apply to TensorFlow model
         if self.pytorch_model is None:
             for layer in self.model.layers:
@@ -388,10 +422,14 @@ class AdaptiveBatchNormScheduler(tf.keras.callbacks.Callback):
         # Apply to PyTorch model
         else:
             for module in self.pytorch_model.modules():
-                if isinstance(module, torch.nn.BatchNorm1d) or \
-                   isinstance(module, torch.nn.BatchNorm2d) or \
-                   isinstance(module, torch.nn.BatchNorm3d):
-                    module.momentum = 1 - new_momentum  # PyTorch uses opposite convention
+                if (
+                    isinstance(module, torch.nn.BatchNorm1d)
+                    or isinstance(module, torch.nn.BatchNorm2d)
+                    or isinstance(module, torch.nn.BatchNorm3d)
+                ):
+                    module.momentum = (
+                        1 - new_momentum
+                    )  # PyTorch uses opposite convention
 
 
 class AdaptiveWeightDecay(tf.keras.callbacks.Callback):
@@ -424,7 +462,9 @@ class AdaptiveWeightDecay(tf.keras.callbacks.Callback):
 
     def on_train_begin(self, logs=None):
         # Check if model is PyTorch
-        if hasattr(self.model, 'optimizer') and isinstance(self.model.optimizer, torch.optim.Optimizer):
+        if hasattr(self.model, "optimizer") and isinstance(
+            self.model.optimizer, torch.optim.Optimizer
+        ):
             self.pytorch_optimizer = self.model.optimizer
 
     def on_epoch_end(self, epoch, logs=None):
@@ -432,7 +472,7 @@ class AdaptiveWeightDecay(tf.keras.callbacks.Callback):
         current_loss = logs.get(self.monitor)
         if current_loss is None:
             return
-            
+
         self.history.append((epoch, current_loss, self.current_decay))
         if current_loss < self.best_loss * 0.995:
             self.current_decay = max(self.min_decay, self.current_decay / self.factor)
@@ -445,7 +485,7 @@ class AdaptiveWeightDecay(tf.keras.callbacks.Callback):
                     self.max_decay, self.current_decay * self.factor
                 )
                 self.wait = 0
-                
+
         self._update_weight_decay()
 
     def _update_weight_decay(self):
@@ -460,13 +500,15 @@ class AdaptiveWeightDecay(tf.keras.callbacks.Callback):
                     self.model.optimizer.weight_decay = self.current_decay
             elif hasattr(self.model.optimizer, "l2"):
                 try:
-                    tf.keras.backend.set_value(self.model.optimizer.l2, self.current_decay)
+                    tf.keras.backend.set_value(
+                        self.model.optimizer.l2, self.current_decay
+                    )
                 except:
                     pass
         # Update PyTorch optimizer
         elif self.pytorch_optimizer:
             for param_group in self.pytorch_optimizer.param_groups:
-                param_group['weight_decay'] = self.current_decay
+                param_group["weight_decay"] = self.current_decay
 
 
 class EarlyStoppingWithRestore(tf.keras.callbacks.Callback):
@@ -516,9 +558,11 @@ class EarlyStoppingWithRestore(tf.keras.callbacks.Callback):
 
     def on_train_begin(self, logs=None):
         # Check if model is PyTorch
-        if hasattr(self.model, 'model_') and isinstance(self.model.model_, torch.nn.Module):
+        if hasattr(self.model, "model_") and isinstance(
+            self.model.model_, torch.nn.Module
+        ):
             self.pytorch_model = self.model.model_
-            
+
         self.wait = 0
         self.best_weights = None
         self.best_epoch = 0
@@ -534,7 +578,7 @@ class EarlyStoppingWithRestore(tf.keras.callbacks.Callback):
         current = logs.get(self.monitor)
         if current is None:
             return
-            
+
         if self.monitor_op(current, self.best):
             self.best = current
             self.wait = 0
@@ -544,7 +588,7 @@ class EarlyStoppingWithRestore(tf.keras.callbacks.Callback):
                     self.best_weights = self.model.get_weights()
                 else:
                     self.best_weights = {
-                        k: v.cpu().detach().clone() 
+                        k: v.cpu().detach().clone()
                         for k, v in self.pytorch_model.state_dict().items()
                     }
         else:
@@ -580,22 +624,24 @@ class PyTorchLearningRateMonitor(tf.keras.callbacks.Callback):
     Monitors the current learning rate for PyTorch optimizers.
     Useful for integrating with TensorBoard.
     """
-    
+
     def __init__(self, verbose=0):
         super(PyTorchLearningRateMonitor, self).__init__()
         self.verbose = verbose
         self.pytorch_optimizer = None
         self.lr_history = []
-        
+
     def on_train_begin(self, logs=None):
-        if hasattr(self.model, 'optimizer') and isinstance(self.model.optimizer, torch.optim.Optimizer):
+        if hasattr(self.model, "optimizer") and isinstance(
+            self.model.optimizer, torch.optim.Optimizer
+        ):
             self.pytorch_optimizer = self.model.optimizer
-            
+
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
         if self.pytorch_optimizer:
-            current_lr = self.pytorch_optimizer.param_groups[0]['lr']
-            logs['lr'] = current_lr
+            current_lr = self.pytorch_optimizer.param_groups[0]["lr"]
+            logs["lr"] = current_lr
             self.lr_history.append((epoch, current_lr))
             if self.verbose > 0:
                 print(f"\nEpoch {epoch + 1}: Current learning rate is {current_lr:.6f}")
@@ -605,7 +651,7 @@ class TensorBoardCallbackWrapper(tf.keras.callbacks.Callback):
     """
     Wrapper for TensorBoard callback to work with PyTorch models.
     """
-    
+
     def __init__(self, log_dir=None):
         super(TensorBoardCallbackWrapper, self).__init__()
         if log_dir is None:
@@ -613,26 +659,71 @@ class TensorBoardCallbackWrapper(tf.keras.callbacks.Callback):
         self.log_dir = log_dir
         try:
             from torch.utils.tensorboard import SummaryWriter
+
             self.writer = SummaryWriter(log_dir=self.log_dir)
             self.supports_tensorboard = True
         except ImportError:
             self.supports_tensorboard = False
             print("PyTorch SummaryWriter not available. TensorBoard logging disabled.")
-    
+
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
         if self.supports_tensorboard:
             for name, value in logs.items():
                 if isinstance(value, (int, float)):
                     self.writer.add_scalar(name, value, epoch)
-    
+
     def on_train_end(self, logs=None):
         if self.supports_tensorboard:
             self.writer.close()
 
 
+# Add StopStudyCallback for Optuna integration
+class StopStudyCallback:
+    """
+    Callback for stopping Optuna studies based on external signals.
+    Used with the meta_tuning module to handle graceful study termination.
+    """
+
+    def __init__(self, stop_check_func=None):
+        """
+        Initialize the callback with an optional function to check for stop conditions.
+
+        Args:
+            stop_check_func: Function that returns True if study should stop
+        """
+        self.stop_check_func = stop_check_func
+
+    def __call__(self, study, trial):
+        """
+        Called by Optuna after each trial completes.
+
+        Args:
+            study: Optuna study object
+            trial: Completed trial
+        """
+        # Check if there's a custom stop function
+        if self.stop_check_func and self.stop_check_func():
+            study.stop()
+            return
+
+        # Check for stop event from progress_helper
+        try:
+            from src.tuning.progress_helper import is_stop_requested
+
+            if is_stop_requested():
+                study.stop()
+        except ImportError:
+            # If progress_helper isn't available, continue
+            pass
+
+
 def get_advanced_callbacks(
-    learning_rate=0.001, epochs=50, batch_size=32, steps_per_epoch=100, pytorch_compatible=True
+    learning_rate=0.001,
+    epochs=50,
+    batch_size=32,
+    steps_per_epoch=100,
+    pytorch_compatible=True,
 ):
     """
     Create a list of advanced callbacks for both TensorFlow and PyTorch models.

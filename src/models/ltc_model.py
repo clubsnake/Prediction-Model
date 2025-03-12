@@ -18,8 +18,11 @@ try:
     import optuna
 except ImportError:
     import logging
-    logging.warning("Optuna not available - hyperparameter optimization will be disabled")
-    
+
+    logging.warning(
+        "Optuna not available - hyperparameter optimization will be disabled"
+    )
+
 # Make sure os is imported for file paths
 import os
 
@@ -410,9 +413,9 @@ def build_ltc_model(
 ) -> tf.keras.Model:
     """
     Build and compile a Liquid Time Constant (LTC) model with GPU optimizations.
-    
+
     Includes support for mixed precision and adaptive parameters.
-    
+
     Args:
         num_features: Number of input features
         horizon: Forecast horizon (number of future steps to predict)
@@ -428,28 +431,30 @@ def build_ltc_model(
         timescale_max: Maximum timescale value
         use_mixed_precision: Whether to use mixed precision (float16)
         adaptive_params: Dictionary of adaptive parameters
-        
+
     Returns:
         Compiled Keras model ready for training
     """
     # Configure GPU memory and precision settings
     try:
         from src.utils.gpu_memory_management import configure_mixed_precision
+
         precision_policy = configure_mixed_precision(use_mixed_precision)
         logger.info(f"Using precision policy: {precision_policy}")
     except ImportError:
         logger.warning("GPU memory management module not found")
-    
+
     # Apply adaptive parameters if provided
     if adaptive_params is None:
         # Try to load from config
         try:
             from config.config_loader import get_adaptive_params
+
             adaptive_params = get_adaptive_params()
         except ImportError:
             logger.warning("Could not load adaptive parameters from config")
             adaptive_params = {}
-    
+
     # Apply adaptive window size if enabled
     if adaptive_params.get("use_adaptive_window", False):
         logger.info(f"Using adaptive window size (original: {lookback})")
@@ -457,7 +462,7 @@ def build_ltc_model(
         # Here we just use the adaptive parameter directly if provided
         lookback = adaptive_params.get("walk_forward_window", lookback)
         logger.info(f"Adaptive window size: {lookback}")
-    
+
     # Input layer with shape [batch, lookback, features]
     inputs = tf.keras.layers.Input(shape=(lookback, num_features))
 
@@ -476,7 +481,9 @@ def build_ltc_model(
 
         ltc_cell = cell_class(
             units=units,
-            dropout=(dropout_rate if i == 0 else 0),  # Only apply dropout to first layer inputs
+            dropout=(
+                dropout_rate if i == 0 else 0
+            ),  # Only apply dropout to first layer inputs
             recurrent_dropout=recurrent_dropout_rate,
             timescale_min=timescale_min,
             timescale_max=timescale_max,
@@ -497,13 +504,13 @@ def build_ltc_model(
 
     # Create and compile model
     model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
-    
+
     # Adjust learning rate if adaptive learning rate is enabled
     if adaptive_params.get("adaptive_learning_rate", False):
         # Use the adaptive learning rate from parameters or base learning rate
         learning_rate = adaptive_params.get("learning_rate", learning_rate)
         logger.info(f"Using adaptive learning rate: {learning_rate}")
-    
+
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
         loss=loss_function,
@@ -618,129 +625,20 @@ def get_model_memory_usage(model: tf.keras.Model) -> float:
     return total_mb
 
 
-def train_ltc_with_optuna(trial, X_train, y_train, X_val, y_val, num_features, horizon, lookback):
-    """
-    Train an LTC model with hyperparameters suggested by Optuna.
-    
-    Args:
-        trial: Optuna trial object
-        X_train: Training features
-        y_train: Training targets
-        X_val: Validation features
-        y_val: Validation targets
-        num_features: Number of input features
-        horizon: Forecast horizon
-        lookback: Lookback window size
-        
-    Returns:
-        Tuple of (trained_model, validation_loss, metrics)
-    """
-    # Configure GPU for this trial
-    try:
-        from src.utils.gpu_memory_management import clean_gpu_memory
-        clean_gpu_memory(force_gc=True)
-    except ImportError:
-        pass  # Silently continue if module not found
-    
-    # Get adaptive parameters
-    try:
-        from config.config_loader import get_adaptive_params
-        adaptive_params = get_adaptive_params()
-    except ImportError:
-        adaptive_params = {}
-    
-    # Get optimized training configuration
-    if training_optimizer is not None:
-        model_config = training_optimizer.get_model_config("ltc", "medium")
-        default_batch_size = model_config["batch_size"]
-        default_lr = model_config["learning_rate"]
-    else:
-        default_batch_size = 32
-        default_lr = 0.001
-    
-    # Suggest hyperparameters
-    params = suggest_ltc_hyperparameters(trial)
-    
-    # Add fixed parameters
-    params.update({
-        "num_features": num_features,
-        "horizon": horizon,
-        "lookback": lookback,
-        "adaptive_params": adaptive_params
-    })
-    
-    # Apply walk-forward window adjustment if being tuned by Optuna
-    if "walk_forward_window" in params:
-        params["lookback"] = params["walk_forward_window"]
-    
-    # Apply suggested parameters or use defaults from training_optimizer
-    if "learning_rate" not in params:
-        params["learning_rate"] = default_lr
-    
-    # Build model
-    model = build_ltc_model(**params)
-    
-    # Prepare callbacks with adjusted patience from adaptive parameters
-    early_stopping_patience = adaptive_params.get("early_stopping_patience", 20)
-    
-    callbacks = get_callbacks(
-        patience=early_stopping_patience,
-        timescale_logging=(trial.number % 5 == 0)  # Only log timescales for some trials
-    )
-    
-    # Train model
-    try:
-        # Use suggested batch size or default from training_optimizer
-        batch_size = params.get("batch_size", default_batch_size)
-        
-        history = model.fit(
-            X_train, y_train,
-            epochs=100,
-            batch_size=batch_size,
-            validation_data=(X_val, y_val),
-            callbacks=callbacks,
-            verbose=0
-        )
-        
-        # Evaluate model
-        val_loss = model.evaluate(X_val, y_val, verbose=0)
-        
-        # Get additional metrics
-        y_pred = model.predict(X_val)
-        metrics = calculate_forecast_metrics(y_val, y_pred)
-        
-        # Report metrics to Optuna
-        trial.set_user_attr('rmse', metrics['rmse'])
-        trial.set_user_attr('mape', metrics['mape'])
-        trial.set_user_attr('mae', metrics['mae'])
-        
-        # Report metrics related to adaptive parameters
-        if "retraining_threshold" in params:
-            trial.set_user_attr('retraining_threshold', params['retraining_threshold'])
-        if "walk_forward_window" in params:
-            trial.set_user_attr('walk_forward_window', params['walk_forward_window'])
-        
-        return model, val_loss, metrics
-        
-    except Exception as e:
-        logger.error(f"Error during LTC model training: {e}")
-        raise optuna.exceptions.TrialPruned()
-
-
 def calculate_forecast_metrics(y_true, y_pred):
     """
     Calculate comprehensive metrics for forecast evaluation.
-    
+
     Args:
         y_true: True values
         y_pred: Predicted values
-        
+
     Returns:
         Dictionary of metrics
     """
     import numpy as np
-    from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-    
+    from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
     # Ensure arrays are the right shape
     if len(y_true.shape) > 1 and y_true.shape[1] > 1:
         # For multi-step forecasts, average metrics across horizons
@@ -748,21 +646,21 @@ def calculate_forecast_metrics(y_true, y_pred):
         mae_values = []
         mape_values = []
         r2_values = []
-        
+
         for i in range(y_true.shape[1]):
             y_t = y_true[:, i]
             y_p = y_pred[:, i]
-            
+
             mse_values.append(mean_squared_error(y_t, y_p))
             mae_values.append(mean_absolute_error(y_t, y_p))
-            
+
             # Handle division by zero in MAPE
-            with np.errstate(divide='ignore', invalid='ignore'):
+            with np.errstate(divide="ignore", invalid="ignore"):
                 mape = np.mean(np.abs((y_t - y_p) / np.abs(y_t + 1e-10))) * 100
                 mape_values.append(np.nan_to_num(mape, nan=0.0, posinf=0.0, neginf=0.0))
-            
+
             r2_values.append(r2_score(y_t, y_p))
-        
+
         # Average metrics across horizons
         mse = np.mean(mse_values)
         rmse = np.sqrt(mse)
@@ -773,18 +671,18 @@ def calculate_forecast_metrics(y_true, y_pred):
         # For single-step forecasts
         y_true = y_true.flatten()
         y_pred = y_pred.flatten()
-        
+
         mse = mean_squared_error(y_true, y_pred)
         rmse = np.sqrt(mse)
         mae = mean_absolute_error(y_true, y_pred)
-        
+
         # Handle division by zero in MAPE
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             mape = np.mean(np.abs((y_true - y_pred) / np.abs(y_true + 1e-10))) * 100
             mape = np.nan_to_num(mape, nan=0.0, posinf=0.0, neginf=0.0)
-        
+
         r2 = r2_score(y_true, y_pred)
-    
+
     # Calculate direction accuracy
     if len(y_true) > 1:
         true_direction = np.sign(np.diff(y_true))
@@ -793,163 +691,198 @@ def calculate_forecast_metrics(y_true, y_pred):
         direction_accuracy = np.mean(direction_match) * 100
     else:
         direction_accuracy = 0.0
-    
+
     return {
-        'mse': mse,
-        'rmse': rmse,
-        'mae': mae,
-        'mape': mape,
-        'r2': r2,
-        'direction_accuracy': direction_accuracy
+        "mse": mse,
+        "rmse": rmse,
+        "mae": mae,
+        "mape": mape,
+        "r2": r2,
+        "direction_accuracy": direction_accuracy,
     }
 
 
-def optimize_ltc_model(X_train, y_train, X_val=None, y_val=None, num_trials=100, timeout=3600,
-                     study_name="ltc_optimization", storage=None, load_if_exists=True):
+def get_ltc_hyperparameter_ranges():
     """
-    Optimize LTC model with Optuna.
-    
-    Args:
-        X_train: Training features
-        y_train: Training targets
-        X_val: Validation features (if None, split from training data)
-        y_val: Validation targets (if None, split from training data)
-        num_trials: Number of Optuna trials
-        timeout: Timeout in seconds
-        study_name: Name for Optuna study
-        storage: Optuna storage URL
-        load_if_exists: Whether to load existing study
-        
-    Returns:
-        Tuple of (best_params, best_model, study)
+    Define hyperparameter ranges for Optuna optimization of LTC models.
+
+    These ranges match the dashboard UI and are optimized for financial time series.
     """
-    import optuna
-    from sklearn.model_selection import train_test_split
-    
-    # Extract dimensions
-    lookback = X_train.shape[1] if len(X_train.shape) > 2 else 30
-    num_features = X_train.shape[2] if len(X_train.shape) > 2 else X_train.shape[1]
-    horizon = y_train.shape[1] if len(y_train.shape) > 1 else 1
-    
-    # Create validation split if not provided
-    if X_val is None or y_val is None:
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_train, y_train, test_size=0.2, random_state=42
-        )
-    
-    # Define objective function for Optuna
-    def objective(trial):
-        model, val_loss, metrics = train_ltc_with_optuna(
-            trial, X_train, y_train, X_val, y_val, num_features, horizon, lookback
-        )
-        
-        # Return RMSE as the optimization target
-        return metrics['rmse']
-    
-    # Create the Optuna study
-    pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=10)
-    study = optuna.create_study(
-        study_name=study_name,
-        storage=storage,
-        load_if_exists=load_if_exists,
-        direction="minimize",
-        pruner=pruner
-    )
-    
-    # Optimize
-    logger.info(f"Starting LTC optimization with {num_trials} trials")
-    study.optimize(objective, n_trials=num_trials, timeout=timeout)
-    
-    # Get best parameters and create model with them
-    best_params = study.best_params
-    logger.info(f"Best parameters: {best_params}")
-    
-    # Add fixed parameters
-    best_params.update({
-        "num_features": num_features,
-        "horizon": horizon,
-        "lookback": lookback
-    })
-    
-    # Create and train best model
-    best_model = build_ltc_model(**best_params)
-    callbacks = get_callbacks(patience=30, timescale_logging=True)
-    
-    best_model.fit(
-        X_train, y_train,
-        epochs=200,  # Train longer for best model
-        batch_size=32,
-        validation_data=(X_val, y_val),
-        callbacks=callbacks,
-        verbose=1
-    )
-    
-    return best_params, best_model, study
+    return {
+        # Core architecture
+        "units": {"type": "int", "low": 32, "high": 512, "log": True},
+        "hidden_size": {"type": "int", "low": 32, "high": 256, "log": True},
+        "num_layers": {"type": "int", "low": 1, "high": 4, "step": 1},
+        "activation": {
+            "type": "categorical",
+            "choices": ["tanh", "relu", "sigmoid", "gelu"],
+        },
+        # Timescales - key parameters for LTC
+        "timescale_min": {"type": "float", "low": 0.0001, "high": 0.1, "log": True},
+        "timescale_max": {"type": "float", "low": 1.0, "high": 100.0, "log": True},
+        # Training parameters
+        "learning_rate": {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
+        "dropout_rate": {"type": "float", "low": 0.0, "high": 0.5, "step": 0.05},
+        "recurrent_dropout": {"type": "float", "low": 0.0, "high": 0.5, "step": 0.05},
+        "l2_reg": {"type": "float", "low": 1e-6, "high": 1e-2, "log": True},
+        # Architecture options
+        "use_bidirectional": {"type": "categorical", "choices": [True, False]},
+        "use_dense_after_ltc": {"type": "categorical", "choices": [True, False]},
+        "use_batch_normalization": {"type": "categorical", "choices": [True, False]},
+        "use_layer_normalization": {"type": "categorical", "choices": [True, False]},
+        "use_residual_connections": {"type": "categorical", "choices": [True, False]},
+        # Advanced features
+        "use_attention": {"type": "categorical", "choices": [True, False]},
+        "attention_size": {"type": "int", "low": 32, "high": 128, "log": True},
+        "include_market_features": {"type": "categorical", "choices": [True, False]},
+        # Optimizer settings
+        "optimizer_type": {
+            "type": "categorical",
+            "choices": ["adam", "adamw", "rmsprop"],
+        },
+        "use_lr_schedule": {"type": "categorical", "choices": [True, False]},
+        # Loss function
+        "loss_function": {
+            "type": "categorical",
+            "choices": ["mse", "mae", "huber_loss"],
+        },
+        # NEW: Incremental learning parameters
+        "retraining_threshold": {
+            "type": "float",
+            "low": 0.01,
+            "high": 0.5,
+            "log": True,
+        },
+        "walk_forward_window": {"type": "int", "low": 3, "high": 60, "step": 1},
+        "update_frequency": {"type": "int", "low": 1, "high": 30, "step": 1},
+        "reuse_weight_ratio": {"type": "float", "low": 0.0, "high": 1.0, "step": 0.1},
+        "early_stopping_patience": {"type": "int", "low": 5, "high": 50, "step": 5},
+    }
+
+
+# Add TimescaleAnalysisCallback class to monitor timescale learning during training
+class TimescaleAnalysisCallback(tf.keras.callbacks.Callback):
+    """
+    Callback to analyze learned timescales during training.
+
+    This helps understand what temporal patterns the model is learning.
+    """
+
+    def __init__(self, logging_freq=10):
+        super(TimescaleAnalysisCallback, self).__init__()
+        self.logging_freq = logging_freq
+
+    def on_epoch_end(self, epoch, logs=None):
+        if epoch % self.logging_freq != 0:
+            return
+
+        # Find LTC layers
+        ltc_layers = [
+            layer
+            for layer in self.model.layers
+            if isinstance(layer, tf.keras.layers.RNN)
+            and isinstance(layer.cell, LTCCell)
+        ]
+
+        for i, layer in enumerate(ltc_layers):
+            tau = layer.cell.tau.numpy()
+            logger.info(f"Epoch {epoch}, LTC layer {i+1} timescales:")
+            logger.info(f"  Min timescale: {np.min(tau):.4f}")
+            logger.info(f"  Max timescale: {np.max(tau):.4f}")
+            logger.info(f"  Mean timescale: {np.mean(tau)::.4f}")
+            logger.info(f"  Median timescale: {np.median(tau)::.4f}")
+
+
+def get_callbacks(
+    patience=20,
+    reduce_lr_factor=0.2,
+    monitor="val_loss",
+    mode="min",
+    timescale_logging=True,
+):
+    """Get training callbacks for LTC model."""
+    callbacks = [
+        tf.keras.callbacks.EarlyStopping(
+            monitor=monitor, patience=patience, restore_best_weights=True, mode=mode
+        ),
+        tf.keras.callbacks.ReduceLROnPlateau(
+            monitor=monitor,
+            factor=reduce_lr_factor,
+            patience=patience // 2,
+            min_lr=1e-6,
+            mode=mode,
+        ),
+    ]
+
+    # Add timescale analysis if requested
+    if timescale_logging:
+        callbacks.append(TimescaleAnalysisCallback(logging_freq=10))
+
+    return callbacks
 
 
 def visualize_ltc_dynamics(model, sample_input, save_path=None):
     """
     Visualize the dynamics of an LTC model.
-    
+
     Args:
         model: Trained LTC model
         sample_input: Sample input for visualization
         save_path: Path to save visualization (if None, display instead)
-        
+
     Returns:
         None
     """
     import matplotlib.pyplot as plt
     import numpy as np
-    
+
     # Find LTC layers
-    ltc_layers = [layer for layer in model.layers 
-                 if isinstance(layer, tf.keras.layers.RNN) and 
-                 hasattr(layer.cell, 'tau')]
-    
+    ltc_layers = [
+        layer
+        for layer in model.layers
+        if isinstance(layer, tf.keras.layers.RNN) and hasattr(layer.cell, "tau")
+    ]
+
     if not ltc_layers:
         logger.warning("No LTC layers found in model")
         return
-    
+
     # Process sample input
     sample_prediction = model.predict(sample_input[np.newaxis])[0]
-    
+
     # Create a model that outputs the LTC states
     ltc_layer = ltc_layers[0]
-    state_model = tf.keras.Model(
-        inputs=model.inputs,
-        outputs=ltc_layer.output
-    )
-    
+    state_model = tf.keras.Model(inputs=model.inputs, outputs=ltc_layer.output)
+
     # Get states for sample input
     states = state_model.predict(sample_input[np.newaxis])[0]
-    
+
     # Get timescales
     tau_values = ltc_layer.cell.tau.numpy()
-    
+
     # Plot timescale distribution
     fig, axes = plt.subplots(2, 1, figsize=(12, 10))
-    
+
     # Timescale distribution plot
-    axes[0].hist(tau_values, bins=30, alpha=0.7, color='blue')
-    axes[0].set_xlabel('Timescale Value')
-    axes[0].set_ylabel('Count')
-    axes[0].set_title('Distribution of Learned Timescales')
+    axes[0].hist(tau_values, bins=30, alpha=0.7, color="blue")
+    axes[0].set_xlabel("Timescale Value")
+    axes[0].set_ylabel("Count")
+    axes[0].set_title("Distribution of Learned Timescales")
     axes[0].grid(True, alpha=0.3)
-    
+
     # State dynamics plot - show a subset of units
     num_units_to_plot = min(10, states.shape[1])
     for i in range(num_units_to_plot):
-        axes[1].plot(states[:, i], label=f'Unit {i} (τ={tau_values[i]:.3f})')
-    
-    axes[1].set_xlabel('Time Steps')
-    axes[1].set_ylabel('Unit Activation')
-    axes[1].set_title('LTC Unit Dynamics Over Time')
-    axes[1].legend(loc='upper right')
+        axes[1].plot(states[:, i], label=f"Unit {i} (τ={tau_values[i]:.3f})")
+
+    axes[1].set_xlabel("Time Steps")
+    axes[1].set_ylabel("Unit Activation")
+    axes[1].set_title("LTC Unit Dynamics Over Time")
+    axes[1].legend(loc="upper right")
     axes[1].grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
-    
+
     if save_path:
         plt.savefig(save_path)
         plt.close()
@@ -960,233 +893,95 @@ def visualize_ltc_dynamics(model, sample_input, save_path=None):
 def export_ltc_model(model, path):
     """
     Export an LTC model for deployment.
-    
+
     Args:
         model: Trained LTC model
         path: Export path
-        
+
     Returns:
         None
     """
     # Try to extract important timescale information before saving
     ltc_params = {}
-    
+
     # Find LTC layers and extract parameters
     for i, layer in enumerate(model.layers):
-        if isinstance(layer, tf.keras.layers.RNN) and hasattr(layer.cell, 'tau'):
+        if isinstance(layer, tf.keras.layers.RNN) and hasattr(layer.cell, "tau"):
             ltc_params[f"ltc_layer_{i}"] = {
                 "tau_min": float(layer.cell.tau.numpy().min()),
                 "tau_max": float(layer.cell.tau.numpy().max()),
                 "tau_mean": float(layer.cell.tau.numpy().mean()),
-                "tau_median": float(np.median(layer.cell.tau.numpy()))
+                "tau_median": float(np.median(layer.cell.tau.numpy())),
             }
-    
+
     # Save the model with SavedModel format
     model.save(path, save_format="tf")
-    
+
     # Save additional metadata
     import json
+
     with open(os.path.join(path, "ltc_metadata.json"), "w") as f:
-        json.dump({
-            "model_type": "LTC",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "timescale_params": ltc_params
-        }, f, indent=4)
-    
+        json.dump(
+            {
+                "model_type": "LTC",
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "timescale_params": ltc_params,
+            },
+            f,
+            indent=4,
+        )
+
     logger.info(f"LTC model exported to {path}")
 
 
 def load_ltc_model(path):
     """
     Load an LTC model from disk.
-    
+
     Args:
         path: Path to saved model
-        
+
     Returns:
         Loaded model
     """
     # Custom object scope to ensure LTC cells are loaded properly
     custom_objects = {
         "LTCCell": LTCCell,
-        "TimescaleAnalysisCallback": TimescaleAnalysisCallback
+        "TimescaleAnalysisCallback": TimescaleAnalysisCallback,
     }
-    
+
     with tf.keras.utils.custom_object_scope(custom_objects):
         model = tf.keras.models.load_model(path)
-    
+
     return model
-
-
-def get_ltc_hyperparameter_ranges():
-    """
-    Define hyperparameter ranges for Optuna optimization of LTC models.
-    
-    These ranges match the dashboard UI and are optimized for financial time series.
-    """
-    return {
-        # Core architecture
-        "units": {"type": "int", "low": 32, "high": 512, "log": True},
-        "hidden_size": {"type": "int", "low": 32, "high": 256, "log": True},
-        "num_layers": {"type": "int", "low": 1, "high": 4, "step": 1},
-        "activation": {"type": "categorical", "choices": ["tanh", "relu", "sigmoid", "gelu"]},
-        
-        # Timescales - key parameters for LTC
-        "timescale_min": {"type": "float", "low": 0.0001, "high": 0.1, "log": True},
-        "timescale_max": {"type": "float", "low": 1.0, "high": 100.0, "log": True},
-        
-        # Training parameters
-        "learning_rate": {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
-        "dropout_rate": {"type": "float", "low": 0.0, "high": 0.5, "step": 0.05},
-        "recurrent_dropout": {"type": "float", "low": 0.0, "high": 0.5, "step": 0.05},
-        "l2_reg": {"type": "float", "low": 1e-6, "high": 1e-2, "log": True},
-        
-        # Architecture options
-        "use_bidirectional": {"type": "categorical", "choices": [True, False]},
-        "use_dense_after_ltc": {"type": "categorical", "choices": [True, False]},
-        "use_batch_normalization": {"type": "categorical", "choices": [True, False]},
-        "use_layer_normalization": {"type": "categorical", "choices": [True, False]},
-        "use_residual_connections": {"type": "categorical", "choices": [True, False]},
-        
-        # Advanced features
-        "use_attention": {"type": "categorical", "choices": [True, False]},
-        "attention_size": {"type": "int", "low": 32, "high": 128, "log": True},
-        "include_market_features": {"type": "categorical", "choices": [True, False]},
-        
-        # Optimizer settings
-        "optimizer_type": {"type": "categorical", "choices": ["adam", "adamw", "rmsprop"]},
-        "use_lr_schedule": {"type": "categorical", "choices": [True, False]},
-        
-        # Loss function
-        "loss_function": {"type": "categorical", "choices": ["mse", "mae", "huber_loss"]},
-        
-        # NEW: Incremental learning parameters
-        "retraining_threshold": {"type": "float", "low": 0.01, "high": 0.5, "log": True},
-        "walk_forward_window": {"type": "int", "low": 3, "high": 60, "step": 1},
-        "update_frequency": {"type": "int", "low": 1, "high": 30, "step": 1},
-        "reuse_weight_ratio": {"type": "float", "low": 0.0, "high": 1.0, "step": 0.1},
-        "early_stopping_patience": {"type": "int", "low": 5, "high": 50, "step": 5}
-    }
-
-def suggest_ltc_hyperparameters(trial):
-    """
-    Suggest hyperparameters for LTC model during Optuna optimization.
-    
-    Args:
-        trial: Optuna trial object
-        
-    Returns:
-        Dictionary of hyperparameter values
-    """
-    param_ranges = get_ltc_hyperparameter_ranges()
-    params = {}
-    
-    for param_name, param_config in param_ranges.items():
-        param_type = param_config["type"]
-        
-        if param_type == "int":
-            low = param_config["low"]
-            high = param_config["high"]
-            log = param_config.get("log", False)
-            step = param_config.get("step", 1)
-            params[param_name] = trial.suggest_int(param_name, low, high, step=step, log=log)
-            
-        elif param_type == "float":
-            low = param_config["low"]
-            high = param_config["high"]
-            log = param_config.get("log", False)
-            step = param_config.get("step", None)
-            if step:
-                params[param_name] = trial.suggest_float(param_name, low, high, step=step, log=log)
-            else:
-                params[param_name] = trial.suggest_float(param_name, low, high, log=log)
-                
-        elif param_type == "categorical":
-            choices = param_config["choices"]
-            params[param_name] = trial.suggest_categorical(param_name, choices)
-    
-    return params
-
-# Add TimescaleAnalysisCallback class to monitor timescale learning during training
-class TimescaleAnalysisCallback(tf.keras.callbacks.Callback):
-    """
-    Callback to analyze learned timescales during training.
-    
-    This helps understand what temporal patterns the model is learning.
-    """
-    def __init__(self, logging_freq=10):
-        super(TimescaleAnalysisCallback, self).__init__()
-        self.logging_freq = logging_freq
-        
-    def on_epoch_end(self, epoch, logs=None):
-        if epoch % self.logging_freq != 0:
-            return
-            
-        # Find LTC layers
-        ltc_layers = [layer for layer in self.model.layers 
-                     if isinstance(layer, tf.keras.layers.RNN) and 
-                     isinstance(layer.cell, LTCCell)]
-        
-        for i, layer in enumerate(ltc_layers):
-            tau = layer.cell.tau.numpy()
-            logger.info(f"Epoch {epoch}, LTC layer {i+1} timescales:")
-            logger.info(f"  Min timescale: {np.min(tau):.4f}")
-            logger.info(f"  Max timescale: {np.max(tau):.4f}")
-            logger.info(f"  Mean timescale: {np.mean(tau):.4f}")
-            logger.info(f"  Median timescale: {np.median(tau):.4f}")
-
-def get_callbacks(patience=20, reduce_lr_factor=0.2, monitor='val_loss', mode='min', timescale_logging=True):
-    """Get training callbacks for LTC model."""
-    callbacks = [
-        tf.keras.callbacks.EarlyStopping(
-            monitor=monitor, 
-            patience=patience,
-            restore_best_weights=True,
-            mode=mode
-        ),
-        tf.keras.callbacks.ReduceLROnPlateau(
-            monitor=monitor,
-            factor=reduce_lr_factor,
-            patience=patience // 2,
-            min_lr=1e-6,
-            mode=mode
-        )
-    ]
-    
-    # Add timescale analysis if requested
-    if timescale_logging:
-        callbacks.append(TimescaleAnalysisCallback(logging_freq=10))
-    
-    return callbacks
 
 
 if __name__ == "__main__":
     import numpy as np
-    from sklearn.preprocessing import StandardScaler
-    
+
     # Simple test to verify functionality
     print("Testing LTC model implementation...")
-    
+
     # Generate some test data (sine wave with noise)
     t = np.linspace(0, 20 * np.pi, 1000)
     data = np.sin(t) + 0.1 * np.random.randn(1000)
-    
+
     # Create sequences
     lookback = 50
     horizon = 10
     X, y = [], []
     for i in range(len(data) - lookback - horizon):
-        X.append(data[i:i+lookback])
-        y.append(data[i+lookback:i+lookback+horizon])
-    
+        X.append(data[i : i + lookback])
+        y.append(data[i + lookback : i + lookback + horizon])
+
     X = np.array(X).reshape(-1, lookback, 1)
     y = np.array(y)
-    
+
     # Split data
     train_size = int(0.7 * len(X))
     X_train, X_test = X[:train_size], X[train_size:]
     y_train, y_test = y[:train_size], y[train_size:]
-    
+
     # Create and train a simple LTC model
     model = build_ltc_model(
         num_features=1,
@@ -1195,20 +990,22 @@ if __name__ == "__main__":
         units=64,
         num_layers=2,
         hidden_size=64,
-        dropout_rate=0.1
+        dropout_rate=0.1,
     )
-    
+
     print(model.summary())
-    
+
     # Train the model for a few epochs
-    model.fit(X_train, y_train, epochs=5, batch_size=32, validation_data=(X_test, y_test))
-    
+    model.fit(
+        X_train, y_train, epochs=5, batch_size=32, validation_data=(X_test, y_test)
+    )
+
     # Evaluate
     mse = model.evaluate(X_test, y_test)
     print(f"Test MSE: {mse}")
-    
+
     # Make predictions
     predictions = model.predict(X_test[:5])
     print(f"Predictions shape: {predictions.shape}")
-    
+
     print("LTC model implementation test completed!")

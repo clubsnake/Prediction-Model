@@ -6,11 +6,7 @@ This module centralizes all imports needed by various visualization components.
 import logging
 import os
 import sys
-from typing import Dict, List, Optional, Union, Any, Tuple
-from datetime import datetime, timedelta
-import json
-import numpy as np
-import pandas as pd
+
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -28,15 +24,16 @@ if project_root not in sys.path:
 try:
     # Matplotlib imports
     import matplotlib
-    import matplotlib.pyplot as plt 
+    import matplotlib.pyplot as plt
     import seaborn as sns
-    matplotlib.use('Agg')  # Use non-interactive backend
-    
+
+    matplotlib.use("Agg")  # Use non-interactive backend
+
     # Plotly imports
-    import plotly.graph_objects as go
     import plotly.express as px
+    import plotly.graph_objects as go
     from plotly.subplots import make_subplots
-    
+
     # Set flag indicating visualization libraries are available
     HAS_VISUALIZATION_LIBS = True
     logger.info("Successfully imported visualization libraries")
@@ -47,6 +44,7 @@ except ImportError as e:
 # Try to import Streamlit for dashboard components
 try:
     import streamlit as st
+
     HAS_STREAMLIT = True
 except ImportError:
     HAS_STREAMLIT = False
@@ -55,13 +53,15 @@ except ImportError:
 # Try to import config values with error handling
 try:
     from config.config_loader import get_value
+
     logger.info("Successfully loaded visualization config from config_loader")
 except ImportError:
     logger.warning("Config not found, using default visualization settings")
+
     # Define a fallback get_value function
     def get_value(path, default=None, target=None):
         return default
-    
+
     # Default settings if config import fails
     SHOW_PREDICTION_PLOTS = True
     SHOW_TRAINING_HISTORY = True
@@ -76,8 +76,8 @@ except ImportError:
             "show_ma": False,
             "show_bb": False,
             "show_rsi": False,
-            "show_macd": False
-        }
+            "show_macd": False,
+        },
     }
 
 # Standard color schemes
@@ -89,7 +89,7 @@ COLOR_SCHEMES = {
         "volume_up": "rgba(38, 166, 154, 0.5)",
         "volume_down": "rgba(239, 83, 80, 0.5)",
         "ma20": "#ff9800",
-        "ma50": "#2196f3", 
+        "ma50": "#2196f3",
         "ma200": "#757575",
     },
     "dark": {
@@ -111,8 +111,9 @@ COLOR_SCHEMES = {
         "ma20": "#212121",
         "ma50": "#616161",
         "ma200": "#9e9e9e",
-    }
+    },
 }
+
 
 def get_active_color_scheme():
     """Get the currently active color scheme based on settings"""

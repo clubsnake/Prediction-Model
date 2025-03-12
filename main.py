@@ -2,6 +2,7 @@
 Main entry point. Sets environment variables, launches Streamlit dashboard,
 and optionally performs real-time updates or auto-tuning.
 """
+
 import logging
 import os
 import subprocess
@@ -9,7 +10,7 @@ import sys
 import threading
 
 # Add project root to sys.path for absolute imports
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(project_root)
 
 # Import TensorFlow safely
@@ -22,7 +23,7 @@ except ImportError:
 
 # Configure GPU first (ensure resource_config exists and is correct)
 try:
-    from config import system_config
+    pass
 except Exception as e:
     print(f"Error importing resource_config: {e}")
 
@@ -50,11 +51,11 @@ logger = logging.getLogger()
 
 # Import and register TFT model safely
 try:
-    from src.tuning import meta_tuning
     from src.models.temporal_fusion_transformer import (
         add_tft_to_model_types,
         add_tft_to_optuna_search,
     )
+    from src.tuning import meta_tuning
 
     # Register TFT with model system
     add_tft_to_model_types()
@@ -116,19 +117,19 @@ def launch_dashboard(mode="full") -> None:
             logger.info("Launching enhanced dashboard...")
         else:
             possible_paths = [
-               os.path.join("src", "dashboard", "dashboard", "dashboard_core.py"),
+                os.path.join("src", "dashboard", "dashboard", "dashboard_core.py"),
             ]
-            
+
             script_path = None
             for path in possible_paths:
                 if os.path.exists(path):
                     script_path = path
                     break
-            
+
             if not script_path:
                 logger.error("Dashboard file not found in any expected location")
                 return
-                
+
             logger.info(f"Launching standard dashboard from {script_path}...")
 
         command = [sys.executable, "-m", "streamlit", "run", script_path]
@@ -141,14 +142,13 @@ def launch_dashboard(mode="full") -> None:
         logger.error(f"Error launching {mode} dashboard: {e}")
 
 
+from config import Config
+from src.dashboard.prediction_service import PredictionService
 from src.data.data_handler import DataHandler
 from src.data.data_loader import DataLoader
+from src.data.data_utils import train_test_split
 from src.models.model_factory import ModelFactory
 from src.models.model_trainer import ModelTrainer
-from src.dashboard.prediction_service import PredictionService
-
-from config import Config
-from src.data.data_utils import train_test_split
 
 
 def main() -> None:

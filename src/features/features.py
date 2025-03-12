@@ -199,6 +199,7 @@ def add_vmli(
     smooth_period: int = 3,
     winsorize_pct: float = 0.01,
     use_ema: bool = True,
+    timeframe: str = "1d",  # Added timeframe parameter
 ) -> pd.DataFrame:
     """
     Add Volatility-Adjusted Momentum Liquidity Index (VMLI) to df.
@@ -210,6 +211,7 @@ def add_vmli(
         smooth_period: Period for final smoothing of the indicator
         winsorize_pct: Percentile for winsorizing extreme values (0.01 = 1%)
         use_ema: Whether to use EMA (True) or SMA (False) for smoothing
+        timeframe: Timeframe of the data for adaptive parameters
 
     Returns:
         DataFrame with VMLI indicators added
@@ -233,9 +235,13 @@ def add_vmli(
         price_col = "Close"  # Your dataframe uses 'Close' instead of 'close'
         volume_col = "Volume"  # Your dataframe uses 'Volume' instead of 'volume'
 
-        # Calculate VMLI with components
+        # Calculate VMLI with components, passing timeframe
         components = vmli.compute(
-            data=df, price_col=price_col, volume_col=volume_col, include_components=True
+            data=df,
+            price_col=price_col,
+            volume_col=volume_col,
+            include_components=True,
+            timeframe=timeframe,  # Pass timeframe parameter
         )
 
         # Add all VMLI components to the dataframe
@@ -441,9 +447,9 @@ def feature_engineering(df: pd.DataFrame, ticker: str = None) -> pd.DataFrame:
     """
     Feature engineering entry point that reads default parameters from config.
     """
-    from config import (
+    from config.config_loader import ATR_PERIOD  # VMLI parameters
+    from config.config_loader import (
         APPLY_WEEKEND_GAP,
-        ATR_PERIOD,  # VMLI parameters
         BOLL_NSTD,
         BOLL_WINDOW,
         MACD_FAST,
@@ -530,9 +536,7 @@ def compute_werpi(data, hmm_model, level=3, scale=1.0, wavelet="db4"):
 
 
 # Advanced Technical Indicators
-import numpy as np
 import pandas as pd
-import pywt
 
 
 def add_keltner_channels(
@@ -744,7 +748,7 @@ def add_breakout_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["Volume_MA_20"] = vol_ma_20
     # Ensure we're dividing Series by Series
     df["Volume_Ratio"] = df["Volume"].div(vol_ma_20)
-    
+
     df["Range"] = df["High"] - df["Low"]
     df["Avg_Range_20"] = df["Range"].rolling(window=20).mean()
     df["Range_Expansion"] = df["Range"] / df["Avg_Range_20"]
@@ -890,3 +894,336 @@ def feature_engineering_with_optuna_params(df, trial=None, ticker=None):
         use_breakout=use_breakout,
         use_deep_analytics=use_deep_analytics,
     )
+
+
+import logging
+from typing import Dict
+
+import pandas as pd
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
+# Import necessary indicator functions
+from src.features.indicator_tuning import add_werpi_indicator
+
+
+def calculate_emas(df: pd.DataFrame) -> Dict[int, pd.Series]:
+    """Calculate multiple EMAs once to avoid redundant computation"""
+    emas = {}
+    for period in [5, 8, 12, 13, 21, 26, 34, 55, 89, 144]:
+        emas[period] = df["Close"].ewm(span=period, adjust=False).mean()
+    return emas
+
+
+def add_rsi(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+    """Add Relative Strength Index"""
+    delta = df["Close"].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    df["RSI"] = 100 - (100 / (1 + rs))
+    return df
+
+
+def add_macd(
+    df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9, emas=None
+) -> pd.DataFrame:
+    """Add Moving Average Convergence Divergence"""
+    if emas is not None and fast in emas and slow in emas:
+        # Use pre-calculated EMAs if available
+        fast_ema = emas[fast]
+        slow_ema = emas[slow]
+    else:
+        fast_ema = df["Close"].ewm(span=fast, adjust=False).mean()
+        slow_ema = df["Close"].ewm(span=slow, adjust=False).mean()
+
+    df["MACD"] = fast_ema - slow_ema
+    df["MACD_Signal"] = df["MACD"].ewm(span=signal, adjust=False).mean()
+    df["MACD_Hist"] = df["MACD"] - df["MACD_Signal"]
+    return df
+
+
+def add_bollinger_bands(
+    df: pd.DataFrame, window: int = 20, num_std: float = 2.0
+) -> pd.DataFrame:
+    """Add Bollinger Bands"""
+    df["BB_Mid"] = df["Close"].rolling(window=window).mean()
+    rolling_std = df["Close"].rolling(window=window).std()
+    df["BB_Upper"] = df["BB_Mid"] + (rolling_std * num_std)
+    df["BB_Lower"] = df["BB_Mid"] - (rolling_std * num_std)
+    df["BB_Width"] = (df["BB_Upper"] - df["BB_Lower"]) / df["BB_Mid"]
+    df["BB_Pct"] = (df["Close"] - df["BB_Lower"]) / (df["BB_Upper"] - df["BB_Lower"])
+    return df
+
+
+def add_atr(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+    """Add Average True Range"""
+    high_low = df["High"] - df["Low"]
+    high_close_prev = abs(df["High"] - df["Close"].shift(1))
+    low_close_prev = abs(df["Low"] - df["Close"].shift(1))
+
+    tr = pd.DataFrame(
+        {"hl": high_low, "hcp": high_close_prev, "lcp": low_close_prev}
+    ).max(axis=1)
+    df["ATR"] = tr.rolling(window=period).mean()
+    return df
+
+
+def add_obv(df: pd.DataFrame) -> pd.DataFrame:
+    """Add On-Balance Volume"""
+    df["OBV"] = np.where(
+        df["Close"] > df["Close"].shift(1),
+        df["Volume"],
+        np.where(df["Close"] < df["Close"].shift(1), -df["Volume"], 0),
+    ).cumsum()
+    return df
+
+
+def add_weekend_gap_feature(df: pd.DataFrame, apply_gap: bool = True) -> pd.DataFrame:
+    """Add weekend gap features"""
+    if "date" not in df.columns:
+        return df
+
+    df["DayOfWeek"] = df["date"].dt.dayofweek
+    df["WeekendGap"] = 0.0
+
+    if apply_gap:
+        # Monday has dayofweek = 0, check for gap from previous trading day
+        monday_mask = df["DayOfWeek"] == 0
+        df.loc[monday_mask, "WeekendGap"] = (
+            df.loc[monday_mask, "Open"] / df.loc[monday_mask, "Close"].shift(1) - 1
+        )
+
+    return df
+
+
+# Placeholder for more advanced indicator functions
+def add_keltner_channels(df: pd.DataFrame) -> pd.DataFrame:
+    """Add Keltner Channels"""
+    # Implementation here
+    return df
+
+
+def add_ichimoku_cloud(df: pd.DataFrame) -> pd.DataFrame:
+    """Add Ichimoku Cloud"""
+    # Implementation here
+    return df
+
+
+def add_fibonacci_patterns(df: pd.DataFrame) -> pd.DataFrame:
+    """Add Fibonacci pattern detection"""
+    # Implementation here
+    return df
+
+
+def add_volatility_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Add various volatility indicators"""
+    # Implementation here
+    return df
+
+
+def add_momentum_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Add various momentum indicators"""
+    # Implementation here
+    return df
+
+
+def add_breakout_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Add breakout detection indicators"""
+    # Implementation here
+    return df
+
+
+def add_deep_analytics(df: pd.DataFrame) -> pd.DataFrame:
+    """Add more complex indicators based on deep analytics"""
+    # Implementation here
+    return df
+
+
+def feature_engineering_with_params(
+    df: pd.DataFrame,
+    ticker: str = None,
+    timeframe: str = "1d",  # Added explicit timeframe parameter
+    rsi_period: int = 14,
+    macd_fast: int = 12,
+    macd_slow: int = 26,
+    macd_signal: int = 9,
+    boll_window: int = 20,
+    boll_nstd: float = 2.0,
+    atr_period: int = 14,
+    werpi_wavelet: str = "db4",
+    werpi_level: int = 3,
+    werpi_n_states: int = 2,
+    werpi_scale: float = 1.0,
+    apply_weekend_gap: bool = True,
+    # VMLI parameters
+    use_vmli: bool = True,
+    vmli_window_mom: int = 14,
+    vmli_window_vol: int = 14,
+    vmli_smooth_period: int = 3,
+    vmli_winsorize_pct: float = 0.01,
+    vmli_use_ema: bool = True,
+    # Advanced indicator flags
+    use_advanced_indicators: bool = True,  # Master switch for all advanced indicators
+    # Other advanced indicator flags:
+    use_keltner: bool = True,
+    use_ichimoku: bool = True,
+    use_fibonacci: bool = True,
+    use_volatility: bool = True,
+    use_momentum: bool = True,
+    use_breakout: bool = True,
+    use_deep_analytics: bool = True,
+    # Add optuna_tuned_params parameter to allow passing in tuned parameters
+    optuna_tuned_params: Dict = None,
+) -> pd.DataFrame:
+    """
+    Apply multiple technical indicators to the DataFrame according
+    to specified parameters, including advanced indicators.
+
+    With improved timeframe adaptation and memory efficiency.
+    """
+    # Make a copy only of required columns to conserve memory
+    required_cols = ["date", "Open", "High", "Low", "Close", "Volume"]
+    df_cols = [col for col in required_cols if col in df.columns]
+    result_df = df[df_cols].copy()
+
+    if "date" in result_df.columns:
+        result_df["date"] = pd.to_datetime(result_df["date"])
+
+    # Override parameters with Optuna-tuned params if provided
+    if optuna_tuned_params:
+        if "werpi" in optuna_tuned_params:
+            werpi_params = optuna_tuned_params["werpi"]["params"]
+            werpi_wavelet = werpi_params.get("wavelet_name", werpi_wavelet)
+            werpi_level = werpi_params.get("level", werpi_level)
+            werpi_n_states = werpi_params.get("n_states", werpi_n_states)
+            werpi_scale = werpi_params.get("scale_factor", werpi_scale)
+
+        if "vmli" in optuna_tuned_params:
+            vmli_params = optuna_tuned_params["vmli"]["params"]
+            vmli_window_mom = vmli_params.get("window_mom", vmli_window_mom)
+            vmli_window_vol = vmli_params.get("window_vol", vmli_window_vol)
+            vmli_smooth_period = vmli_params.get("smooth_period", vmli_smooth_period)
+            vmli_winsorize_pct = vmli_params.get("winsorize_pct", vmli_winsorize_pct)
+            vmli_use_ema = vmli_params.get("use_ema", vmli_use_ema)
+
+    # Adjust indicator parameters based on timeframe
+    if timeframe != "1d":
+        # Scale periods for intraday data
+        if timeframe in ["1h", "2h", "4h"]:
+            scale_factor = 0.25
+        elif timeframe in ["15m", "30m"]:
+            scale_factor = 0.1
+        elif timeframe in ["1m", "5m"]:
+            scale_factor = 0.05
+        else:
+            scale_factor = 1.0
+
+        # Apply scaling to period parameters
+        rsi_period = max(5, int(rsi_period * scale_factor))
+        macd_fast = max(3, int(macd_fast * scale_factor))
+        macd_slow = max(5, int(macd_slow * scale_factor))
+        macd_signal = max(3, int(macd_signal * scale_factor))
+        boll_window = max(5, int(boll_window * scale_factor))
+        atr_period = max(5, int(atr_period * scale_factor))
+
+    # Pre-calculate common values to avoid redundant computation
+    emas = calculate_emas(result_df)  # Calculate EMAs once
+
+    # Add basic indicators (always included)
+    result_df = add_rsi(result_df, period=rsi_period)
+    result_df = add_macd(
+        result_df, fast=macd_fast, slow=macd_slow, signal=macd_signal, emas=emas
+    )
+    result_df = add_bollinger_bands(result_df, window=boll_window, num_std=boll_nstd)
+    result_df = add_atr(result_df, period=atr_period)
+    result_df = add_obv(result_df)
+
+    # Add WERPI (always included as it's a core custom indicator)
+    result_df = add_werpi_indicator(
+        result_df,
+        wavelet_name=werpi_wavelet,
+        level=werpi_level,
+        n_states=werpi_n_states,
+        scale_factor=werpi_scale,
+    )
+
+    # Apply VMLI if flagged
+    if use_vmli:
+        try:
+            from src.features.vmli_indicator import VMILIndicator
+
+            vmli = VMILIndicator(
+                window_mom=vmli_window_mom,
+                window_vol=vmli_window_vol,
+                smooth_period=vmli_smooth_period,
+                winsorize_pct=vmli_winsorize_pct,
+                use_ema=vmli_use_ema,
+            )
+
+            # Calculate VMLI with timeframe awareness
+            components = vmli.compute(
+                data=result_df,
+                price_col="Close",
+                volume_col="Volume" if "Volume" in result_df.columns else None,
+                include_components=True,
+                timeframe=timeframe,  # Pass timeframe for auto-adjustment
+            )
+
+            # Add VMLI components to DataFrame
+            result_df["VMLI"] = components["vmli"]
+            result_df["VMLI_Momentum"] = components["momentum"]
+            result_df["VMLI_Volatility"] = components["volatility"]
+            result_df["VMLI_AdjMomentum"] = components["adj_momentum"]
+            result_df["VMLI_Liquidity"] = components["liquidity"]
+            result_df["VMLI_Raw"] = components["vmli_raw"]
+
+        except Exception as e:
+            logger.error(f"Error calculating VMLI: {str(e)}")
+            # Set default NaN values if calculation fails
+            result_df["VMLI"] = np.nan
+            result_df["VMLI_Momentum"] = np.nan
+            result_df["VMLI_Volatility"] = np.nan
+            result_df["VMLI_AdjMomentum"] = np.nan
+            result_df["VMLI_Liquidity"] = np.nan
+            result_df["VMLI_Raw"] = np.nan
+
+    # Apply advanced indicators if flagged and master switch is on
+    if use_advanced_indicators:
+        if use_keltner:
+            result_df = add_keltner_channels(result_df)
+        if use_ichimoku:
+            result_df = add_ichimoku_cloud(result_df)
+        if use_fibonacci:
+            result_df = add_fibonacci_patterns(result_df)
+        if use_volatility:
+            result_df = add_volatility_indicators(result_df)
+        if use_momentum:
+            result_df = add_momentum_indicators(result_df)
+        if use_breakout:
+            result_df = add_breakout_indicators(result_df)
+        if use_deep_analytics:
+            result_df = add_deep_analytics(result_df)
+
+    # Add gap features
+    if ticker is not None:
+        is_crypto = isinstance(ticker, str) and ticker.upper().endswith("-USD")
+        result_df["WeekendGap"] = 0.0
+        if not is_crypto and apply_weekend_gap:
+            result_df = add_weekend_gap_feature(result_df, apply_gap=True)
+    else:
+        result_df["WeekendGap"] = 0.0
+
+    # Add return and volatility features
+    result_df["Returns"] = result_df["Close"].pct_change()
+    result_df["Volatility"] = result_df["Returns"].rolling(window=10).std()
+
+    # Clean up and return
+    result_df.dropna(inplace=True)
+    result_df.reset_index(drop=True, inplace=True)
+    return result_df

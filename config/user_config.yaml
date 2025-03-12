@@ -1,223 +1,182 @@
-#######################
-# Prediction Model Configuration
-# Human-editable parameters
-#######################
+# User Configuration File
+#
+# This file contains user-editable settings that control the behavior of the prediction model.
+# Changes to this file take effect when the application is restarted.
+#
+# SECTIONS:
+# - api_keys: Integration with external data providers
+# - dashboard: UI configuration and display preferences
+# - features: Feature toggles for model inputs
+# - hardware: System resource allocation settings
+# - hyperparameter: Settings for the model tuning process
+# - model: Model architecture and training configuration
+# - tickers: Stock/crypto symbols to analyze
+# - time_series: Time window settings for analysis
+# - toggles: Global feature toggles
+# - training: Model training behavior settings
 
-#######################
-# Hardware Settings
-#######################
-hardware:
-  # GPU/CPU configuration
-  use_gpu: true                  # Set to false to force CPU usage
-  gpu_memory_fraction: "auto"    # Fraction of GPU memory to use (0.0-1.0) or "auto"
-  omp_num_threads: 4             # Number of CPU threads for parallel operations
-  use_mixed_precision: false     # Use mixed precision when available
-  use_directml: true             # Use DirectML acceleration for Windows
-  enable_xla: true               # Enable XLA compilation for faster execution
-
-#######################
-# API Keys Configuration
-#######################
 api_keys:
-  # API keys are stored in a separate private file
-  file_path: "config/api_keys.yaml"  # Path to private API keys file
-  # If the API keys file is not found, these defaults will be used
-  # (using empty strings or dummy values for security)
+  # Rate limiting for API calls to prevent exceeding quotas
+  coingecko_rate_limit_sleep: 1.5
   defaults:
-    finnhub_api_key: ""
-    alphavantage_api_key: ""
-    coingecko_api_key: ""
-  
-  # API rate limiting settings  
-  coingecko_rate_limit_sleep: 1.5  # Sleep between API calls (seconds)
+    # Default API keys (replace with your own keys for full functionality)
+    alphavantage_api_key: ''
+    coingecko_api_key: ''
+    finnhub_api_key: ''
+  file_path: config/api_keys.yaml
 
-
-#######################
-# Training Window Settings
-#######################
-time_series:
-  walk_forward:
-    enabled: true
-    min_train_window: 30   # Minimum days in training window
-    max_train_window: 180  # Maximum days in training window
-    step_size: 30          # Shift window by days each iteration
-    tune_windows: true     # Whether to tune window sizes during hyperparameter optimization
-
-training:
-  incremental_learning:
-    enabled: true
-    performance_drop_threshold: 0.1  # Retrain if performance drops by 10%
-    max_incremental_updates: 5       # Limit repeated incremental updates
-    tune_thresholds: true  # Whether to tune thresholds during hyperparameter optimization
-
-
-#######################
-# Time Settings
-#######################
-time_series:
-  default_interval: "1d"         # Default time interval
-  prediction_horizon: 30         # Days to predict into the future
-  apply_weekend_gap: true        # Apply gap between trading days for weekends
-  timeframes:                    # Available timeframes
-    - "1d"
-    - "3d"
-    - "1wk"
-    - "1h"
-    - "2h"
-    - "4h"
-    - "6h"
-    - "8h"
-    - "12h"
-    - "1mo"
-    - "1m"
-    - "5m"
-    - "15m"
-    - "30m"
-
-#######################
-# Training Settings
-#######################
-training:
-  # Basic training configuration
-  continue_from_weights: true    # Continue training from saved weights
-  cleanup_old_logs: true         # Remove old log files automatically
-  random_state:
-    mode: "off"               # Options: "fixed", "off", "random"(between 1-100)
-    value: 42                    # Used when mode is "fixed"
-
-#######################
-# Hyperparameter Tuning
-#######################
-hyperparameter:
-  # User-configurable hyperparameter tuning settings
-  auto_run_tuning: false         # Start tuning automatically on startup
-  thresholds:                    # Target performance thresholds
-    rmse: 5                      # Root Mean Squared Error target
-    mape: 5.0                    # Mean Absolute Percentage Error target
-  
-  # Computation multipliers for different tuning modes
-  tuning_modes:
-    quick:                       # Fast tuning with fewer trials
-      trials_multiplier: 0.25    # 25% of normal trials
-      epochs_multiplier: 0.3     # 30% of normal epochs
-      timeout_multiplier: 0.2    # 20% of normal timeout
-      complexity_multiplier: 0.5 # 50% of model complexity (smaller models)
-    normal:                      # Standard tuning (baseline)
-      trials_multiplier: 1.0     # 100% (baseline)
-      epochs_multiplier: 1.0     # 100% (baseline)
-      timeout_multiplier: 1.0    # 100% (baseline)
-      complexity_multiplier: 1.0 # 100% (baseline complexity)
-    thorough:                    # More extensive tuning
-      trials_multiplier: 3.0     # 3x more trials than normal
-      epochs_multiplier: 2.0     # 2x more epochs than normal
-      timeout_multiplier: 4.0    # 4x longer timeout than normal
-      complexity_multiplier: 1.5 # 50% more complex models
-    extreme:                     # Very extensive tuning (overnight)
-      trials_multiplier: 10.0    # 10x more trials than normal
-      epochs_multiplier: 3.0     # 3x more epochs than normal
-      timeout_multiplier: 15.0   # 15x longer timeout than normal
-      complexity_multiplier: 2.0 # 2x more complex models (larger networks)
-  
-  # Default tuning mode
-  default_mode: "normal"        
-  n_startup_trials: 5000         # Number of startup trials for Optuna
-
-#######################
-# Dashboard Settings
-#######################
 dashboard:
-  # UI/Dashboard configurations
-  realtime_update: true
   autorefresh_interval_sec: 60
+  realtime_update: true
   show_prediction_plots: true
   show_prediction_plots_interval: 5
   show_training_history: true
   show_weight_histograms: true
   use_caching: true
   visualization:
-    lookback: 30
     chart_height: 600
-    color_theme: "default"
-    show_volume: true
+    color_theme: default
     indicators:
-      show_ma: false
       show_bb: false
-      show_rsi: false
+      show_ma: false
       show_macd: false
+      show_rsi: false
+    lookback: 60
+    show_volume: true
 
-#######################
-# Feature Toggles
-#######################
 features:
-  # Enable/disable technical indicators
   toggles:
-    rsi: true                    # Relative Strength Index
-    macd: true                   # Moving Average Convergence Divergence
-    bollinger_bands: true        # Bollinger Bands
-    atr: true                    # Average True Range
-    obv: true                    # On-Balance Volume
-    werpi: true                  # Wavelet-based Entropy Rich Process Indicator
-    vmli: true                   # Volume-Momentum Liquidity Indicator
-    sentiment: false             # Sentiment Analysis
+    atr: true
+    bollinger_bands: true
+    macd: true
+    obv: true
+    rsi: true
+    sentiment: false
+    vmli: true
+    werpi: true
 
-#######################
-# Model Settings
-#######################
+hardware:
+  enable_xla: true
+  gpu_memory_fraction: auto
+  omp_num_threads: 4
+  use_directml: true
+  use_gpu: true
+  use_mixed_precision: false
+
+hyperparameter:
+  adaptive:
+    threshold: true
+    window_size: true
+  auto_run_tuning: false
+  default_mode: normal
+  n_startup_trials: 10000
+  thresholds:
+    mape: 5.0
+    rmse: 500
+  tuning_modes:
+    extreme:
+      complexity_multiplier: 2.0
+      epochs_multiplier: 3.0
+      timeout_multiplier: 15.0
+      trials_multiplier: 10.0
+    normal:
+      complexity_multiplier: 1.0
+      epochs_multiplier: 1.0
+      timeout_multiplier: 1.0
+      trials_multiplier: 1.0
+    quick:
+      complexity_multiplier: 0.5
+      epochs_multiplier: 0.3
+      timeout_multiplier: 0.2
+      trials_multiplier: 0.25
+    thorough:
+      complexity_multiplier: 1.5
+      epochs_multiplier: 2.0
+      timeout_multiplier: 4.0
+      trials_multiplier: 3.0
+
+incremental_learning:
+  retraining:
+    threshold: 0.1
+  model_saving: # Thresholds to start saving models for incremental learning and auto retraining
+    rmse_threshold: 50000
+    mape_threshold: 50
+  max_saved_models: 100
+
 model:
-  # Model type settings
   active_model_types:
-    lstm: true                   # Long Short-Term Memory
-    rnn: true                    # Recurrent Neural Network
-    random_forest: true          # Random Forest
-    xgboost: true                # Extreme Gradient Boosting
-    tft: true                    # Temporal Fusion Transformer
-    ltc: true                    # Liquid Time Constant
-    tabnet: true                 # TabNet model
-    cnn: true                    # Convolutional Neural Network
-  # Model parameters
-  default_lookback: 30
+    cnn: true
+    lstm: true
+    ltc: true
+    random_forest: true
+    rnn: true
+    tabnet: true
+    tft: true
+    xgboost: true
   default_forecast_horizon: 30
-  ensemble_mode: "weighted_average"  # Options: "weighted_average", "stacking", "voting"
+  default_lookback: 30
+  ensemble_mode: weighted_average
 
-#######################
-# Additional Toggles
-#######################
-toggles:
-  enable_email_alerts: false     # Email notifications
-  apply_weekend_gap: true        # Special handling for weekends in time series
-
-#######################
-# Symbol Settings
-#######################
 tickers:
-  default: "ETH-USD"             # Default ticker symbol
-  symbols:                       # Available symbols
-    - "ETH-USD"
-    - "BTC-USD"
-    - "LINK-USD"
-    - "LTC-USD"
-    - "AAVE-USD"
-    - "AVAX-USD"
-    - "SOL-USD"
-    - "MATIC-USD"
-    - "RVN-USD"
-    - "GOOGL"
-    - "T"
-    - "AMZN"
-    - "NVDA"
-    - "MSFT"
-    - "META"
-    - "STLA"
-    - "AMD"
-    - "INTC"
-    - "SQ"
-    - "NET"
-    - "ZM"
-    - "ROKU"
-    - "AAPL"
-    - "TSLA"
-    - "NFLX"
-    - "SPY"
-    - "ARK"
-    - "KBWB"
-    - "XLC"
+  default: ETH-USD
+  symbols:
+  - ETH-USD
+  - BTC-USD
+  - LINK-USD
+  - LTC-USD
+  - AAVE-USD
+  - AVAX-USD
+  - SOL-USD
+  - MATIC-USD
+  - RVN-USD
+  - GOOGL
+  - T
+  - AMZN
+  - NVDA
+  - MSFT
+  - META
+  - STLA
+  - AMD
+  - INTC
+  - SQ
+  - NET
+  - ZM
+  - ROKU
+  - AAPL
+  - TSLA
+  - NFLX
+  - SPY
+  - ARK
+  - KBWB
+  - XLC
+
+time_series:
+  apply_weekend_gap: true
+  default_interval: 1d
+  prediction_horizon: 30
+  timeframes:
+  - 1d
+  - 3d
+  - 1wk
+  - 1h
+  - 2h
+  - 4h
+  - 6h
+  - 8h
+  - 12h
+  - 1mo
+  - 1m
+  - 5m
+  - 15m
+  - 30m
+
+toggles:
+  apply_weekend_gap: true
+  enable_email_alerts: false
+
+training:
+  cleanup_old_logs: true
+  continue_from_weights: true
+  random_state:
+    mode: 'off'
+    value: 42

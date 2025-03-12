@@ -24,8 +24,9 @@ from datetime import datetime
 import numpy as np
 import optuna
 import pandas as pd
-from src.tuning.optuna_logger import OptunaLogger
+
 from src.training.walk_forward import run_walk_forward_ensemble_eval
+from src.tuning.optuna_logger import OptunaLogger
 
 # Configure logging
 logging.basicConfig(
@@ -65,6 +66,7 @@ class OptimizationHandler:
 
         # Storage settings - Update to use the Models directory
         from config.config_loader import DATA_DIR
+
         self.db_dir = self.config.get("db_dir", os.path.join(DATA_DIR, "Models", "DB"))
         os.makedirs(self.db_dir, exist_ok=True)
 
@@ -72,7 +74,7 @@ class OptimizationHandler:
         self.optuna_logger = OptunaLogger(self.study_name)
 
         # Report setup
-        logger.info(f"Optimization handler initialized:")
+        logger.info("Optimization handler initialized:")
         logger.info(f"  - Study name: {self.study_name}")
         logger.info(f"  - Trials: {self.n_trials}")
         logger.info(f"  - Timeout: {self.timeout}s")
@@ -93,12 +95,15 @@ class OptimizationHandler:
         start_time = datetime.now()
 
         try:
+            # Add missing start_time initialization
+            start_time = datetime.now()
+
             # Log trial start
             logger.info(f"Starting trial {trial.number}")
 
             # Sample hyperparameters for LSTM
             lstm_params = {
-                "units_per_layer": [trial.suggest_int(f"lstm_units", 32, 256)],
+                "units_per_layer": [trial.suggest_int("lstm_units", 32, 256)],
                 "lr": trial.suggest_float("lstm_lr", 1e-4, 1e-2, log=True),
                 "dropout": trial.suggest_float("lstm_dropout", 0.0, 0.5),
                 "loss_function": trial.suggest_categorical("lstm_loss", ["mae", "mse"]),
@@ -128,7 +133,7 @@ class OptimizationHandler:
 
             # Normalize weights
             sum_weights = w_lstm + w_rf + w_xgb
-            if (sum_weights > 0):
+            if sum_weights > 0:
                 w_lstm /= sum_weights
                 w_rf /= sum_weights
                 w_xgb /= sum_weights

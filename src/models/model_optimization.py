@@ -1,7 +1,7 @@
 # Add this to a new file Scripts/model_optimization.py
 
-import time
 import os
+import time
 from datetime import datetime
 
 import numpy as np
@@ -302,23 +302,23 @@ def optimize_model(
 ):
     """
     Apply multiple optimizations to a model and save to the proper directory
-    
+
     Args:
         model: Model to optimize
         quantize: Whether to apply quantization
         prune: Whether to apply pruning
         dataset_gen: Dataset generator for quantization
         validation_data: Validation data for pruning fine-tuning
-        
+
     Returns:
         Optimized model
     """
     from config.config_loader import DATA_DIR
-    
+
     # Create Models directory if it doesn't exist
     models_dir = os.path.join(DATA_DIR, "Models", "optimized")
     os.makedirs(models_dir, exist_ok=True)
-    
+
     optimized_model = model
     quantized_tflite = None
 
@@ -338,10 +338,12 @@ def optimize_model(
             print("Quantization complete")
 
     # Save the optimized model
-    if hasattr(model, 'save'):
-        model_path = os.path.join(models_dir, f"optimized_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+    if hasattr(model, "save"):
+        model_path = os.path.join(
+            models_dir, f"optimized_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
         model.save(model_path)
-    
+
     return optimized_model, quantized_tflite
 
 

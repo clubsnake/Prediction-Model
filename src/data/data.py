@@ -29,15 +29,11 @@ except ImportError:
     )
     COINGECKO_AVAILABLE = False
 
-from config import (
-    ALPHAVANTAGE_API_KEY,
-    COINGECKO_RATE_LIMIT_SLEEP,
-    FINNHUB_API_KEY,
-    INTERVAL,
-    START_DATE,
-    TICKER,
-    USE_CACHING,
-)
+from config.config_loader import API_KEYS, INTERVAL, START_DATE, TICKER, USE_CACHING
+
+ALPHAVANTAGE_API_KEY = API_KEYS.get("alphavantage")
+FINNHUB_API_KEY = API_KEYS.get("finnhub")
+COINGECKO_RATE_LIMIT_SLEEP = 1  # Set a default value or fetch from config if available
 
 
 def remove_holidays_weekends(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
@@ -62,7 +58,7 @@ def remove_holidays_weekends(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
 # ------------------------------------------------------------------------
 if USE_CACHING:
 
-    @st.cache(show_spinner=True)
+    @st.cache_data(show_spinner=True)
     def _download_data_cached(ticker, start, end, interval):
         return yf.download(
             ticker,
@@ -306,7 +302,7 @@ def _download_data_alphavantage(ticker, start, end, interval):
         # Process the response based on function type
         if "DIGITAL_CURRENCY" in function:
             # Handle crypto data format which is different
-            time_series_key = f"Time Series (Digital Currency Daily)"
+            time_series_key = "Time Series (Digital Currency Daily)"
             if time_series_key in data:
                 df = _process_alpha_vantage_crypto_data(data, time_series_key)
 
@@ -374,24 +370,72 @@ def _process_alpha_vantage_crypto_data(data, time_series_key):
     records = []
     for date, values in data[time_series_key].items():
         try:
-            record = {
-                "date": date,
-                "Open": float(values["1a. open (USD)"]),
-                "High": float(values["2a. high (USD)"]),
-                "Low": float(values["3a. low (USD)"]),
-                "Close": float(values["4a. close (USD)"]),
-                "Volume": float(values["5. volume"]),
-            }
+            # Check for different possible key formats in Alpha Vantage response
+            if "1a. open (USD)" in values:
+                # Original expected format
+                record = {
+                    "date": date,
+                    "Open": float(values["1a. open (USD)"]),
+                    "High": float(values["2a. high (USD)"]),
+                    "Low": float(values["3a. low (USD)"]),
+                    "Close": float(values["4a. close (USD)"]),
+                    "Volume": float(values["5. volume"]),
+                }
+            elif "1b. open (USD)" in values:
+                # Alternative format sometimes returned
+                record = {
+                    "date": date,
+                    "Open": float(values["1b. open (USD)"]),
+                    "High": float(values["2b. high (USD)"]),
+                    "Low": float(values["3b. low (USD)"]),
+                    "Close": float(values["4b. close (USD)"]),
+                    "Volume": float(values["5. volume"]),
+                }
+            elif "1. open" in values:
+                # Generic format fallback
+                record = {
+                    "date": date,
+                    "Open": float(values["1. open"]),
+                    "High": float(values["2. high"]),
+                    "Low": float(values["3. low"]),
+                    "Close": float(values["4. close"]),
+                    "Volume": float(
+                        values["5. volume"]
+                        if "5. volume" in values
+                        else "6. volume" if "6. volume" in values else 0
+                    ),
+                }
+            else:
+                # Log available keys for debugging
+                logging.warning(
+                    f"Unknown Alpha Vantage crypto data format. Available keys: {list(values.keys())}"
+                )
+                continue
+
             records.append(record)
         except KeyError as e:
-            # Skip this record if keys don't match expected format
+            # Log specific missing key
             logging.warning(f"Missing key in Alpha Vantage crypto data: {e}")
             continue
+        except ValueError as e:
+            # Handle value conversion errors
+            logging.warning(f"Value error in Alpha Vantage crypto data: {e}")
+            continue
+
+    if not records:
+        logging.warning("No valid records found in Alpha Vantage crypto data")
+        return pd.DataFrame()  # Return empty DataFrame instead of None
 
     df = pd.DataFrame(records)
-    df["date"] = pd.to_datetime(df["date"])
-    df.sort_values("date", inplace=True)
-    return df
+
+    try:
+        # Ensure date is properly parsed
+        df["date"] = pd.to_datetime(df["date"])
+        df.sort_values("date", inplace=True)
+        return df
+    except Exception as e:
+        logging.error(f"Error processing Alpha Vantage date data: {e}")
+        return pd.DataFrame()  # Return empty DataFrame on error
 
 
 def _download_data_coingecko(ticker, start, end, interval):
@@ -542,14 +586,48 @@ def _download_data_coingecko(ticker, start, end, interval):
         return None
 
 
+# Add a price data cache dictionary at the module level
+# Structure: {(ticker, interval, start, end): (timestamp, dataframe)}
+_PRICE_DATA_CACHE = {}
+# Cache expiry in seconds (default: 5 minutes)
+CACHE_EXPIRY_SECONDS = 300
+
+
+def _get_from_cache(ticker, start, end, interval):
+    """Try to get data from the temporary cache"""
+    cache_key = (ticker, interval, start, end)
+    if cache_key in _PRICE_DATA_CACHE:
+        timestamp, df = _PRICE_DATA_CACHE[cache_key]
+        # Check if cache is still valid (not expired)
+        if time.time() - timestamp < CACHE_EXPIRY_SECONDS:
+            logging.info(f"Retrieved {ticker} data from temporary cache")
+            return df.copy()  # Return a copy to prevent cache modification
+    return None
+
+
+def _store_in_cache(ticker, start, end, interval, df):
+    """Store data in the temporary cache with current timestamp"""
+    if df is not None and not df.empty:
+        cache_key = (ticker, interval, start, end)
+        _PRICE_DATA_CACHE[cache_key] = (time.time(), df.copy())
+        logging.info(f"Stored {ticker} data in temporary cache")
+
+
 def fetch_data(
     ticker: str = TICKER,
     start: str = START_DATE,
     end=None,
     interval: str = INTERVAL,
     max_retries: int = 3,
+    use_cache: bool = True,
 ) -> pd.DataFrame:
-    """Fetch financial data from multiple sources with fallbacks."""
+    """Fetch financial data from multiple sources with fallbacks and caching."""
+    # First check if we have this data in our temporary cache
+    if use_cache:
+        cached_df = _get_from_cache(ticker, start, end, interval)
+        if cached_df is not None:
+            return cached_df
+
     retry_count = 0
     backoff_factor = 1.5
     current_delay = 1.0
@@ -565,30 +643,85 @@ def fetch_data(
         logging.warning(f"End date {end} is in the future. Adjusting to {today_str}.")
         end = today_str
 
+    # Check if ticker is a cryptocurrency
+    is_crypto = "-" in ticker.upper() and (
+        "USD" in ticker.upper() or "USDT" in ticker.upper()
+    )
+
     while retry_count <= max_retries:
         try:
             df = None
-            # For crypto tickers, always use CoinGecko exclusively.
-            if "-" in ticker.upper() and (
-                "USD" in ticker.upper() or "USDT" in ticker.upper()
-            ):
-                logging.info(f"Using CoinGecko exclusively for crypto ticker {ticker}")
-                df = _download_data_coingecko(ticker, start, end, interval)
-            else:
-                # For non-crypto tickers, try Finnhub then fall back to Alpha Vantage.
+
+            if is_crypto:
+                # For cryptocurrencies: try CoinGecko -> AlphaVantage -> Finnhub -> YFinance
                 logging.info(
-                    f"Attempt {retry_count+1}: Fetching {ticker} data from Finnhub"
+                    f"Attempt {retry_count+1}: Fetching crypto {ticker} from CoinGecko"
+                )
+                df = _download_data_coingecko(ticker, start, end, interval)
+
+                if df is None or df.empty or not validate_data(df):
+                    logging.info(f"CoinGecko failed; Trying Alpha Vantage for {ticker}")
+                    df = _download_data_alphavantage(ticker, start, end, interval)
+
+                    if df is None or df.empty or not validate_data(df):
+                        logging.info(
+                            f"Alpha Vantage failed; Trying Finnhub for {ticker}"
+                        )
+                        df = _download_data_finnhub(ticker, start, end, interval)
+
+                        if df is None or df.empty or not validate_data(df):
+                            logging.info(
+                                f"Finnhub failed; Falling back to YFinance for {ticker}"
+                            )
+                            df = _download_data_cached(ticker, start, end, interval)
+                            # Process YFinance data if needed
+                            if df is not None and not df.empty:
+                                df = _flatten_yf_multiindex(df)
+                                df = _rename_crypto_columns(df)
+                                df.reset_index(inplace=True)
+                                df.rename(
+                                    columns={"index": "date"},
+                                    errors="ignore",
+                                    inplace=True,
+                                )
+            else:
+                # For stocks: try Finnhub -> AlphaVantage -> YFinance
+                logging.info(
+                    f"Attempt {retry_count+1}: Fetching stock {ticker} from Finnhub"
                 )
                 df = _download_data_finnhub(ticker, start, end, interval)
+
                 if df is None or df.empty or not validate_data(df):
                     logging.info(f"Finnhub failed; Trying Alpha Vantage for {ticker}")
                     df = _download_data_alphavantage(ticker, start, end, interval)
 
+                    if df is None or df.empty or not validate_data(df):
+                        logging.info(
+                            f"Alpha Vantage failed; Falling back to YFinance for {ticker}"
+                        )
+                        df = _download_data_cached(ticker, start, end, interval)
+                        # Process YFinance data if needed
+                        if df is not None and not df.empty:
+                            df = _flatten_yf_multiindex(df)
+                            df.reset_index(inplace=True)
+                            df.rename(
+                                columns={"index": "date"}, errors="ignore", inplace=True
+                            )
+
+            # If we have valid data, process and return it
             if df is not None and validate_data(df):
-                # ...existing code: process and return df...
+                # Remove weekends and holidays for stocks
+                df = remove_holidays_weekends(df, ticker)
+
+                # Cache the successfully fetched data
+                if use_cache:
+                    _store_in_cache(ticker, start, end, interval, df)
+
                 return df
+
         except Exception as e:
             logging.error(f"Error in fetch_data attempt {retry_count}: {e}")
+
         retry_count += 1
         time.sleep(current_delay)
         current_delay *= backoff_factor
@@ -639,5 +772,30 @@ def fetch_data_parallel(tickers, start, end=None, interval="1d"):
     return results
 
 
-# The duplicate fetch_data_with_retry function is no longer needed since
-# fetch_data already includes proper retry logic, so we've removed it.
+# Add a cache maintenance function that can be called periodically
+def clear_price_data_cache(older_than_seconds=None):
+    """
+    Clear the price data cache entirely, or only entries older than specified seconds
+
+    Args:
+        older_than_seconds: If provided, only clear entries older than this many seconds.
+                           If None, clear the entire cache.
+    """
+    global _PRICE_DATA_CACHE
+
+    if older_than_seconds is None:
+        # Clear entire cache
+        cache_size = len(_PRICE_DATA_CACHE)
+        _PRICE_DATA_CACHE = {}
+        logging.info(f"Cleared entire price data cache ({cache_size} entries)")
+    else:
+        # Clear only old entries
+        current_time = time.time()
+        old_keys = [
+            key
+            for key, (timestamp, _) in _PRICE_DATA_CACHE.items()
+            if current_time - timestamp > older_than_seconds
+        ]
+        for key in old_keys:
+            del _PRICE_DATA_CACHE[key]
+        logging.info(f"Cleared {len(old_keys)} expired entries from price data cache")

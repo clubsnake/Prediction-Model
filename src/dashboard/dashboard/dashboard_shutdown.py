@@ -9,13 +9,17 @@ import signal
 import threading
 import time
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any, Callable, Optional
 
 import streamlit as st
 
 # Import the dashboard_error module for robust error handling
 try:
-    from src.dashboard.dashboard.dashboard_error import robust_error_boundary, section_error_boundary
+    from src.dashboard.dashboard.dashboard_error import (
+        robust_error_boundary,
+        section_error_boundary,
+    )
 except ImportError:
     try:
         from dashboard_error import robust_error_boundary, section_error_boundary
@@ -28,8 +32,9 @@ except ImportError:
                 except Exception as e:
                     print(f"Error in {func.__name__}: {e}")
                     return None
+
             return wrapper
-            
+
         @contextmanager
         def section_error_boundary(section_name):
             try:
@@ -37,23 +42,26 @@ except ImportError:
             except Exception as e:
                 print(f"Error in section {section_name}: {e}")
 
-# Try to import from src.utils if available
+
+# Try to import from src.utils if available, but handle errors gracefully
 try:
-    from src.utils.robust_handler import (
-        initiate_shutdown,
-        register_shutdown_callback,
-        register_thread,
-    )
+    from src.utils.robust_handler import initiate_shutdown as global_initiate_shutdown
+    from src.utils.robust_handler import register_shutdown_callback, register_thread
+
+    has_robust_handler = True
 except ImportError:
     # Define fallback implementations if not available
-    def initiate_shutdown(source="unknown"):
-        print(f"Shutdown initiated from {source}")
-        
+    has_robust_handler = False
+
+    def global_initiate_shutdown(source="unknown"):
+        print(f"Global shutdown initiated from {source}")
+
     def register_shutdown_callback(callback):
         atexit.register(callback)
-        
+
     def register_thread(thread):
         pass
+
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -126,13 +134,14 @@ def show_shutdown_message() -> None:
         st.warning(
             "⚠️ Application is shutting down. Please wait while we save your data..."
         )
+
         # Create a placeholder for a progress bar
         progress_placeholder = st.empty()
 
         # Show a progress bar that fills during shutdown
         for i in range(100):
             progress_placeholder.progress(i + 1)
-            time.sleep(0.03)  # Short delay for visual effect
+            time.sleep(0.01)  # Faster for better UX
 
         st.success("✅ Shutdown complete! You can close this window.")
 
@@ -173,21 +182,99 @@ def setup_dashboard_shutdown() -> None:
     # Register exit handler
     atexit.register(cleanup_dashboard_components)
 
-    # Set handlers for CTRL+C
-    def handle_keyboard_interrupt(*args):
-        st.warning("Shutdown initiated by user (Ctrl+C)")
-        initiate_shutdown(source="Keyboard Interrupt (Ctrl+C)")
-        return True
+    # Only register signal handlers in the main thread
+    if threading.current_thread() is threading.main_thread():
+        try:
+            # Try to register signal handler
+            def handle_keyboard_interrupt(sig, frame):
+                logger.info("Shutdown initiated by user (Ctrl+C)")
+                initiate_shutdown(source="Keyboard Interrupt (Ctrl+C)")
+                return True
 
-    # Register for SIGINT if running in main thread
-    try:
-        if threading.current_thread() is threading.main_thread():
             signal.signal(signal.SIGINT, handle_keyboard_interrupt)
-    except Exception:
-        # May fail in non-main threads or some environments
-        pass
+            logger.info("Dashboard SIGINT handler registered")
+        except (ValueError, RuntimeError) as e:
+            logger.warning(f"Could not register dashboard signal handler: {e}")
+    else:
+        logger.info(
+            "Skipping dashboard signal handler registration (not in main thread)"
+        )
 
     logger.info("Dashboard shutdown handlers initialized")
+
+
+def initiate_shutdown(source="unknown"):
+    """
+    Initiate graceful shutdown of the dashboard application.
+
+    Args:
+        source: The source requesting shutdown
+    """
+    global _is_shutting_down
+
+    if _is_shutting_down:
+        logger.info(f"Shutdown already in progress. Ignoring request from {source}")
+        return
+
+    logger.info(f"Initiating dashboard shutdown from: {source}")
+    _is_shutting_down = True
+    _shutdown_event.set()
+
+    # Stop tuning if it's running
+    try:
+        # Import here to avoid circular imports
+        import streamlit as st
+
+        if st.session_state.get("tuning_in_progress", False):
+            try:
+                # Try to directly import from meta_tuning first for more reliable shutdown
+                from src.tuning.meta_tuning import stop_tuning_process
+
+                logger.info("Stopping tuning process directly")
+                stop_tuning_process()
+            except ImportError:
+                # Fallback to going through dashboard_model
+                from src.dashboard.dashboard.dashboard_model import stop_tuning
+
+                logger.info("Stopping tuning processes via dashboard_model")
+                stop_tuning()
+
+            # Update tuning status directly to ensure it's marked as stopped
+            try:
+                from src.tuning.progress_helper import write_tuning_status
+
+                write_tuning_status(
+                    {
+                        "is_running": False,
+                        "stopped_manually": True,
+                        "stop_time": time.time(),
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Error updating tuning status file: {e}")
+    except Exception as e:
+        logger.error(f"Error stopping tuning during shutdown: {e}")
+
+    # Clean up components
+    cleanup_dashboard_components()
+
+    # Call the global shutdown handler if available
+    if has_robust_handler:
+        try:
+            global_initiate_shutdown(source=f"Dashboard shutdown ({source})")
+        except Exception as e:
+            logger.error(f"Error calling global shutdown: {e}")
+    else:
+        logger.warning("Global shutdown handler not available")
+
+    # Ensure session state is updated
+    try:
+        import streamlit as st
+
+        st.session_state["tuning_in_progress"] = False
+    except Exception:
+        pass
 
 
 # Initialize on import

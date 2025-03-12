@@ -17,10 +17,13 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+src_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(src_dir)
+
 # Setup logging
 logger = logging.getLogger(__name__)
 
-from config import (
+from config.config_loader import (
     DATA_DIR,
     DB_DIR,
     HYPERPARAMS_DIR,
@@ -141,7 +144,7 @@ except ImportError:
 
 # Get Finnhub API key from environment or config
 try:
-    from config import FINNHUB_API_KEY
+    from config.config_loader import FINNHUB_API_KEY
 except ImportError:
     FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
     if not FINNHUB_API_KEY:
@@ -643,11 +646,11 @@ def process_data_job(
     # Use default tickers if none provided
     if tickers is None:
         try:
-            from config import TICKERS
+            from config.config_loader import TICKERS
 
             tickers = TICKERS
         except ImportError:
-            tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "META"]
+            tickers = ["ETH-USD", "BTC-USD", "AAPL", "MSFT", "GOOGL", "AMZN", "META"]
 
     logger.info(f"Starting data processor for tickers: {tickers}")
 

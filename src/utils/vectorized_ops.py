@@ -1,13 +1,25 @@
 """
 Provides vectorized operations for high-performance data processing.
-For very large datasets, these functions offer significant speed improvements.
+
+This module contains optimized vectorized implementations of common operations
+used in machine learning preprocessing and feature engineering pipelines. These
+functions are designed for handling large datasets efficiently by leveraging
+NumPy's vectorized operations and Numba's JIT compilation.
+
+The module is used by the data preprocessing pipeline and model training components
+to accelerate sequence creation, error calculation, and other intensive operations.
+It significantly improves performance compared to loop-based implementations,
+especially for large datasets.
+
+This module is not intended for direct user interaction but is imported by
+data processing and model training modules.
 """
 
 import warnings
-import pandas as pd
+
 import numpy as np
 from numba import jit, njit
-import gc
+
 
 def vectorized_sequence_creation(df, feature_cols, target_col, lookback, horizon):
     """
@@ -25,13 +37,13 @@ def vectorized_sequence_creation(df, feature_cols, target_col, lookback, horizon
         X, y numpy arrays
     """
     total_samples = len(df)
-    if (total_samples <= lookback):
+    if total_samples <= lookback:
         return np.array([]), np.array([])
 
     num_features = len(feature_cols)
     valid_samples = total_samples - lookback - horizon + 1
 
-    if (valid_samples <= 0):
+    if valid_samples <= 0:
         return np.array([]), np.array([])
 
     # Pre-allocate arrays (major performance gain for large datasets)
@@ -55,6 +67,12 @@ def numba_mse(predictions, actuals):
     """
     Numba-accelerated MSE calculation.
     Significantly faster for large arrays.
+
+    Numba compilation converts this function to optimized machine code, bypassing
+    Python's interpreter overhead. This provides dramatic performance improvements
+    (typically 10-100x faster) compared to pure Python implementations, especially
+    for large arrays. The nopython=True flag ensures maximum performance by
+    preventing fallbacks to Python objects.
 
     Args:
         predictions: Numpy array of predictions
@@ -88,11 +106,11 @@ def fast_sequence_creation(feature_data, target_data, lookback, horizon):
     valid_samples = len(feature_data) - lookback - horizon + 1
     X = np.zeros((valid_samples, lookback, feature_data.shape[1]))
     y = np.zeros((valid_samples, horizon))
-    
+
     for i in range(valid_samples):
         X[i] = feature_data[i : i + lookback]
         y[i] = target_data[i + lookback : i + lookback + horizon]
-    
+
     return X, y
 
 
@@ -153,6 +171,10 @@ def batch_sequence_creation(
 def preserve_date_column(df, scaled_df, date_col="date"):
     """
     Ensures the date column is preserved after scaling/preprocessing.
+
+    During scaling and normalization, date columns are typically excluded since
+    they're not numerical features. This function restores the date column
+    after such operations to maintain temporal information for time series data.
 
     Args:
         df: Original DataFrame with date column

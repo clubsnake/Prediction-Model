@@ -1,14 +1,14 @@
 import logging
 import os
 import time
-
+import sys
 import numpy as np
 import tensorflow as tf
 
 logger = logging.getLogger("GPU_Memory_Manager")
 
 # Import centralized GPU memory management
-from gpu_memory_management import (
+from src.utils.gpu_memory_management import (
     clean_gpu_memory,
     configure_gpu_memory,
     get_memory_info,
@@ -55,6 +55,14 @@ class GPUMemoryManager:
         self.memory_usage_log = []
         self.batch_size_log = []
 
+        # Check for DirectML environment
+        self.is_directml = (
+            "TENSORFLOW_USE_DIRECTML" in os.environ
+            or "DML_VISIBLE_DEVICES" in os.environ
+        )
+        if self.is_directml:
+            self.logger.info("DirectML environment detected in GPUMemoryManager")
+
     def initialize(self):
         """
         Initialize the GPU memory manager and configure the GPUs using the centralized system.
@@ -67,6 +75,7 @@ class GPUMemoryManager:
             "allow_growth": self.allow_growth,
             "memory_limit_mb": self.memory_limit_mb,
             "visible_gpus": self.visible_devices,
+            "directml_enabled": self.is_directml,  # Pass DirectML flag to configuration
         }
 
         configure_gpu_memory(config)
@@ -79,10 +88,36 @@ class GPUMemoryManager:
             self.original_gpus = tf.config.list_physical_devices("GPU")
             self.logical_gpus = tf.config.list_logical_devices("GPU")
             self.logger.info(f"Available logical GPUs: {len(self.logical_gpus)}")
+
+            # Handle LSTM implementation for DirectML to avoid CudnnRNN errors
+            if self.is_directml:
+                self._configure_directml_compatibility()
         except Exception as e:
             self.logger.error(f"Error getting GPU list: {e}")
 
         return self.logical_gpus
+
+    def _configure_directml_compatibility(self):
+        """Configure TensorFlow for DirectML compatibility, especially for RNN layers"""
+        try:
+            import tensorflow as tf
+
+            # Force TensorFlow to use standard implementation instead of CudnnRNN
+            os.environ["TF_DIRECTML_KERNEL_FALLBACK"] = "1"
+
+            # Configure LSTM implementation preference
+            tf.keras.layers.LSTM._supports_ragged_inputs = False
+
+            if hasattr(tf.keras, "mixed_precision"):
+                # Ensure using float32 with DirectML as mixed precision might cause issues
+                tf.keras.mixed_precision.set_global_policy("float32")
+                self.logger.info(
+                    "Set precision policy to float32 for DirectML compatibility"
+                )
+
+            self.logger.info("Applied DirectML compatibility configurations")
+        except Exception as e:
+            self.logger.error(f"Error configuring DirectML compatibility: {e}")
 
     def get_available_memory(self, device_idx=0) -> float:
         """
@@ -270,17 +305,51 @@ def train_with_dynamic_batch_size(model, X, y, initial_batch_size=32, min_batch_
 
     def enable_mixed_precision(self):
         """
-        Enable mixed precision for faster training and reduced memory usage.
+        Enable mixed precision only if configured in user settings and not using DirectML.
 
         Returns:
-            True if successful, False otherwise
+            True if mixed precision is enabled, False otherwise
         """
         try:
+            # If using DirectML, always use float32 for compatibility
+            if self.is_directml:
+                self.logger.info(
+                    "Using DirectML - forcing float32 precision for compatibility"
+                )
+                tf.keras.mixed_precision.set_global_policy("float32")
+                return False
+
+            # Check user configuration first
+            try:
+                # Avoid circular imports
+                sys.path.append(
+                    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+                )
+                from config.config_loader import get_value
+
+                use_mixed_precision = get_value("hardware.use_mixed_precision", False)
+
+                if not use_mixed_precision:
+                    self.logger.info(
+                        "Mixed precision disabled in configuration - keeping float32 precision"
+                    )
+                    tf.keras.mixed_precision.set_global_policy("float32")
+                    return False
+            except ImportError:
+                # If we can't import, check TF_FORCE_FLOAT32 environment variable
+                if os.environ.get("TF_FORCE_FLOAT32") == "1":
+                    self.logger.info(
+                        "TF_FORCE_FLOAT32 is set - keeping float32 precision"
+                    )
+                    tf.keras.mixed_precision.set_global_policy("float32")
+                    return False
+
+            # Only enable mixed precision if config allows it
             tf.keras.mixed_precision.set_global_policy("mixed_float16")
             self.logger.info("Mixed precision (float16) enabled")
             return True
         except Exception as e:
-            self.logger.error(f"Could not enable mixed precision: {e}")
+            self.logger.error(f"Could not set precision policy: {e}")
             return False
 
     def create_training_strategy(self, devices=None, use_mirrored=True):

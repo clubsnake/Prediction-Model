@@ -1,6 +1,19 @@
 # utils.py - Enhanced memory management
 """
 Utility functions for validation and walk-forward constraints.
+
+This module provides core utility functions for data validation, memory management,
+and walk-forward testing configuration. It serves as a foundation for other modules
+by providing commonly used functionality like DataFrame validation and memory cleanup.
+
+Key components:
+- Walk-forward validation utilities to ensure proper testing windows
+- DataFrame validation to ensure consistent column naming and required data
+- Memory management tools to prevent memory leaks and OOM errors
+- Adaptive memory cleanup with different intensity levels
+
+This module is imported by most other components in the prediction model pipeline,
+particularly the data processing, model training, and evaluation modules.
 """
 
 import gc
@@ -453,7 +466,7 @@ class MemoryManager:
             low, high = min_batch, max_batch
             optimal_batch = min_batch
 
-            with tf.device(f"/device:GPU:0"):  # Assuming single GPU
+            with tf.device("/device:GPU:0"):  # Assuming single GPU
                 while low <= high:
                     mid = (low + high) // 2
                     try:
@@ -550,13 +563,17 @@ class MemoryManager:
 
     def plot_memory_usage(self, save_path=None):
         """
-        Plot memory usage over time.
+        Generate a visualization of memory usage over time.
+
+        This method creates a plot showing the memory consumption pattern,
+        which can help identify memory leaks or optimization opportunities.
 
         Args:
-            save_path: Path to save the plot to (None to display)
+            save_path (str, optional): Path to save the generated plot.
+                                       If None, the plot is displayed instead.
 
         Returns:
-            matplotlib Figure or None
+            matplotlib.figure.Figure: The generated figure object.
         """
         if not self.memory_log:
             logger.warning("No memory data to plot")
@@ -593,8 +610,18 @@ def adaptive_memory_clean(level="medium"):
     """
     Clean up memory based on specified level.
 
+    This function provides a simplified interface to the memory management system,
+    allowing different components to request memory cleanup with varying intensity
+    levels based on their needs.
+
     Args:
         level: Cleanup level ('small', 'medium', 'large')
+            - 'small': Quick garbage collection only
+            - 'medium': GC plus TensorFlow session clearing
+            - 'large': Aggressive cleanup with memory trimming
+
+    Returns:
+        bool: True if cleanup was successful, False otherwise
     """
     try:
         # Always collect Python garbage

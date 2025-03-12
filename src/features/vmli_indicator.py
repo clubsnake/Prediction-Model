@@ -1,7 +1,11 @@
+import logging
 from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
+
+# Add logger
+logger = logging.getLogger(__name__)
 
 
 class VMILIndicator:
@@ -49,6 +53,7 @@ class VMILIndicator:
         volume_col: Optional[str] = "volume",
         order_book: Optional[pd.DataFrame] = None,
         include_components: bool = False,
+        timeframe: str = "1d",  # Added timeframe parameter for auto-adjustment
     ) -> Union[pd.Series, Dict[str, pd.Series]]:
         """
         Compute the VMLI indicator for the given price and volume data.
@@ -59,6 +64,7 @@ class VMILIndicator:
             volume_col: Column name for volume data (default: 'volume')
             order_book: Optional DataFrame with order book data (bid/ask volumes)
             include_components: Whether to return individual components (default: False)
+            timeframe: Data timeframe for auto-adjustment of parameters ('1d', '1h', etc.)
 
         Returns:
             If include_components is False: pd.Series with VMLI values
@@ -71,21 +77,43 @@ class VMILIndicator:
         df = data.copy()
         price_data = df[price_col]
 
+        # Auto-adjust parameters based on timeframe
+        window_mom = self.window_mom
+        window_vol = self.window_vol
+        smooth_period = self.smooth_period
+
+        # Adjust parameters based on timeframe
+        if timeframe != "1d":
+            # For intraday, adjust window sizes
+            if timeframe in ["1h", "2h", "4h"]:
+                window_mom = max(5, int(window_mom // 4))
+                window_vol = max(5, int(window_vol // 4))
+                smooth_period = max(2, int(smooth_period // 2))
+            elif timeframe in ["5m", "15m", "30m"]:
+                window_mom = max(3, int(window_mom // 8))
+                window_vol = max(3, int(window_vol // 8))
+                smooth_period = max(1, int(smooth_period // 3))
+
+        logger.info(
+            f"VMLI parameters for {timeframe}: window_mom={window_mom}, window_vol={window_vol}, smooth_period={smooth_period}"
+        )
+
         # 1. Calculate momentum component
-        # Use percentage change over the momentum window
-        momentum = self._calculate_momentum(price_data)
+        momentum = self._calculate_momentum(price_data, window_mom)
 
         # 2. Calculate volatility adjustment
-        volatility = self._calculate_volatility(price_data)
+        volatility = self._calculate_volatility(price_data, window_vol)
 
         # 3. Calculate adjusted momentum (momentum / volatility)
         # Handle division by zero or very small values
         volatility = volatility.replace(0, np.nan)  # Replace zeros with NaN
-        adj_momentum = momentum / volatility
+        adj_momentum = momentum / volatility.fillna(0.0001)  # Improved handling of NaNs
 
         # 4. Calculate liquidity/volume component
         if volume_col in df.columns:
-            liquidity = self._calculate_liquidity(df[volume_col], order_book)
+            liquidity = self._calculate_liquidity(
+                df[volume_col], order_book, window_mom
+            )
         else:
             liquidity = pd.Series(
                 1.0, index=df.index
@@ -99,7 +127,7 @@ class VMILIndicator:
             vmli_raw = self._winsorize(vmli_raw, self.winsorize_pct)
 
         # 7. Smooth the final indicator
-        vmli = self._smooth(vmli_raw)
+        vmli = self._smooth(vmli_raw, smooth_period, self.use_ema)
 
         if include_components:
             return {
@@ -113,25 +141,33 @@ class VMILIndicator:
         else:
             return vmli
 
-    def _calculate_momentum(self, price_data: pd.Series) -> pd.Series:
-        """Calculate the momentum component using an EMA of returns."""
+    def _calculate_momentum(self, price_data: pd.Series, window_mom=None) -> pd.Series:
+        """Calculate the momentum component using specified window."""
+        # Use provided window if specified, otherwise use instance parameter
+        window = window_mom if window_mom is not None else self.window_mom
+
         # Calculate daily returns first
         daily_returns = price_data.pct_change()
 
-        # Calculate momentum as an n-day EMA of returns
+        # Calculate momentum as an n-day EMA/SMA of returns
         if self.use_ema:
-            momentum = daily_returns.ewm(span=self.window_mom).mean()
+            momentum = daily_returns.ewm(span=window).mean()
         else:
-            momentum = daily_returns.rolling(window=self.window_mom).mean()
+            momentum = daily_returns.rolling(window=window).mean()
 
         return momentum
 
-    def _calculate_volatility(self, price_data: pd.Series) -> pd.Series:
-        """Calculate the volatility component (standard deviation of returns)."""
+    def _calculate_volatility(
+        self, price_data: pd.Series, window_vol=None
+    ) -> pd.Series:
+        """Calculate the volatility component with specified window."""
+        # Use provided window if specified, otherwise use instance parameter
+        window = window_vol if window_vol is not None else self.window_vol
+
         daily_returns = price_data.pct_change()
 
         # Use rolling standard deviation of returns
-        volatility = daily_returns.rolling(window=self.window_vol).std()
+        volatility = daily_returns.rolling(window=window).std()
 
         # Ensure we don't have zero volatility (which would cause division by zero)
         min_vol = (
@@ -144,18 +180,17 @@ class VMILIndicator:
         return volatility
 
     def _calculate_liquidity(
-        self, volume_data: pd.Series, order_book: Optional[pd.DataFrame] = None
+        self,
+        volume_data: pd.Series,
+        order_book: Optional[pd.DataFrame] = None,
+        window_mom=None,
     ) -> pd.Series:
-        """
-        Calculate the liquidity component based on volume and optional order book data.
+        """Calculate the liquidity component with specified window."""
+        # Use provided window if specified, otherwise use instance parameter
+        window = window_mom if window_mom is not None else self.window_mom
 
-        Args:
-            volume_data: Series of volume data
-            order_book: Optional DataFrame with columns ['timestamp', 'bid_volume', 'ask_volume']
-                        for order book imbalance calculation
-        """
         # Calculate volume factor (current volume relative to recent median)
-        vol_median = volume_data.rolling(window=self.window_mom).median()
+        vol_median = volume_data.rolling(window=window).median()
         vol_factor = volume_data / vol_median.replace(
             0, np.nan
         )  # Avoid division by zero
@@ -203,12 +238,16 @@ class VMILIndicator:
         upper_bound = series.quantile(1 - percentile)
         return series.clip(lower=lower_bound, upper=upper_bound)
 
-    def _smooth(self, series: pd.Series) -> pd.Series:
-        """Apply final smoothing to the indicator."""
-        if self.use_ema:
-            return series.ewm(span=self.smooth_period).mean()
+    def _smooth(self, series: pd.Series, smooth_period=None, use_ema=None) -> pd.Series:
+        """Apply final smoothing to the indicator with specified parameters."""
+        # Use provided parameters if specified, otherwise use instance parameters
+        period = smooth_period if smooth_period is not None else self.smooth_period
+        ema = use_ema if use_ema is not None else self.use_ema
+
+        if ema:
+            return series.ewm(span=period).mean()
         else:
-            return series.rolling(window=self.smooth_period).mean()
+            return series.rolling(window=period).mean()
 
     def generate_signals(
         self,

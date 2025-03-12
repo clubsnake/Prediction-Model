@@ -1,0 +1,136 @@
+C:.
+|   launcher.py
+|   main.py
+|   run_dashboard.bat
+|   setup.py
+|   __init__.py
+|
++---config
+|   |   advanced_loss_config.py
+|   |   api_keys.yaml
+|   |   config_loader.py
+|   |   hyperparameter_config.py
+|   |   logger_config.py
+|   |   README.md
+|   |   resource_config.py
+|   |   system_config.json
+|   |   user_config.yaml
+|
++---data
+|   +---backups
+|   +---cache
+|   +---dashboard
+|   |       status_dashboard.html
+|   +---DB
+|   +---docs
+|   |       tabnet_parameters.md
+|   +---hyperparams
+|   +---Models
+|   +---Prices
+|   +---Processed
+|   \---Raw
+|
++---Models
+|
++---src
+|   |  
+|   |
+|   +---dashboard
+|   |   |   enhanced_weight_viz.py
+|   |   |   explainable_ai.py
+|   |   |   hyperparameter_dashboard.py
+|   |   |   loss_config_ui.py
+|   |   |   model_visualizations.py
+|   |   |   monitoring.py
+|   |   |   prediction_service.py
+|   |   |   reporter.py
+|   |   |   training_resource_optimizer_dashboard.py
+|   |   |   visualization.py
+|   |   |   visualization_imports.py
+|   |   |   xai_integration.py
+|   |
+|   +---pattern_discovery
+|   |       pattern_discovery_tab.py
+|   |       pattern_management.py
+|   |
+|   +---data
+|   |       data.py
+|   |       data_handler.py
+|   |       data_loader.py
+|   |       data_manager.py
+|   |       data_utils.py
+|   |       preprocessing.py
+|   |       sequence_utils.py
+|   |
+|   +---features
+|   |       features.py
+|   |       feature_selection.py
+|   |       indicator_tuning.py
+|   |       optimized_params.py
+|   |       optimized_processor.py
+|   |       vmli_indicator.py
+|   |
+|   +---models
+|   |       cnn_model.py
+|   |       ensemble_utils.py
+|   |       ensemble_weighting.py
+|   |       lstm_model.py
+|   |       ltc_model.py
+|   |       model.py
+|   |       model_factory.py
+|   |       model_manager.py
+|   |       model_optimization.py
+|   |       nbeats_model.py
+|   |       tabnet_model.py
+|   |       temporal_fusion_transformer.py
+|   |
+|   +---training
+|   |       adaptive_params.py
+|   |       callbacks.py
+|   |       incremental_learning.py
+|   |       train.py
+|   |       trainer.py
+|   |       walk_forward.py
+|   |
+|   +---tuning
+|   |       ensemble_tuning.py
+|   |       hyperparameter_integration.py
+|   |       hyperparameter_utils.py
+|   |       meta_tuning.py
+|   |       model_evaluation.py
+|   |       model_optimization.py
+|   |       optimization_handler.py
+|   |       optuna_logger.py
+|   |       progress_helper.py
+|   |       study_manager.py
+|   |
+|   +---utils
+|   |       env_setup.py
+|   |       gpu_memory_management.py
+|   |       gpu_memory_manager.py
+|   |       memory_utils.py
+|   |       robust_handler.py
+|   |       threadsafe.py
+|   |       training_optimizer.py
+|   |       utils.py
+|   |       vectorized_ops.py
+|   |       watchdog.py
+|
++---static
+|       style.css
+|
++---tests
+|       check_for_errors.py
+|       detect_parameters.py
+|       file_repair.py
+|       seed_test.py
+|       tensor_logging.py
+|       test_dashboard_imports.py
+|       test_model_layers.py
+|       test_preprocessing.py
+|       test_tabnet_integration.py
+|
+\---errors
+        critical_fatal_errors.txt
+        fatal_errors.txt
+        full_errors.txt

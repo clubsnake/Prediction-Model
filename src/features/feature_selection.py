@@ -3,7 +3,7 @@ import sys
 import time
 
 # Add project root to sys.path for absolute imports
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(project_root)
 
 import matplotlib.pyplot as plt
@@ -208,7 +208,7 @@ class FeatureSelector:
             List of selected feature names
         """
         if self.verbose:
-            print(f"Selecting features using mutual information...")
+            print("Selecting features using mutual information...")
 
         start_time = time.time()
 
@@ -344,7 +344,7 @@ class FeatureSelector:
                 f"Time taken: {self.results[f'model_{model_type}']['time_taken']:.2f} seconds"
             )
             if feature_importances:
-                print(f"Top 10 features by importance:")
+                print("Top 10 features by importance:")
                 for f, i in feature_importances[:10]:
                     print(f"  {f}: {i:.4f}")
 
@@ -439,7 +439,7 @@ class FeatureSelector:
             print(f"Selected {len(selected_features)} features using {method_display}")
             print(f"Time taken: {self.results[method_key]['time_taken']:.2f} seconds")
             if feature_rankings:
-                print(f"Top 10 features by ranking:")
+                print("Top 10 features by ranking:")
                 for f, r in feature_rankings[:10]:
                     print(f"  {f}: {r}")
 
@@ -661,7 +661,7 @@ class FeatureSelector:
             List of selected features
         """
         if self.verbose:
-            print(f"Combining feature selection methods by voting...")
+            print("Combining feature selection methods by voting...")
 
         start_time = time.time()
 
@@ -917,19 +917,19 @@ class FeatureSelector:
 
             # Add method-specific details
             if "feature_importances" in result and result["feature_importances"]:
-                report.append(f"  Top 10 features by importance:")
+                report.append("  Top 10 features by importance:")
                 for i, (feature, importance) in enumerate(
                     result["feature_importances"][:10]
                 ):
                     report.append(f"    {i+1:2d}. {feature:30s}: {importance:.4f}")
 
             if "feature_rankings" in result and result["feature_rankings"]:
-                report.append(f"  Top 10 features by ranking:")
+                report.append("  Top 10 features by ranking:")
                 for i, (feature, ranking) in enumerate(result["feature_rankings"][:10]):
                     report.append(f"    {i+1:2d}. {feature:30s}: {ranking}")
 
             if "performance_history" in result and result["performance_history"]:
-                report.append(f"  Performance history:")
+                report.append("  Performance history:")
                 best_mse = float("inf")
                 best_n = 0
                 for entry in result["performance_history"]:
@@ -1017,4 +1017,3 @@ def select_optimal_features(
 
     # Return recommended features
     return selector.get_recommendation(method="voting")
-

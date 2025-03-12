@@ -20,7 +20,7 @@ class OptunaLogger:
     Logger for Optuna trials that captures and stores detailed information
     about hyperparameter optimization runs.
     """
-    
+
     def __init__(self, study_name, log_dir=None):
         """
         Initialize the logger.
@@ -30,7 +30,7 @@ class OptunaLogger:
             log_dir: Directory to store log files (default: 'logs/optuna')
         """
         from config.config_loader import DATA_DIR
-        
+
         self.study_name = study_name
         # Update log directory to use Models/Logs path
         self.log_dir = log_dir or os.path.join(DATA_DIR, "Models", "Logs", "optuna")

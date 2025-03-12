@@ -7,10 +7,11 @@ from typing import Any, Dict
 
 import pandas as pd
 import streamlit as st
-from src.utils.robust_handler import error_boundary
-from src.utils.vectorized_ops import vectorized_sequence_creation
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+
+from src.utils.robust_handler import error_boundary
+from src.utils.vectorized_ops import vectorized_sequence_creation
 
 logger = logging.getLogger(__name__)
 

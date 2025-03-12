@@ -1,4 +1,5 @@
-is_running: false
 ticker: ETH-USD
 timeframe: 1d
-timestamp: '2025-03-08T22:04:40.508300'
+is_running: False
+error: name 'logger' is not defined
+timestamp: 2025-03-11T20:29:47.568203
