@@ -4,12 +4,12 @@ dashboard_state.py
 Functions for managing Streamlit session state and dashboard state persistence.
 """
 
-import logging
 import os
 import sys
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
+import logging
 
 # Add project root to Python path
 current_file = os.path.abspath(__file__)
@@ -278,12 +278,13 @@ def initialize_state():
         "training_history": None,
         "ensemble_predictions_log": [],
         "df_raw": None,
-        "historical_window": 30,
+        "historical_window": 60,
         "forecast_window": 30,
-        "lookback": 30,  # Alias for historical_window
+        "lookback": 60,  # Alias for historical_window
         "trials_per_cycle": 1000,  # Default value
-        "initial_trials": 1000,  # Default value
+        "initial_trials": 10000,  # Default value
         "saved_model_dir": os.path.join(project_root, "saved_models"),
+        
         
         # Auto-refresh intervals (in seconds)
         "progress_refresh_sec": 1,
@@ -303,7 +304,7 @@ def initialize_state():
         "model_comparison_data": [],
         "feature_importance_data": {},
         "model_weights_history": [],
-        
+
         # Containers for progressive display
         "progress_container": None,
         "progress_bar": None,
@@ -311,7 +312,8 @@ def initialize_state():
         
         # Status tracking
         "live_progress": {},
-        
+        "trial_logs": [],
+
         # Empty defaults for containers that should always exist
         "past_predictions": {},
     }
@@ -371,6 +373,15 @@ def init_session_state():
     
     # Set initialized flag
     set_state("initialized", True)
+    
+    if "trial_logs" not in st.session_state:
+        st.session_state["trial_logs"] = []
+    if "tuning_in_progress" not in st.session_state:
+        st.session_state["tuning_in_progress"] = False
+    if "selected_ticker" not in st.session_state:
+        st.session_state["selected_ticker"] = "ETH-USD"
+    if "selected_timeframe" not in st.session_state:
+        st.session_state["selected_timeframe"] = "1d"
     
     # Return success indicator
     return True

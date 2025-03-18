@@ -10,6 +10,7 @@ import yaml
 import altair as alt
 from config import MAPE_THRESHOLD, MODEL_TYPES, RMSE_THRESHOLD
 from config.config_loader import DB_DIR, HYPERPARAMS_DIR
+from src.dashboard.dashboard.dashboard_ui import create_hyperparameter_tuning_panel
 
 # Define the directory for database files - update to use Models folder
 # DB_DIR = os.path.join(DATA_DIR, "Models", "DB")

@@ -33,6 +33,7 @@ dashboard:
   show_training_history: true
   show_weight_histograms: true
   use_caching: true
+  update_during_walk_forward: true  # Controls whether to update dashboard during walk-forward validation
   visualization:
     chart_height: 600
     color_theme: default
@@ -62,6 +63,8 @@ hardware:
   use_directml: true
   use_gpu: true
   use_mixed_precision: false
+  use_xla: true
+  memory_growth: true     
 
 hyperparameter:
   adaptive:
@@ -105,6 +108,7 @@ incremental_learning:
 
 model:
   active_model_types:
+    nbeats: true
     cnn: true
     lstm: true
     ltc: true

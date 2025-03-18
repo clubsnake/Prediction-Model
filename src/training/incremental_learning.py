@@ -1,29 +1,38 @@
+import os
 import concurrent.futures
 import datetime
 import json
 import logging
 import multiprocessing
-import os
 import pickle
 import sys
 import threading
 import uuid
 from functools import partial
-
+import time
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import streamlit as st
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Import configuration settings
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger("IncrementalLearning")
+
 from config.config_loader import (
     INCREMENTAL_RETRAINING_THRESHOLD,
     MAX_SAVED_MODELS,
+    REGISTRY_DIR, 
+    REGISTRY_MAX_MODELS,  
+    REGISTRY_AUTO_CLEAN, 
 )
 
 # Import optimized utilities
@@ -47,12 +56,6 @@ def register_shutdown_callback(callback_func):
 
     atexit.register(callback_func)
 
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger("IncrementalLearning")
 
 
 class ModelLoadError(Exception):
@@ -1206,6 +1209,25 @@ class IncrementalLearner:
 
                 self.logger.info(f"Metrics - RMSE: {rmse:.4f}, MAPE: {mape:.2f}%")
 
+                if return_metrics and metrics:
+                    # Record metrics with drift tuning scheduler if available
+                    if "drift_tuning_scheduler" in st.session_state:
+                        try:
+                            scheduler = st.session_state["drift_tuning_scheduler"]
+
+                            if "rmse" in metrics:
+                                scheduler.record_performance(
+                                    ticker, timeframe, "rmse", metrics["rmse"]
+                                )
+                            if "mape" in metrics:
+                                scheduler.record_performance(
+                                    ticker, timeframe, "mape", metrics["mape"]
+                                )
+                        except Exception as e:
+                            self.logger.warning(
+                                f"Error recording metrics with drift scheduler: {e}"
+                            )
+
         elif model_type in ["sklearn", "xgboost"]:
             # For scikit-learn and XGBoost models
 
@@ -1905,6 +1927,234 @@ class IncrementalLearner:
             self.data_versions[cache_key] = [keep_version]
 
             self.logger.info(f"Keeping most recent version: {keep_version}")
+
+
+
+def handle_concept_drift(self, model_id, ticker, timeframe, drift_detector=None):
+    """
+    Handle detected concept drift for a specific model.
+    
+    Args:
+        model_id: ID of the model to check/update
+        ticker: Ticker symbol
+        timeframe: Timeframe
+        drift_detector: Optional drift detector instance
+        
+    Returns:
+        (drift_detected, adaptation_result): Whether drift was detected and adaptation result
+    """
+    # Create or use drift detector
+    if drift_detector is None:
+        # Import here to avoid circular imports
+        try:
+            from src.training.concept_drift import MultiDetectorDriftSystem
+            drift_detector = MultiDetectorDriftSystem()
+        except ImportError:
+            self.logger.error("Could not import MultiDetectorDriftSystem")
+            return False, None
+    
+    # Load model and metadata
+    try:
+        model, metadata = self.registry.load_model(model_id, with_metadata=True)
+    except Exception as e:
+        self.logger.error(f"Error loading model for drift detection: {e}")
+        return False, None
+    
+    # Check model lineage
+    lineage = self.registry.get_model_lineage(model_id)
+    if len(lineage) < 3:
+        self.logger.info("Not enough model history for drift detection")
+        return False, None
+    
+    # Analyze performance trend
+    metrics_history = []
+    for mid in lineage:
+        meta = self.registry.model_index.get(mid, {})
+        metrics = meta.get('metrics', {})
+        if 'rmse' in metrics:
+            metrics_history.append({
+                'model_id': mid,
+                'rmse': metrics['rmse'],
+                'created_at': meta.get('created_at')
+            })
+    
+    # Extract temporal performance and update drift detector
+    if metrics_history:
+        for entry in metrics_history:
+            drift_detector.update_model_performance(
+                model_type=metadata.get('model_type', 'unknown'),
+                timestamp=entry.get('created_at', 0),
+                metric_name='rmse',
+                metric_value=entry.get('rmse', 0)
+            )
+    
+    # Fetch latest data for drift detection
+    try:
+        from src.data.data import fetch_data
+        from src.features.features import feature_engineering
+
+        # Get recent data
+        df = fetch_data(ticker=ticker, interval=timeframe)
+        df = feature_engineering(df)
+        
+        # Get feature columns
+        feature_cols = [col for col in df.columns if col not in ['date', 'Date', 'Close']]
+        
+        # Update feature distributions
+        for col in feature_cols:
+            if col in df.columns:
+                drift_detector.update_feature_distribution(col, df[col].values)
+        
+        # Make predictions with current model
+        from src.data.preprocessing import create_sequences
+        X, y = create_sequences(df, feature_cols, 'Close', lookback=30, horizon=1)
+        
+        # Sample predictions for drift detection
+        if len(X) > 0 and len(y) > 0:
+            # Take most recent samples
+            sample_size = min(20, len(X))
+            X_sample = X[-sample_size:]
+            y_sample = y[-sample_size:]
+            
+            try:
+                # Get predictions
+                preds = model.predict(X_sample)
+                
+                # Update drift detector with prediction errors
+                for i in range(len(preds)):
+                    # Extract features for this prediction
+                    sample_features = {}
+                    if feature_cols and i < len(X_sample):
+                        if len(X_sample[i].shape) > 1:
+                            # Sequential data - take last timestep
+                            feature_values = X_sample[i][-1]
+                        else:
+                            feature_values = X_sample[i]
+                        
+                        # Create feature dictionary
+                        for j, col in enumerate(feature_cols):
+                            if j < len(feature_values):
+                                sample_features[col] = float(feature_values[j])
+                    
+                    # Get prediction and actual
+                    pred_val = float(preds[i][0]) if len(preds[i].shape) > 0 else float(preds[i])
+                    actual_val = float(y_sample[i][0]) if len(y_sample[i].shape) > 0 else float(y_sample[i])
+                    
+                    # Update drift detector
+                    drift_detected, drift_type, drift_score, adaptation = drift_detector.update_error(
+                        timestamp=time.time(),
+                        actual=actual_val,
+                        predicted=pred_val,
+                        features=sample_features
+                    )
+                    
+                    # If drift detected, return result
+                    if drift_detected:
+                        self.logger.warning(f"Concept drift detected for model {model_id}: {drift_type}, score={drift_score:.4f}")
+                        return True, adaptation
+            
+            except Exception as e:
+                self.logger.error(f"Error during drift prediction checking: {e}")
+    
+    except Exception as e:
+        self.logger.error(f"Error in drift detection: {e}")
+    
+    return False, None
+def apply_drift_adaptation(self, model_id, ticker, timeframe, adaptation, retrain=True):
+    """
+    Apply adaptation strategies based on detected drift.
+    
+    Args:
+        model_id: ID of the model to adapt
+        ticker: Ticker symbol
+        timeframe: Timeframe
+        adaptation: Adaptation dictionary from drift detection
+        retrain: Whether to automatically retrain on significant drift
+        
+    Returns:
+        result: Dictionary with adaptation results
+    """
+    result = {'adaptations_applied': []}
+    
+    if not adaptation:
+        return result
+    
+    # Extract adaptation parameters
+    drift_type = adaptation.get('drift_type')
+    drift_score = adaptation.get('drift_score', 0)
+    
+    # 1. Window size adaptation
+    if 'window_size_factor' in adaptation:
+        factor = adaptation['window_size_factor']
+        result['window_size_factor'] = factor
+        result['adaptations_applied'].append('window_size')
+    
+    # 2. Learning rate adaptation
+    if 'learning_rate_factor' in adaptation:
+        factor = adaptation['learning_rate_factor']
+        result['learning_rate_factor'] = factor
+        result['adaptations_applied'].append('learning_rate')
+    
+    # 3. Retraining trigger
+    if retrain and (adaptation.get('retrain_triggered', False) or drift_score > 0.7):
+        try:
+            # Fetch data for retraining
+            from src.data.data import fetch_data
+            from src.features.features import feature_engineering
+            
+            # Get recent data with appropriate window size
+            df = fetch_data(ticker=ticker, interval=timeframe)
+            df = feature_engineering(df)
+            
+            # Check if we have sufficient data
+            if len(df) < 30:
+                self.logger.warning(f"Not enough data for retraining after drift detection")
+                return result
+            
+            # Apply window size adaptation if specified
+            window_size_factor = adaptation.get('window_size_factor', 1.0)
+            base_window = 30
+            adapted_window = max(10, int(base_window * window_size_factor))
+            
+            # Apply learning rate adaptation if specified
+            learning_rate_factor = adaptation.get('learning_rate_factor', 1.0)
+            base_lr = 0.001
+            adapted_lr = base_lr * learning_rate_factor
+            
+            # Train new model with adaptations
+            self.logger.info(f"Retraining model after drift detection: window={adapted_window}, lr={adapted_lr:.6f}")
+            
+            new_model_id = self.train_incrementally(
+                model=None,  # Will load from previous_model_id
+                df=df,
+                ticker=ticker,
+                timeframe=timeframe,
+                previous_model_id=model_id,
+                window_size=adapted_window,
+                learning_rate=adapted_lr,
+                epochs=5,  # Quick adaptation
+                train_on_all=True  # Use all data for critical adaptation
+            )
+            
+            if new_model_id:
+                result['new_model_id'] = new_model_id
+                result['adaptations_applied'].append('retraining')
+                
+                # Tag the model as drift-adapted
+                self.registry.add_model_tag(new_model_id, "drift_adapted")
+                
+                # Add metadata about adaptation
+                self.registry.update_model_metrics(new_model_id, {
+                    'adaptation_trigger': drift_type,
+                    'adaptation_score': drift_score,
+                    'parent_model': model_id
+                })
+        
+        except Exception as e:
+            self.logger.error(f"Error in drift adaptation retraining: {e}")
+            result['error'] = str(e)
+    
+    return result
 
 
 # Example usage

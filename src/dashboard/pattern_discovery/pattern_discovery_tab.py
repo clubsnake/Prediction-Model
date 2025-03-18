@@ -381,7 +381,7 @@ class PatternDiscoveryTab:
             # Signal balance meter
             total_strength = bullish_strength + bearish_strength
             if total_strength > 0:
-                bull_pct = bull_strength = bullish_strength / total_strength * 100
+                bull_pct = bullish_strength / total_strength * 100
 
                 # Create gauge chart
                 fig = go.Figure(
@@ -440,12 +440,21 @@ class PatternDiscoveryTab:
             # Create performance chart
             performance_data = []
             for pattern in all_patterns:
+                # Ensure expected_return and reliability are properly typed
+                expected_return = pattern.get("expected_return", 0)
+                reliability = pattern.get("reliability", 0)
+                
+                # Convert numpy scalar types to Python native types to avoid reindexing errors
+                if isinstance(expected_return, np.number):
+                    expected_return = float(expected_return)
+                if isinstance(reliability, np.number):
+                    reliability = float(reliability)
+                    
                 performance_data.append(
                     {
                         "Pattern": pattern.get("name", "Unknown"),
-                        "Expected Return": pattern.get("expected_return", 0),
-                        "Reliability": pattern.get("reliability", 0)
-                        * 100,  # Convert to percentage
+                        "Expected Return": expected_return,
+                        "Reliability": reliability * 100,  # Convert to percentage
                         "Occurrences": pattern.get("occurrences", 0),
                     }
                 )
@@ -496,9 +505,7 @@ class PatternDiscoveryTab:
                 fig.add_annotation(
                     x=-5,
                     y=25,
-                    text="Low Quality Bearish",
-                    showarrow=False,
-                    font_size=14,
+                    text="Low Quality Bearish", showarrow=False, font_size=14
                 )
 
                 fig.update_layout(height=600)
@@ -2052,6 +2059,157 @@ class PatternDiscoveryTab:
 
         return stats
 
+    # Add this new helper method to safely analyze seasonality
+    def analyze_seasonality(self, df, patterns=None):
+        """
+        Analyze seasonality in pattern performance with robust error handling
+        
+        Args:
+            df: DataFrame with market data
+            patterns: List of patterns to analyze
+            
+        Returns:
+            dict: Seasonality analysis results
+        """
+        try:
+            if df is None or df.empty:
+                return {"error": "No data available for seasonality analysis"}
+                
+            if not patterns:
+                patterns = self.pattern_manager.list_patterns()
+                if not patterns:
+                    return {"error": "No patterns available for seasonality analysis"}
+            
+            results = {}
+            
+            # Ensure we're working with pandas Series/DataFrames and not numpy scalars
+            for pattern in patterns:
+                try:
+                    pattern_id = pattern.get('id', 'unknown')
+                    results[pattern_id] = {}
+                    
+                    # Get historical examples for pattern
+                    examples = pattern.get('historical_examples', [])
+                    if not examples:
+                        continue
+                        
+                    # Create a pandas Series for examples
+                    dates = []
+                    returns = []
+                    
+                    for example in examples:
+                        try:
+                            date = pd.to_datetime(example.get('date'))
+                            ret = float(example.get('return', 0))
+                            dates.append(date)
+                            returns.append(ret)
+                        except (ValueError, TypeError):
+                            continue
+                    
+                    if not dates:
+                        continue
+                        
+                    # Create a pandas Series
+                    series = pd.Series(returns, index=dates)
+                    
+                    # Now we can safely do pandas operations
+                    # Monthly analysis
+                    if len(series) >= 12:
+                        monthly = series.groupby(series.index.month).mean()
+                        results[pattern_id]['monthly'] = monthly.to_dict()
+                    
+                    # Day of week analysis  
+                    if len(series) >= 7:
+                        daily = series.groupby(series.index.dayofweek).mean()
+                        results[pattern_id]['day_of_week'] = daily.to_dict()
+                    
+                except Exception as e:
+                    results[pattern_id] = {"error": f"Error analyzing pattern: {str(e)}"}
+            
+            return results
+            
+        except Exception as e:
+            return {"error": f"Error in seasonality analysis: {str(e)}"}
+
+            with pattern_tabs[2]:
+                    st.subheader("Seasonality Analysis")
+                    st.info("Seasonality analysis identifies recurring patterns in price data")
+                    
+                    try:
+                        # Simple seasonality analysis
+                        if "Close" in df.columns and "date" in df.columns:
+                            # Convert date to datetime if needed
+                            if not pd.api.types.is_datetime64_any_dtype(df["date"]):
+                                df["date"] = pd.to_datetime(df["date"])
+                            
+                            # Create components
+                            df["day_of_week"] = df["date"].dt.dayofweek
+                            df["month"] = df["date"].dt.month
+                            
+                            # Day of week analysis
+                            st.subheader("Day of Week Effect")
+                            day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                            day_returns = df.groupby("day_of_week")["Close"].pct_change().mean() * 100
+                            
+                            # Fix: Check if day_returns is a Series before reindexing
+                            if isinstance(day_returns, pd.Series):
+                                day_returns = day_returns.reindex(range(7))
+                                day_returns_values = day_returns.values
+                            else:
+                                # Handle scalar case by creating a Series with NaN values
+                                day_returns_values = np.full(7, np.nan)
+                                # If we have a scalar value, put it in the right position
+                                if hasattr(day_returns, "index") and len(day_returns.index) == 1:
+                                    idx = day_returns.index[0]
+                                    if 0 <= idx < 7:
+                                        day_returns_values[idx] = day_returns.values[0]
+                                elif isinstance(day_returns, (float, np.floating)):
+                                    # If it's a plain scalar, we don't know where to put it
+                                    day_returns_values[0] = day_returns
+                            
+                            # Create DataFrame for plot
+                            day_returns_df = pd.DataFrame({
+                                "Day": [day_names[i] for i in range(7)],
+                                "Avg Return %": day_returns_values
+                            })
+                            
+                            # Plot
+                            st.bar_chart(day_returns_df.set_index("Day"))
+                            
+                            # Monthly analysis
+                            st.subheader("Monthly Effect")
+                            month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+                            month_returns = df.groupby("month")["Close"].pct_change().mean() * 100
+                            
+                            # Fix: Check if month_returns is a Series before reindexing
+                            if isinstance(month_returns, pd.Series):
+                                month_returns = month_returns.reindex(range(1, 13))
+                                month_returns_values = month_returns.values
+                            else:
+                                # Handle scalar case by creating an array with NaN values
+                                month_returns_values = np.full(12, np.nan)
+                                # If we have a scalar value with index, put it in the right position
+                                if hasattr(month_returns, "index") and len(month_returns.index) == 1:
+                                    idx = month_returns.index[0]
+                                    if 1 <= idx <= 12:
+                                        month_returns_values[idx-1] = month_returns.values[0]
+                                elif isinstance(month_returns, (float, np.floating)):
+                                    # If it's a plain scalar, we don't know where to put it
+                                    month_returns_values[0] = month_returns
+                            
+                            # Create DataFrame for plot
+                            month_returns_df = pd.DataFrame({
+                                "Month": [month_names[i] for i in range(12)],
+                                "Avg Return %": month_returns_values
+                            })
+                            
+                            # Plot
+                            st.bar_chart(month_returns_df.set_index("Month"))
+                        else:
+                            st.warning("Price data with proper date column required for seasonality analysis")
+                    except Exception as e:
+                        logger.error(f"Error in seasonality analysis: {e}")
+                        st.error(f"Error in seasonality analysis: {str(e)}")
 
 # Function to add the Pattern Discovery tab to your dashboard
 def add_pattern_discovery_tab(df, ensemble_weighter=None):

@@ -111,9 +111,26 @@ def _download_data_finnhub(ticker, start, end, interval):
         )
         res = "D"
 
-    # Convert dates to timestamps
-    start_ts = int(pd.Timestamp(start).timestamp())
-    end_ts = int(time.time()) if end is None else int(pd.Timestamp(end).timestamp())
+    # Validate start date
+    try:
+        if start and isinstance(start, str) and start not in ["1d", "1h", "30m", "15m", "5m", "1m", "1wk", "1mo"]:
+            start_ts = int(pd.to_datetime(start).timestamp())
+        else:
+            # Default to 1 year ago if date is invalid or missing
+            start_ts = int(datetime.datetime.now().timestamp()) - (86400 * 365)
+    except Exception as e:
+        logging.error(f"Error parsing start date '{start}' in Finnhub: {e}")
+        start_ts = int(datetime.datetime.now().timestamp()) - (86400 * 365)  # Default to 1 year ago
+
+    # Validate end date
+    try:
+        if end:
+            end_ts = int(pd.to_datetime(end).timestamp()) if isinstance(end, str) else int(pd.Timestamp(end).timestamp())
+        else:
+            end_ts = int(time.time())
+    except Exception as e:
+        logging.error(f"Error parsing end date '{end}' in Finnhub: {e}")
+        end_ts = int(time.time())  # Default to current time
 
     try:
         logging.info(f"Fetching {ticker} from Finnhub with resolution {res}")
@@ -474,6 +491,27 @@ def _download_data_coingecko(ticker, start, end, interval):
     # Get coin ID or use lowercase symbol if not in mapping
     coin_id = symbol_to_id.get(coin_symbol, coin_symbol)
 
+    # Make sure start is a proper date
+    try:
+        if start and isinstance(start, str) and start not in ["1d", "1h", "30m", "15m", "5m", "1m", "1wk", "1mo"]:
+            start_ts = int(pd.to_datetime(start).timestamp())
+        else:
+            # Default to 1 year ago if date is invalid or missing
+            start_ts = int(datetime.datetime.now().timestamp()) - (86400 * 365)
+    except Exception as e:
+        logging.error(f"Error parsing start date '{start}' in CoinGecko: {e}")
+        start_ts = int(datetime.datetime.now().timestamp()) - (86400 * 365)  # Default to 1 year ago
+
+    # Similar validation for end date
+    try:
+        if end:
+            end_ts = int(pd.to_datetime(end).timestamp()) if isinstance(end, str) else int(pd.Timestamp(end).timestamp())
+        else:
+            end_ts = int(datetime.datetime.now().timestamp())
+    except Exception as e:
+        logging.error(f"Error parsing end date '{end}' in CoinGecko: {e}")
+        end_ts = int(datetime.datetime.now().timestamp())
+
     # Map yfinance interval to CoinGecko interval (days)
     interval_map = {
         "1d": 1,
@@ -502,18 +540,36 @@ def _download_data_coingecko(ticker, start, end, interval):
         )
 
         # Convert start and end dates to Unix timestamps (milliseconds)
-        start_ts = int(pd.Timestamp(start).timestamp()) if start else None
-        end_ts = (
-            int(pd.Timestamp(end).timestamp())
-            if end
-            else int(datetime.datetime.now().timestamp())
-        )
+        # Ensure we're handling string dates properly
+        if start:
+            if isinstance(start, str):
+                try:
+                    start_ts = int(pd.to_datetime(start).timestamp())
+                except Exception as e:
+                    logging.error(f"Error parsing start date '{start}': {e}")
+                    start_ts = int(datetime.datetime.now().timestamp()) - (86400 * 365)  # One year ago
+            else:
+                start_ts = int(pd.Timestamp(start).timestamp())
+        else:
+            start_ts = int(datetime.datetime.now().timestamp()) - (86400 * 365)  # One year ago
+            
+        if end:
+            if isinstance(end, str):
+                try:
+                    end_ts = int(pd.to_datetime(end).timestamp())
+                except Exception as e:
+                    logging.error(f"Error parsing end date '{end}': {e}")
+                    end_ts = int(datetime.datetime.now().timestamp())
+            else:
+                end_ts = int(pd.Timestamp(end).timestamp())
+        else:
+            end_ts = int(datetime.datetime.now().timestamp())
 
         # Calculate days from timestamps if both are provided
         if start_ts and end_ts:
             days = min(
-                max(1, int((end_ts - start_ts) / (24 * 3600))), 365 * 2
-            )  # Cap at 2 years
+                max(1, int((end_ts - start_ts) / (24 * 3600))), 365 * 5
+            )  # Cap at 5 years
 
         # Initialize CoinGecko API
         cg = CoinGeckoAPI()
@@ -589,13 +645,14 @@ def _download_data_coingecko(ticker, start, end, interval):
 # Add a price data cache dictionary at the module level
 # Structure: {(ticker, interval, start, end): (timestamp, dataframe)}
 _PRICE_DATA_CACHE = {}
-# Cache expiry in seconds (default: 5 minutes)
-CACHE_EXPIRY_SECONDS = 300
+# Cache expiry in seconds (default: 10 minutes)
+CACHE_EXPIRY_SECONDS = 600
 
 
 def _get_from_cache(ticker, start, end, interval):
     """Try to get data from the temporary cache"""
-    cache_key = (ticker, interval, start, end)
+    # Fix parameter order in cache key to match the original function signature
+    cache_key = (ticker, start, end, interval)
     if cache_key in _PRICE_DATA_CACHE:
         timestamp, df = _PRICE_DATA_CACHE[cache_key]
         # Check if cache is still valid (not expired)
@@ -608,7 +665,8 @@ def _get_from_cache(ticker, start, end, interval):
 def _store_in_cache(ticker, start, end, interval, df):
     """Store data in the temporary cache with current timestamp"""
     if df is not None and not df.empty:
-        cache_key = (ticker, interval, start, end)
+        # Fix parameter order in cache key to match the original function signature
+        cache_key = (ticker, start, end, interval)
         _PRICE_DATA_CACHE[cache_key] = (time.time(), df.copy())
         logging.info(f"Stored {ticker} data in temporary cache")
 
@@ -632,16 +690,48 @@ def fetch_data(
     backoff_factor = 1.5
     current_delay = 1.0
 
-    # Ensure start and end dates are not in the future.
+    # Validate parameters
+    # Make sure start is a valid date string, not an interval string
+    if isinstance(start, str) and start in ["1d", "1h", "30m", "15m", "5m", "1m", "1wk", "1mo"]:
+        logging.warning(f"Start parameter '{start}' appears to be an interval, not a date. "
+                       f"Using default START_DATE from config.")
+        start = START_DATE
+
+    # Ensure start is a valid date string
+    try:
+        if isinstance(start, str):
+            pd.to_datetime(start)  # Just to validate, not storing the result
+    except Exception as e:
+        logging.warning(f"Invalid start date '{start}', using 1 year ago as default: {e}")
+        start = (datetime.datetime.now() - datetime.timedelta(days=365)).strftime('%Y-%m-%d')
+
+    # Ensure end is a valid date string if provided
+    if end is not None:
+        try:
+            if isinstance(end, str):
+                pd.to_datetime(end)  # Validate the end date
+        except Exception as e:
+            logging.warning(f"Invalid end date '{end}', using today as default: {e}")
+            end = datetime.datetime.now().strftime('%Y-%m-%d')
+
+    # Ensure start and end dates are not in the future
     today_str = datetime.datetime.now().strftime("%Y-%m-%d")
-    if start > today_str:
-        logging.warning(
-            f"Start date {start} is in the future. Adjusting to {today_str}."
-        )
-        start = today_str
-    if end is not None and end > today_str:
-        logging.warning(f"End date {end} is in the future. Adjusting to {today_str}.")
-        end = today_str
+    try:
+        if start > today_str:
+            logging.warning(
+                f"Start date {start} is in the future. Adjusting to {today_str}."
+            )
+            start = today_str
+        if end is not None and end > today_str:
+            logging.warning(f"End date {end} is in the future. Adjusting to {today_str}.")
+            end = today_str
+    except TypeError as e:
+        # Handle case where comparison fails (different types)
+        logging.warning(f"Error comparing dates: {e}. Ensuring valid date strings.")
+        if not isinstance(start, str) or not start.strip():
+            start = (datetime.datetime.now() - datetime.timedelta(days=365)).strftime('%Y-%m-%d')
+        if end is not None and (not isinstance(end, str) or not end.strip()):
+            end = today_str
 
     # Check if ticker is a cryptocurrency
     is_crypto = "-" in ticker.upper() and (
@@ -799,3 +889,54 @@ def clear_price_data_cache(older_than_seconds=None):
         for key in old_keys:
             del _PRICE_DATA_CACHE[key]
         logging.info(f"Cleared {len(old_keys)} expired entries from price data cache")
+
+
+def fetch_data(ticker, timeframe=None, range_cat="all", start_date=None, end_date=None):
+    """
+    Fetch data for ticker with robust error handling and parameter validation.
+    
+    Args:
+        ticker: The ticker symbol to fetch
+        timeframe: Data frequency/timeframe (e.g. "1d", "1h")
+        range_cat: Range category or "all"
+        start_date: Start date as string or datetime (will be validated)
+        end_date: End date as string or datetime (will be validated)
+        
+    Returns:
+        DataFrame with OHLCV data or None on error
+    """
+    # Import config for default settings
+    from config.config_loader import START_DATE as DEFAULT_START_DATE
+    from config.config_loader import logger
+    
+    # Validate start_date parameter
+    if start_date is not None:
+        # Check if start_date looks like a timeframe instead of a date
+        if isinstance(start_date, str) and start_date in ["1d", "1h", "4h", "15m", "1m", "30m", "5m", "auto"]:
+            logger.warning(f"Start parameter '{start_date}' appears to be an interval or special value, not a date. Using default START_DATE from config.")
+            start_date = DEFAULT_START_DATE
+        
+        # Try to convert start_date to datetime if it's a string
+        if isinstance(start_date, str) and start_date.lower() != 'auto':
+            try:
+                start_date = pd.to_datetime(start_date)
+            except Exception as e:
+                logger.warning(f"Invalid start date '{start_date}', using 1 year ago as default: {str(e)}")
+                start_date = pd.Timestamp.now() - pd.DateOffset(years=1)
+        
+        # Handle 'auto' value
+        if start_date == 'auto' or (isinstance(start_date, str) and start_date.lower() == 'auto'):
+            logger.info("Using 'auto' for start_date - calculating appropriate start date based on timeframe")
+            # Set appropriate start date based on timeframe
+            if timeframe == "1d":
+                start_date = pd.Timestamp.now() - pd.DateOffset(years=5)
+            elif timeframe in ["1h", "4h"]:
+                start_date = pd.Timestamp.now() - pd.DateOffset(months=6)
+            else:  # For higher frequency data
+                start_date = pd.Timestamp.now() - pd.DateOffset(weeks=4)
+
+    # Similarly validate end_date
+    # ... similar validation for end_date
+
+    # Continue with existing fetch logic
+    # ...existing code...

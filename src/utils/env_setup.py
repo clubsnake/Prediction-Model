@@ -18,6 +18,7 @@ import multiprocessing
 import os
 import platform
 from typing import Dict
+import threading
 
 # Fix incorrect imports
 try:
@@ -169,31 +170,21 @@ def setup_tf_environment(
         )
     except Exception as e:
         logger.error(f"Error configuring TensorFlow: {e}")
-
+    
+    # Apply settings for maximum performance by default
+    os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"
+    env_vars["TF_GPU_THREAD_MODE"] = "gpu_private"
+    
+    os.environ["TF_CUDNN_USE_AUTOTUNE"] = "1"
+    env_vars["TF_CUDNN_USE_AUTOTUNE"] = "1"
+    
+    # Apply mixed precision automatically if supported
+    os.environ["TF_ENABLE_AUTO_MIXED_PRECISION"] = "1" if mixed_precision else "0"
+    env_vars["TF_ENABLE_AUTO_MIXED_PRECISION"] = "1" if mixed_precision else "0"
+    
+    # Set faster GPU allocator
+    os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
+    env_vars["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
+    
     return env_vars
 
-
-def cleanup_tf_session():
-    """
-    Clean up TensorFlow session resources.
-    Call this function when you're done with TensorFlow operations
-    to free up memory.
-    """
-    try:
-        import tensorflow as tf
-
-        tf.keras.backend.clear_session()
-        # For older TF versions
-        if hasattr(tf, "reset_default_graph"):
-            tf.reset_default_graph()
-        import gc
-
-        gc.collect()
-        return True
-    except Exception as e:
-        logger.error(f"Error cleaning up TensorFlow session: {e}")
-        return False
-
-
-# Remove the problematic load_dashboard_components function that creates circular imports
-# We'll create a new module for dashboard utils instead

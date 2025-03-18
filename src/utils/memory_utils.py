@@ -121,3 +121,24 @@ def get_system_memory_info():
         if k.startswith("system") or k in ["ram_gb", "ram_percent"]
     }
     return system_info
+
+
+def run_gpu_warmup(duration=10, intensity=0.8):
+    """Run a GPU warmup to improve performance during initial operations"""
+    try:
+        from src.utils.gpu_memory_manager import GPUMemoryManager
+        manager = GPUMemoryManager()
+        peak_util = manager.warmup_gpu(intensity)
+        
+        # Notify training optimizer about the warmup
+        try:
+            optimizer = get_training_optimizer()
+            if hasattr(optimizer, "log_gpu_activity"):
+                optimizer.log_gpu_activity("warmup", peak_util)
+        except Exception:
+            pass
+            
+        return peak_util
+    except Exception as e:
+        logger.error(f"Error running GPU warmup: {e}")
+        return False

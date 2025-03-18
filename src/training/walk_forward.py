@@ -1,58 +1,47 @@
-# walk_forward.py
 """
-Implements a unified walk-forward validation scheme that combines:
-1. Realistic incremental learning with no data leakage
-2. Ensemble model approach with weighted predictions
-3. Memory efficient implementations and caching
-4. Integration with dashboard for forecasting
+Implements a unified walk-forward validation scheme...
 """
 
+# Standard library imports
 import os
 import sys
+import logging
+import json
+import numpy as np
+import traceback
+from datetime import datetime
+import time
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-import os
-
-# Import the config properly
-import sys
 
 # Set environment variables BEFORE importing TensorFlow
 from src.utils.env_setup import setup_tf_environment
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+# Configure paths
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+if (project_root not in sys.path):
+    sys.path.insert(0, project_root)
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler("walkforward.log"), logging.StreamHandler()],
+)
+logger = logging.getLogger(__name__)
+
+# Import the registry from incremental_learning
 try:
-    from config.config_loader import (
-        WALK_FORWARD_DEFAULT,
-        WALK_FORWARD_MAX,
-        WALK_FORWARD_MIN,
-        get_value,
-    )
+    from src.training.incremental_learning import ModelRegistry
+except ImportError as e:
+    logger.error(f"Failed to import registry: {e}")
+    # Create a placeholder if import fails
+    registry = None
 
-    use_mixed_precision = get_value("hardware.use_mixed_precision", False)
-except ImportError:
-    use_mixed_precision = False
-    WALK_FORWARD_MIN = 3
-    WALK_FORWARD_MAX = 180
-    WALK_FORWARD_DEFAULT = 30
+# Set environment variables BEFORE importing TensorFlow
+from src.utils.env_setup import setup_tf_environment
 
-tf_env = setup_tf_environment(mixed_precision=use_mixed_precision)
-import json
-import logging
-import traceback
-from datetime import datetime
 
-import numpy as np
-import optuna
-import pandas as pd
-import streamlit as st
-
-# Now import TensorFlow after environment variables are set
-import tensorflow as tf
-
-from src.utils.memory_utils import WeakRefCache, cleanup_tf_session, log_memory_usage
-
-# Improved imports with better error handling
+# Import configuration settings with fallbacks
 try:
     from config.config_loader import (
         ACTIVE_MODEL_TYPES,
@@ -60,7 +49,14 @@ try:
         PREDICTION_HORIZON,
         START_DATE,
         WALK_FORWARD_DEFAULT,
+        WALK_FORWARD_MAX,
+        WALK_FORWARD_MIN,
+        UPDATE_DURING_WALK_FORWARD,  # Import the new setting
+        UPDATE_DURING_WALK_FORWARD_INTERVAL,  # Import the new interval setting
+        get_value,
+        get_config,
     )
+    use_mixed_precision = get_value("hardware.use_mixed_precision", False)
 except ImportError:
     # Define fallbacks
     ACTIVE_MODEL_TYPES = [
@@ -72,88 +68,95 @@ except ImportError:
         "random_forest",
         "xgboost",
         "tabnet",
+        "nbeats",
     ]
-    MODEL_TYPES = ACTIVE_MODEL_TYPES + [
-        "rnn",
-        "tft",
-        "cnn",
-        "ltc",
-        "lstm",
-        "random_forest",
-        "xgboost",
-        "tabnet",
-    ]
+    MODEL_TYPES = ACTIVE_MODEL_TYPES.copy()
     PREDICTION_HORIZON = 30
     START_DATE = "2020-01-01"
     WALK_FORWARD_DEFAULT = 30
-    logger.warning("Failed to import config values, using defaults")
+    WALK_FORWARD_MIN = 3
+    WALK_FORWARD_MAX = 180
+    UPDATE_DURING_WALK_FORWARD = True  # Default to True if not found in config
+    UPDATE_DURING_WALK_FORWARD_INTERVAL = 5  # Default to updating every 5 cycles
+    use_mixed_precision = False
+    
+# Set up TensorFlow environment
+tf_env = setup_tf_environment(mixed_precision=use_mixed_precision)
 
+# Third-party imports
+import optuna
+import pandas as pd
+import streamlit as st
+import tensorflow as tf
+from sklearn.preprocessing import StandardScaler
+
+# Project imports - handle safely with fallbacks
 try:
     from src.data.preprocessing import create_sequences
-except ImportError:
-    logger.error("Failed to import create_sequences")
-
-    # Define a minimal fallback implementation
+    from src.models.model import build_model_by_type, record_weight_snapshot
+    from src.models.model_factory import BaseModel
+    from src.models.tabnet_model import TabNetPricePredictor
+    HAS_TABNET = True
+except ImportError as e:
+    logger.warning(f"Some imports failed: {e}")
+    HAS_TABNET = False
+    
+    # Define fallback for create_sequences if import fails
     def create_sequences(df, feature_cols, target_col, lookback, horizon):
         logger.warning("Using fallback create_sequences implementation")
         return None, None
 
-
-# Handle model imports safely
-try:
-    from src.models.model import build_model_by_type, record_weight_snapshot
-    from src.models.model_factory import BaseModel
-except ImportError:
-    logger.error("Failed to import model classes")
-    # Will cause errors if these functions are used
-
-# Safely import TabNet components
-try:
-    from src.models.tabnet_model import TabNetPricePredictor
-
-    HAS_TABNET = True
-    logger.info("TabNet successfully imported")
-except ImportError as e:
-    HAS_TABNET = False
-    logger.warning(f"TabNet import failed: {e}")
-
-# Safely import trainer
 try:
     from src.training.trainer import ModelTrainer
-except ImportError:
-    logger.error("Failed to import ModelTrainer")
-
-# Import utilities safely
-try:
-    from src.utils.memory_utils import (
-        WeakRefCache,
-        cleanup_tf_session,
-        log_memory_usage,
-    )
+    from src.utils.memory_utils import WeakRefCache, cleanup_tf_session, log_memory_usage
     from src.utils.training_optimizer import TrainingOptimizer, get_training_optimizer
     from src.utils.vectorized_ops import numba_mse, vectorized_sequence_creation
 except ImportError as e:
     logger.error(f"Failed to import utility functions: {e}")
-
+    
     # Define minimal fallbacks for critical functions
     def numba_mse(x, y):
         return ((x - y) ** 2).mean()
-
+    
+    def vectorized_sequence_creation(df, feature_cols, target_col, lookback, horizon):
+        try:
+            return create_sequences(df, feature_cols, target_col, lookback, horizon)
+        except:
+            return None, None
+    
     class WeakRefCache:
         def __init__(self):
             self.cache = {}
-
+    
     def log_memory_usage(tag):
         logger.info(f"Memory logging not available: {tag}")
-
-
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("walkforward.log"), logging.StreamHandler()],
-)
-logger = logging.getLogger(__name__)
+        
+    def cleanup_tf_session():
+        logger.info("TF session cleanup not available")
+        
+    def get_training_optimizer():
+        class DummyOptimizer:
+            def __init__(self):
+                self.cpu_count = 1
+                self.gpu_count = 0
+                
+            def get_model_config(self, model_type, size="medium"):
+                return {"batch_size": 32, "cpu_cores": 1}
+                
+            def log_memory_usage(self, tag):
+                return False
+                
+            def cleanup_memory(self, level="light"):
+                pass
+                
+            def run_all_models_parallel(self, model_configs, training_function):
+                results = {}
+                for config in model_configs:
+                    model_type = config["model_type"]
+                    results[model_type] = training_function(config)
+                return results
+                
+        return DummyOptimizer()
 
 # Log the environment settings
 logger.info(f"TensorFlow environment settings: {json.dumps(tf_env, indent=2)}")
@@ -162,20 +165,16 @@ logger.info(f"TensorFlow environment settings: {json.dumps(tf_env, indent=2)}")
 prediction_cache = WeakRefCache()
 model_cache = WeakRefCache()
 
-
 # Initialize the training optimizer globally
 training_optimizer = get_training_optimizer()
 logger.info(
     f"Training optimizer initialized with {training_optimizer.cpu_count} CPUs, {training_optimizer.gpu_count} GPUs"
 )
 
-# Import configuration properly with safety checks
-from config.config_loader import get_config
-
 # Get configuration values safely with defaults
 try:
     config = get_config()
-    LOOKBACK = config.get("LOOKBACK", 30)  # Use get() with default value
+    LOOKBACK = config.get("LOOKBACK", 30)
     PREDICTION_HORIZON = config.get("PREDICTION_HORIZON", 30)
 except Exception as e:
     logger.warning(f"Error loading config values: {e}")
@@ -249,13 +248,6 @@ def enable_xla_compilation():
         tf.config.optimizer.set_jit(True)
 
         # Use mixed precision only if configured in settings
-        try:
-            from config.config_loader import get_value
-
-            use_mixed_precision = get_value("hardware.use_mixed_precision", False)
-        except ImportError:
-            use_mixed_precision = False
-
         if use_mixed_precision:
             policy = tf.keras.mixed_precision.Policy("mixed_float16")
             tf.keras.mixed_precision.set_global_policy(policy)
@@ -265,104 +257,138 @@ def enable_xla_compilation():
 
         return True
     except Exception as e:
-        logger.error(f"Error enabling XLA compilation: {e}")
-        # Continue execution
         logger.warning(f"Failed to enable XLA compilation: {e}")
         return False
 
 
 def generate_future_forecast(model, df, feature_cols, lookback=None, horizon=None):
-    """Generate predictions for the next 'horizon' days into the future"""
+    """
+    Generate predictions for the next 'horizon' days into the future.
+    Used by walk-forward validation for forecasting.
+    
+    Args:
+        model: The model to use for prediction
+        df: DataFrame with historical data
+        feature_cols: Features to use
+        lookback: Lookback window size (defaults to model input shape or 30)
+        horizon: Prediction horizon (defaults to 30)
+        
+    Returns:
+        List of forecasted values
+    """
     try:
         if model is None or df is None or df.empty:
             logger.warning("Cannot generate forecast: model or data is missing")
             return []
 
-        # Use values from session state if not provided
-        lookback = lookback or st.session_state.get("lookback", 30)
-        horizon = horizon or st.session_state.get("forecast_window", 30)
+        # Set defaults
+        if lookback is None:
+            # Try to infer from model input shape
+            if hasattr(model, 'input_shape') and len(model.input_shape) > 1:
+                lookback = model.input_shape[1]
+            else:
+                lookback = 30
+        
+        horizon = horizon or 30
 
-        logger.info(
-            f"Generating future forecast: lookback={lookback}, horizon={horizon}"
+        logger.info(f"Generating future forecast: lookback={lookback}, horizon={horizon}")
+
+        # Use consolidated prediction approach
+        from src.dashboard.prediction_service import PredictionService
+        service = PredictionService(model_instance=model)
+        
+        # Use market regime if this is an ensemble model
+        use_market_regime = hasattr(model, 'models') and hasattr(model, 'weights')
+        
+        return service.generate_forecast(
+            df=df, 
+            feature_cols=feature_cols,
+            lookback=lookback,
+            horizon=horizon,
+            market_regime=use_market_regime
         )
-
-        # Get the last 'lookback' days of data for input
-        last_data = df.iloc[-lookback:].copy()
-
-        # Create a scaler for feature normalization
-        from sklearn.preprocessing import StandardScaler
-
-        scaler = StandardScaler()
-        scaler.fit(last_data[feature_cols])
-
-        # Initialize array to store predictions
-        future_prices = []
-        current_data = last_data.copy()
-
-        try:
-            # Import create_sequences
-            from src.data.preprocessing import create_sequences
-
-            # First attempt - use create_sequences to generate input sequence
-            X_input, _ = create_sequences(
-                current_data, feature_cols, "Close", lookback, 1
-            )
-
-            # Make prediction for each day in the horizon
-            for i in range(horizon):
-                # Use model to predict
-                preds = model.predict(X_input, verbose=0)
-
-                # Get the predicted price (first value if multiple outputs)
-                if hasattr(preds, "shape") and len(preds.shape) > 1:
-                    next_price = float(preds[0][0])
-                else:
-                    next_price = float(preds[0])
-
-                future_prices.append(next_price)
-
-                # Update input data with the prediction
-                next_row = current_data.iloc[-1:].copy()
-                if isinstance(next_row.index[0], pd.Timestamp):
-                    next_row.index = [next_row.index[0] + pd.Timedelta(days=1)]
-                else:
-                    next_row.index = [next_row.index[0] + 1]
-
-                next_row["Close"] = next_price
-                current_data = pd.concat([current_data.iloc[1:], next_row])
-
-                # Scale features for consistent input
-                current_scaled = current_data.copy()
-                current_scaled[feature_cols] = scaler.transform(
-                    current_data[feature_cols]
-                )
-
-                # Create new sequence for next prediction
-                X_input, _ = create_sequences(
-                    current_scaled, feature_cols, "Close", lookback, 1
-                )
-
-            logger.info(f"Generated {len(future_prices)} day forecast")
-            return future_prices
-
-        except ImportError:
-            logger.warning(
-                "Using simplified forecast approach without create_sequences"
-            )
-
-            # Fallback simple approach
-            # ...existing code...
+        
     except Exception as e:
         logger.error(f"Error generating future forecast: {e}", exc_info=True)
         return []
 
 
+def update_forecast_in_session_state(
+    ensemble_model, df, feature_cols, ensemble_weights=None
+):
+    """
+    Update forecast in session state for dashboard display with confidence and regime information.
+    
+    Args:
+        ensemble_model: The trained ensemble model
+        df: DataFrame with historical data
+        feature_cols: Feature columns to use
+        ensemble_weights: Dictionary of ensemble weights
+        
+    Returns:
+        List of forecast values or None on error
+    """
+    try:
+        # Generate and save forecast data for the dashboard
+        lookback = st.session_state.get("lookback", 30)
+        forecast_window = st.session_state.get("forecast_window", 30)
+
+        # Use the consolidated forecast generation with confidence and regime analysis
+        from src.dashboard.prediction_service import PredictionService
+        service = PredictionService(model_instance=ensemble_model)
+        
+        # Generate forecast with all enhancements
+        future_forecast, confidence_scores, confidence_components = service.generate_forecast(
+            df=df,
+            feature_cols=feature_cols,
+            lookback=lookback,
+            horizon=forecast_window,
+            with_confidence=True,
+            market_regime=True
+        )
+
+        # Update session state with all the information
+        st.session_state["future_forecast"] = future_forecast
+        st.session_state["forecast_confidence"] = confidence_scores
+        st.session_state["confidence_components"] = confidence_components
+        st.session_state["last_forecast_update"] = datetime.now()
+
+        # Store metadata for dashboard display
+        if not hasattr(service, 'metadata'):
+            service.metadata = {}
+            
+        service.metadata['current_regime'] = confidence_components.get('market_regime', 'unknown')
+        service.metadata['context_similarity'] = confidence_components.get('context_similarity', 0.5)
+        
+        if hasattr(service, 'market_regime_system'):
+            service.metadata['regime_stats'] = service.market_regime_system.get_regime_stats()
+            # Also store regime history if available
+            if hasattr(service.market_regime_system, 'regime_history'):
+                st.session_state['regime_history'] = service.market_regime_system.regime_history
+            
+        st.session_state['metadata'] = service.metadata
+
+        # Store ensemble weights
+        if ensemble_weights:
+            st.session_state["ensemble_weights"] = ensemble_weights
+
+        logger.info(f"Updated dashboard forecast with {len(future_forecast)} days and confidence scores")
+        return future_forecast
+    except Exception as e:
+        logger.error(f"Error updating forecast in dashboard: {e}", exc_info=True)
+        return None
+
+
 # Use a dynamic import approach to avoid circular imports
 def get_dashboard_update_function():
-    """Dynamically import and return the dashboard forecast update function"""
+    """
+    Dynamically import and return the dashboard forecast update function.
+    
+    Returns:
+        function: Dashboard update function
+    """
     try:
         import importlib
-
         module = importlib.import_module("src.dashboard.prediction_service")
         if hasattr(module, "update_dashboard_forecast"):
             return module.update_dashboard_forecast
@@ -374,46 +400,23 @@ def get_dashboard_update_function():
         return update_forecast_in_session_state
 
 
-# Define a unified function
-def update_forecast_in_session_state(
-    ensemble_model, df, feature_cols, ensemble_weights=None
-):
-    """Update forecast in session state for dashboard display"""
-    try:
-        # Generate and save forecast data for the dashboard
-        lookback = st.session_state.get("lookback", 30)
-        forecast_window = st.session_state.get("forecast_window", 30)
-
-        # Generate forecast with ensemble model
-        future_forecast = generate_future_forecast(
-            ensemble_model, df, feature_cols, lookback, forecast_window
-        )
-
-        # Update session state
-        st.session_state["future_forecast"] = future_forecast
-        st.session_state["last_forecast_update"] = datetime.now()
-
-        # Also store the ensemble weights if provided
-        if ensemble_weights:
-            st.session_state["ensemble_weights"] = ensemble_weights
-
-        logger.info(f"Updated dashboard forecast with {len(future_forecast)} days")
-        return future_forecast
-    except Exception as e:
-        logger.error(f"Error updating forecast in dashboard: {e}", exc_info=True)
-        return None
-
-
 # Use dynamic function retrieval at the module level to assign this function once
 update_dashboard_forecast_function = get_dashboard_update_function()
-update_forecast_in_dashboard = (
-    update_forecast_in_session_state  # Maintain backward compatibility
-)
+update_forecast_in_dashboard = update_forecast_in_session_state  # Maintain backward compatibility
 
 
 def get_ensemble_model(model_types, models_dict, ensemble_weights):
-    """Create an ensemble model from individual models with given weights"""
-
+    """
+    Create an ensemble model from individual models with given weights.
+    
+    Args:
+        model_types: List of model types
+        models_dict: Dictionary of trained models
+        ensemble_weights: Dictionary of weights for each model type
+        
+    Returns:
+        EnsembleModel: Model that combines individual models with weights
+    """
     class EnsembleModel:
         def __init__(self, models_dict, weights, model_types):
             self.models = models_dict
@@ -469,12 +472,146 @@ def get_ensemble_model(model_types, models_dict, ensemble_weights):
             if isinstance(X, np.ndarray):
                 return np.zeros((X.shape[0], 1))  # Default shape
             return None
+            
+        def predict_with_confidence(self, X, verbose=0):
+            """Generate weighted ensemble prediction with confidence scores"""
+            ensemble_pred = None
+            total_weight = 0.0
+            individual_preds = {}
+            model_uncertainties = {}
+            
+            for mtype, weight in self.weights.items():
+                if weight <= 0 or mtype not in self.models:
+                    continue
+
+                model = self.models[mtype]
+                if model is None:
+                    continue
+
+                try:
+                    # Get prediction from this model
+                    pred = model.predict(X, verbose=0)
+                    
+                    # Store individual model prediction
+                    individual_preds[mtype] = pred
+
+                    # Collect model-specific uncertainty if available
+                    if hasattr(model, 'predict_uncertainty'):
+                        # Some models can provide prediction uncertainty
+                        try:
+                            uncertainty = model.predict_uncertainty(X)
+                            model_uncertainties[mtype] = uncertainty
+                        except:
+                            pass
+                    elif hasattr(model, 'predict_proba') and mtype in ['random_forest', 'xgboost']:
+                        # For tree-based models, prediction variance can be used
+                        try:
+                            if mtype == 'random_forest':
+                                # For RandomForest, compute variance across trees
+                                tree_preds = np.array([tree.predict(X) for tree in model.estimators_])
+                                uncertainty = np.std(tree_preds, axis=0) / (np.mean(tree_preds, axis=0) + 1e-8)
+                                model_uncertainties[mtype] = uncertainty
+                            elif mtype == 'xgboost':
+                                # For XGBoost, use prediction variance as uncertainty
+                                # This is a simplification; ideally use quantile regression
+                                uncertainty = np.ones_like(pred) * 0.2  # default uncertainty
+                                model_uncertainties[mtype] = uncertainty
+                        except:
+                            pass
+                            
+                    # Weighted contribution to ensemble
+                    if pred is not None:
+                        w = max(0, weight)  # Ensure non-negative
+                        total_weight += w
+
+                        if ensemble_pred is None:
+                            ensemble_pred = w * pred
+                        else:
+                            ensemble_pred += w * pred
+
+                except Exception as e:
+                    logger.error(f"Error in ensemble prediction for {mtype}: {e}")
+                    continue
+
+            # Normalize by total weight
+            if ensemble_pred is not None and total_weight > 0:
+                ensemble_pred /= total_weight
+                
+                # Calculate confidence scores
+                try:
+                    # Check for disagreement between models - more disagreement = lower confidence
+                    model_disagreement = 0.0
+                    if len(individual_preds) > 1:
+                        # Calculate standard deviation across model predictions
+                        all_preds = np.array([pred for pred in individual_preds.values()])
+                        model_std = np.std(all_preds, axis=0)
+                        model_mean = np.mean(all_preds, axis=0)
+                        model_disagreement = model_std / (model_mean + 1e-6)  # Coefficient of variation
+                    
+                    # Base confidence on model disagreement (higher disagreement = lower confidence)
+                    base_confidence = 80.0 * np.exp(-5.0 * model_disagreement)
+                    
+                    # Adjust confidence based on forecast horizon (further = less confident)
+                    if hasattr(ensemble_pred, 'shape') and len(ensemble_pred.shape) > 1:
+                        horizon_decay = np.exp(-0.05 * np.arange(ensemble_pred.shape[1]))
+                        confidence_scores = base_confidence * horizon_decay
+                    else:
+                        horizon_decay = np.exp(-0.05 * np.arange(len(ensemble_pred)))
+                        confidence_scores = base_confidence * horizon_decay
+                    
+                    # Ensure confidence is bounded between 10 and 95
+                    confidence_scores = np.clip(confidence_scores, 10, 95)
+                    
+                    # Create confidence components dictionary
+                    confidence_components = {
+                        'ensemble': base_confidence,
+                        'historical': np.ones_like(confidence_scores) * 70,  # Placeholder
+                        'volatility': np.ones_like(confidence_scores) * 60,  # Placeholder
+                        'model': np.ones_like(confidence_scores) * 75,      # Placeholder
+                        'final': confidence_scores
+                    }
+                    
+                    return ensemble_pred, confidence_scores, confidence_components
+                except Exception as e:
+                    logger.error(f"Error calculating confidence: {e}")
+                    # Return prediction with default confidence
+                    default_confidence = np.ones_like(ensemble_pred) * 50
+                    return ensemble_pred, default_confidence, {}
+            
+            # Fallback: use first available model if ensemble fails
+            for mtype, model in self.models.items():
+                if model is not None:
+                    logger.warning(f"Using fallback model {mtype} for prediction")
+                    try:
+                        pred = model.predict(X, verbose=0)
+                        # Return with low confidence
+                        return pred, np.ones_like(pred) * 30, {}
+                    except:
+                        continue
+
+            # Last resort: return zeros
+            logger.error("Ensemble prediction failed, returning zeros")
+            if isinstance(X, np.ndarray):
+                zeros = np.zeros((X.shape[0], 1))
+                return zeros, np.zeros_like(zeros), {}
+            
+            return None, None, {}
 
     # Create and return the ensemble model
     return EnsembleModel(models_dict, ensemble_weights, model_types)
 
 
 def _get_default_submodel_params(mtype, optimized=False):
+    """
+    Get default parameters for a specific model type.
+    
+    Args:
+        mtype: Model type
+        optimized: Whether to use optimized parameters
+        
+    Returns:
+        dict: Default parameters
+    """
     if mtype == "lstm":
         if optimized:
             return {
@@ -535,11 +672,22 @@ def unified_walk_forward(
         update_frequency: How often to report progress and update dashboard (default: 5)
 
     Returns:
-        (ensemble_model, metrics_dict): The trained ensemble model and performance metrics
+        tuple: (ensemble_model, metrics_dict) - The trained ensemble model and performance metrics
     """
     # Default values and input validation
     target_col = "Close"  # Default target column
     log_memory_usage("Starting unified_walk_forward")
+
+    # Check for dashboard update interval in session state
+    if hasattr(st, "session_state") and "update_during_walk_forward_interval" in st.session_state:
+        # Use the interval from session state if available
+        update_frequency = st.session_state["update_during_walk_forward_interval"]
+        logger.info(f"Using dashboard update interval from session state: {update_frequency}")
+    # Otherwise use the value from config (if imported successfully)
+    elif 'UPDATE_DURING_WALK_FORWARD_INTERVAL' in globals():
+        update_frequency = UPDATE_DURING_WALK_FORWARD_INTERVAL
+        logger.info(f"Using dashboard update interval from config: {update_frequency}")
+    # Otherwise use the provided parameter (default: 5)
 
     # Initialize training optimizer for parallel training
     training_optimizer = get_training_optimizer()
@@ -582,12 +730,28 @@ def unified_walk_forward(
         logger.error("Empty DataFrame provided")
         return None, {"mse": float("inf"), "mape": float("inf")}
 
-    # Check that all feature columns exist in DataFrame
+    # Add defensive checks before accessing feature_cols
+    if feature_cols is None:
+        logger.warning(f"Feature columns are None in unified_walk_forward. Using empty list.")
+        feature_cols = []
+        
+    if df is None:
+        error_msg = f"DataFrame is None in unified_walk_forward"
+        logger.error(error_msg)
+        return None, {"rmse": float('inf'), "mape": float('inf'), "direction_accuracy": 0.0}
+    
+    # Now it's safe to check for missing columns
     missing_cols = [col for col in feature_cols if col not in df.columns]
     if missing_cols:
-        logger.error(f"Missing feature columns: {missing_cols}")
-        return None, {"mse": float("inf"), "mape": float("inf")}
-
+        logger.warning(f"Missing feature columns: {missing_cols}")
+        
+    # Log which features are being used - makes it visible which indicators are active
+    logger.info(f"Using {len(feature_cols)} features for model training: {feature_cols}")
+    
+    # Update session state with features for Model Insights tab
+    if hasattr(st, 'session_state'):
+        st.session_state["active_features"] = feature_cols
+    
     # Check target column exists
     if target_col not in df.columns:
         logger.error(f"Missing target column: {target_col}")
@@ -715,6 +879,9 @@ def unified_walk_forward(
                     params = config["params"]
                     settings = config["settings"]
 
+                    # Log which features this model is using
+                    logger.info(f"Training {model_type} model with {len(feature_cols)} features")
+                    
                     try:
                         # 1. Neural network models: LSTM, RNN, TFT
                         if model_type in ["lstm", "rnn", "tft"]:
@@ -1075,8 +1242,8 @@ def unified_walk_forward(
                         ACTIVE_MODEL_TYPES, models_dict, ensemble_weights
                     )
 
-                    # 8. Update dashboard forecast periodically
-                    if update_dashboard and cycle % update_frequency == 0:
+                    # 8. Update dashboard forecast periodically - now respects both config setting and interval
+                    if update_dashboard and UPDATE_DURING_WALK_FORWARD and cycle % update_frequency == 0:
                         try:
                             update_dashboard_forecast_function(
                                 ensemble_model, df, feature_cols, ensemble_weights
@@ -1182,8 +1349,203 @@ def unified_walk_forward(
         logger.error("No predictions were generated")
         metrics = {"mse": float("inf"), "mape": float("inf"), "rmse": float("inf")}
 
-    # Final update of dashboard forecast
-    if update_dashboard:
+    # Initialize drift tuning scheduler if not in session state
+    if "drift_tuning_scheduler" not in st.session_state:
+        try:
+            from src.training.drift_scheduler import DriftTuningScheduler
+            st.session_state["drift_tuning_scheduler"] = DriftTuningScheduler(
+                registry=registry if 'registry' in locals() else None
+            )
+            logger.info("Initialized drift tuning scheduler")
+        except ImportError:
+            logger.warning("Could not initialize drift tuning scheduler")
+
+    # After calculating metrics, update scheduler
+    if "drift_tuning_scheduler" in st.session_state:
+        drift_scheduler = st.session_state["drift_tuning_scheduler"]
+        
+        # Get ticker and timeframe from session state if available
+        ticker = st.session_state.get("ticker", "UNKNOWN")
+        timeframe = st.session_state.get("timeframe", "1d")
+        
+        # Record performance metrics
+        if "rmse" in metrics:
+            drift_scheduler.record_performance(ticker, timeframe, "rmse", metrics["rmse"])
+        if "mape" in metrics:
+            drift_scheduler.record_performance(ticker, timeframe, "mape", metrics["mape"])
+        
+        # Record confidence if available
+        if all_predictions and len(all_predictions) > 0:
+            # Calculate average confidence
+            avg_confidence = np.mean([np.max(pred) for pred in all_predictions[-10:]])
+            drift_scheduler.record_confidence(ticker, timeframe, avg_confidence)
+        
+        # Check if we should tune drift hyperparameters
+        should_tune, reason = drift_scheduler.should_tune_now(ticker, timeframe, df)
+        
+        if should_tune:
+            logger.warning(f"Drift hyperparameter tuning triggered: {reason}")
+            
+            # Get optimization configuration
+            opt_config = drift_scheduler.get_optimization_config(ticker, timeframe)
+            
+            try:
+                # Import meta optimizer
+                from src.tuning.drift_optimizer import optimize_drift_hyperparameters
+                
+                # Run optimization
+                logger.info(f"Starting drift hyperparameter optimization with {opt_config['n_trials']} trials")
+                
+                # Define training function with current data
+                def train_with_drift_params(drift_hyperparams):
+                    from src.training.concept_drift import MultiDetectorDriftSystem, DriftHyperparameters
+                    # Create hyperparameters object
+                    hp_obj = DriftHyperparameters(**drift_hyperparams)
+                    
+                    # Create drift detector
+                    drift_detector = MultiDetectorDriftSystem(hyperparams=hp_obj)
+                    
+                    # Run a mini walk-forward validation
+                    _, mini_metrics = unified_walk_forward(
+                        df=df.iloc[-min(1000, len(df)):].copy(),  # Use subset for speed
+                        feature_cols=feature_cols,
+                        submodel_params_dict=submodel_params_dict,
+                        ensemble_weights=ensemble_weights,
+                        window_size=wf_size,
+                        update_dashboard=False,
+                        drift_detector=drift_detector
+                    )
+                    
+                    return mini_metrics
+                
+                # Define evaluation function
+                def evaluate_params(metrics_dict):
+                    return metrics_dict
+                
+                # Run optimization with resource limits
+                best_hyperparams = optimize_drift_hyperparameters(
+                    train_function=train_with_drift_params,
+                    eval_function=evaluate_params,
+                    n_trials=opt_config.get("n_trials", 10),
+                    timeout=opt_config.get("timeout", 1800),
+                    search_space=opt_config.get("search_space", None),
+                    prior_params=opt_config.get("prior_params", None)
+                )
+                
+                # Record optimization result
+                result_metrics = train_with_drift_params(best_hyperparams)
+                drift_scheduler.record_optimization(ticker, timeframe, best_hyperparams, result_metrics)
+                
+                # Create new drift detector with optimized hyperparameters
+                from src.training.concept_drift import MultiDetectorDriftSystem, DriftHyperparameters
+                hp_obj = DriftHyperparameters(**best_hyperparams)
+                st.session_state["drift_detector"] = MultiDetectorDriftSystem(
+                    hyperparams=hp_obj,
+                    base_window_size=wf_size
+                )
+                
+                logger.info(f"Updated drift detector with optimized hyperparameters")
+                
+            except Exception as e:
+                logger.error(f"Error during drift hyperparameter optimization: {e}")
+
+    # Initialize drift detection system if not in st.session_state:
+    if "drift_detector" not in st.session_state:
+        try:
+            from src.training.concept_drift import MultiDetectorDriftSystem, DriftHyperparameters
+            import yaml
+            
+            # Try to load optimized hyperparameters
+            hyperparams = None
+            try:
+                from config.config_loader import get_data_dir
+                
+                # Get ticker and timeframe if available in session state
+                ticker = st.session_state.get("ticker", "UNKNOWN")
+                timeframe = st.session_state.get("timeframe", "1d")
+                
+                hyperparams_dir = os.path.join(get_data_dir(), "Hyperparameters")
+                drift_params_file = os.path.join(hyperparams_dir, f"drift_params_{ticker}_{timeframe}.yaml")
+                
+                if os.path.exists(drift_params_file):
+                    with open(drift_params_file, "r") as f:
+                        hyperparams_dict = yaml.safe_load(f)
+                        hyperparams = DriftHyperparameters(**hyperparams_dict)
+                        logger.info(f"Loaded optimized drift hyperparameters from {drift_params_file}")
+            except Exception as e:
+                logger.warning(f"Could not load drift hyperparameters: {e}")
+            
+            # Create detector with hyperparameters if available
+            st.session_state["drift_detector"] = MultiDetectorDriftSystem(
+                hyperparams=hyperparams,
+                base_window_size=wf_size,
+                statistical_window=wf_size,
+                performance_window=wf_size*2
+            )
+            logger.info("Initialized concept drift detection system")
+        except ImportError:
+            logger.warning("Could not initialize drift detection system")
+
+    # Check for drift using predictions and actuals
+    if "drift_detector" in st.session_state and all_predictions and all_actuals:
+        drift_detector = st.session_state["drift_detector"]
+        
+        # Sample recent predictions for drift detection
+        sample_size = min(20, len(all_predictions))
+        recent_preds = all_predictions[-sample_size:]
+        recent_actuals = all_actuals[-sample_size:]
+        
+        # Update drift detector with recent results
+        drift_detected = False
+        for i in range(sample_size):
+            pred = recent_preds[i][0] if len(recent_preds[i].shape) > 0 else recent_preds[i]
+            actual = recent_actuals[i][0] if len(recent_actuals[i].shape) > 0 else recent_actuals[i]
+            
+            result, drift_type, drift_score, adaptation = drift_detector.update_error(
+                timestamp=time.time(),
+                actual=float(actual),
+                predicted=float(pred)
+            )
+            
+            if result:
+                drift_detected = True
+                logger.warning(f"Drift detected during walk-forward validation: {drift_type}, score={drift_score:.4f}")
+                
+                # Apply adaptation to ensemble weights
+                if "ensemble_weight_strategy" in adaptation:
+                    # Get adjusted weights
+                    adjusted_weights = drift_detector.get_ensemble_weight_adjustments(ensemble_weights)
+                    ensemble_weights = adjusted_weights
+                    logger.info(f"Adjusted ensemble weights: {ensemble_weights}")
+                
+                # Apply adaptation to window size
+                if "window_size_factor" in adaptation:
+                    old_wf_size = wf_size
+                    wf_size = drift_detector.get_adaptive_window_size(wf_size)
+                    logger.info(f"Adjusted window size: {old_wf_size} -> {wf_size}")
+                
+                # Store adaptation in session state
+                st.session_state["last_drift_adaptation"] = adaptation
+                
+                # Update dashboard with drift info if enabled
+                if update_dashboard:
+                    if "drift_events" not in st.session_state:
+                        st.session_state["drift_events"] = []
+                    
+                    st.session_state["drift_events"].append({
+                        "timestamp": datetime.now(),
+                        "type": drift_type,
+                        "score": drift_score,
+                        "adaptation": adaptation
+                    })
+        
+        # Store visualization data in session state
+        viz_data = drift_detector.get_visualization_data()
+        if viz_data:
+            st.session_state["drift_visualization"] = viz_data
+    
+    # Final update of dashboard forecast - still respect the config setting
+    if update_dashboard and UPDATE_DURING_WALK_FORWARD:
         try:
             if "ensemble_model" in locals():
                 # Use generate_future_forecast to generate forecasts
@@ -1224,14 +1586,11 @@ def unified_walk_forward(
     return ensemble_model, metrics
 
 
-# Remove the duplicate optimized implementation and make it an alias
+# Compatibility aliases
 unified_walk_forward_optimized = unified_walk_forward
-
-# Keep compatibility with other aliases
 run_walk_forward_ensemble_eval = unified_walk_forward
 
 
-# Update the backward compatibility wrapper function
 def run_walk_forward(
     df,
     feature_cols,
@@ -1245,6 +1604,19 @@ def run_walk_forward(
     """
     Walk-forward training wrapper for compatibility with existing code.
     Delegates to the unified implementation.
+    
+    Args:
+        df: DataFrame with features
+        feature_cols: List of feature column names
+        horizon: Prediction horizon
+        wf_size: Walk-forward window size
+        submodel_params_dict: Dictionary of model parameters for each type
+        ensemble_weights: Dictionary of weights for ensemble
+        trial: Optuna trial object for hyperparameter tuning
+        update_frequency: How often to report progress
+        
+    Returns:
+        tuple: (mse, mape) - Mean squared error and mean absolute percentage error
     """
     _, metrics = unified_walk_forward(
         df=df,
@@ -1252,7 +1624,7 @@ def run_walk_forward(
         submodel_params_dict=submodel_params_dict,
         ensemble_weights=ensemble_weights,
         window_size=wf_size,
-        update_dashboard=False,  # Don't update dashboard during tuning
+        update_dashboard=True,  # Update dashboard during tuning
         trial=trial,
         update_frequency=update_frequency,
     )
@@ -1261,7 +1633,20 @@ def run_walk_forward(
 
 
 def train_tabnet_model(X_train, y_train, X_val, y_val, params, feature_names=None):
-    """Train a TabNet model with the given parameters"""
+    """
+    Train a TabNet model with the given parameters.
+    
+    Args:
+        X_train: Training features
+        y_train: Training targets
+        X_val: Validation features
+        y_val: Validation targets
+        params: Dictionary of model parameters
+        feature_names: List of feature names
+        
+    Returns:
+        TabNetPricePredictor: Trained model or None if error
+    """
     if not HAS_TABNET:
         logger.error("TabNet is not available")
         return None
@@ -1295,3 +1680,63 @@ def train_tabnet_model(X_train, y_train, X_val, y_val, params, feature_names=Non
     except Exception as e:
         logger.error(f"Error training TabNet model: {e}")
         return None
+
+
+def perform_walkforward_validation(ticker, timeframe, range_cat, model_type, params):
+    """
+    Perform walk-forward validation for a single model type.
+    
+    Args:
+        ticker: Ticker symbol
+        timeframe: Timeframe
+        range_cat: Range category
+        model_type: Model type
+        params: Dictionary of model parameters
+        
+    Returns:
+        dict: Dictionary of evaluation metrics
+    """
+    try:
+        # Import necessary modules
+        from src.data.data import fetch_data
+        from src.features.features import feature_engineering_with_params
+        
+        # Fetch data
+        df = fetch_data(ticker, timeframe, range_cat)
+        if df is None or df.empty:
+            logger.error(f"No data for {ticker} {timeframe} {range_cat}")
+            return {"rmse": float("inf"), "mape": float("inf")}
+            
+        # Feature engineering
+        df, feature_cols = feature_engineering_with_params(df, model_type)
+        
+        # Create model parameters dictionary
+        submodel_params_dict = {model_type: params}
+        
+        # Set weights to use only this model type
+        ensemble_weights = {mt: 0.0 for mt in ACTIVE_MODEL_TYPES}
+        ensemble_weights[model_type] = 1.0
+        
+        # Run walk-forward validation
+        mse, mape = run_walk_forward(
+            df=df,
+            feature_cols=feature_cols,
+            horizon=PREDICTION_HORIZON,
+            wf_size=WALK_FORWARD_DEFAULT,
+            submodel_params_dict=submodel_params_dict,
+            ensemble_weights=ensemble_weights,
+            update_frequency=10,
+        )
+        
+        # Calculate RMSE
+        rmse = np.sqrt(mse) if mse != float("inf") else float("inf")
+        
+        # Return metrics dictionary
+        return {
+            "mse": float(mse),
+            "rmse": float(rmse),
+            "mape": float(mape),
+        }
+    except Exception as e:
+        logger.error(f"Error in perform_walkforward_validation: {e}")
+        return {"rmse": float("inf"), "mape": float("inf")}

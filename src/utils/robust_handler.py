@@ -5,10 +5,12 @@ Provides robust error handling and graceful shutdown capabilities for the predic
 import atexit
 import functools
 import logging
+import os
 import signal
 import sys
 import threading
 import traceback
+import time
 from contextlib import contextmanager
 from typing import Callable
 
@@ -46,6 +48,10 @@ class GracefulShutdownHandler:
 
         # Register with atexit to ensure cleanup on normal exit (works in any thread)
         atexit.register(GracefulShutdownHandler.cleanup)
+        
+        # Register a separate function specifically to reset tuning status
+        # This increases the chance it will run even if other shutdown steps fail
+        atexit.register(GracefulShutdownHandler.reset_tuning_status)
 
     @staticmethod
     def handle_signal(sig_num, frame):
@@ -57,6 +63,10 @@ class GracefulShutdownHandler:
         )
         logger.info(f"Received {signal_name}, initiating graceful shutdown")
 
+        # Reset tuning status immediately when receiving a signal
+        # This is crucial for handling Ctrl+C properly
+        GracefulShutdownHandler.reset_tuning_status()
+
         # Call the central shutdown function
         initiate_shutdown(source=f"Signal: {signal_name}")
 
@@ -64,9 +74,56 @@ class GracefulShutdownHandler:
         sys.exit(128 + sig_num)
 
     @staticmethod
+    def reset_tuning_status():
+        """
+        Reset tuning status file immediately - this function is designed to run
+        early during shutdown to ensure tuning status is properly reset even if
+        the process is killed abruptly.
+        """
+        try:
+            # Try multiple approaches to update the tuning status file
+            
+            # Approach 1: Direct file write (most reliable in emergency shutdown)
+            try:
+                # Find the data directory
+                current_file = os.path.abspath(__file__)
+                src_dir = os.path.dirname(os.path.dirname(current_file))
+                project_root = os.path.dirname(src_dir)
+                data_dir = os.path.join(project_root, "data")
+                
+                # Write directly to the status file
+                status_file = os.path.join(data_dir, "tuning_status.txt")
+                if os.path.exists(status_file):
+                    with open(status_file, 'w') as f:
+                        f.write("status: stopped\nis_running: false\nstopped_manually: true\n")
+                    logger.info(f"Reset tuning status file directly: {status_file}")
+            except Exception as e:
+                logger.warning(f"Could not directly update tuning status file: {e}")
+            
+            # Approach 2: Use the progress_helper module
+            try:
+                from src.tuning.progress_helper import write_tuning_status
+                write_tuning_status({
+                    "status": "stopped",
+                    "is_running": False,
+                    "stopped_manually": True,
+                    "stop_time": time.time()
+                })
+                logger.info("Reset tuning status using progress_helper")
+            except Exception as e:
+                logger.warning(f"Could not update tuning status via progress_helper: {e}")
+                
+        except Exception as e:
+            # Last resort logging
+            logger.error(f"Failed to reset tuning status during shutdown: {e}")
+
+    @staticmethod
     def cleanup():
         """Perform cleanup operations during shutdown."""
         logger.info("Performing final cleanup on application exit")
+
+        # Reset tuning status as the first step of cleanup
+        GracefulShutdownHandler.reset_tuning_status()
 
         # Call all registered shutdown callbacks
         for callback in _shutdown_callbacks:
@@ -106,7 +163,10 @@ def initiate_shutdown(source: str = "unknown") -> None:
         logger.info(f"Initiating graceful shutdown from {source}")
         _shutdown_initiated = True
 
-    # First, stop any tuning processes
+    # First, reset tuning status
+    GracefulShutdownHandler.reset_tuning_status()
+
+    # Then stop any tuning processes
     try:
         # Import here to avoid circular imports
         from src.tuning.meta_tuning import stop_tuning_process

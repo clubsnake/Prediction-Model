@@ -5,6 +5,7 @@ of models and creates a weighted ensemble predictor.
 
 import logging
 import threading
+import traceback
 from typing import Dict
 
 import numpy as np
@@ -87,25 +88,21 @@ def train_ensemble_models(submodel_params, X_train, y_train, feature_cols, horiz
         threads = []
 
         for model_config in group:
-            model_type = model_config["model_type"]
-            params = model_config["params"]
-
-            # Create training thread for this model
             thread = threading.Thread(
                 target=_train_ensemble_model,
                 args=(
-                    model_type,
-                    params,
+                    model_config["model_type"],
+                    model_config["params"],
                     X_train,
                     y_train,
                     feature_cols,
                     horizon,
                     models,
-                    model_lock,
-                ),
+                    model_lock
+                )
             )
-            threads.append(thread)
             thread.start()
+            threads.append(thread)
 
         # Wait for all threads in this group to complete
         for thread in threads:
@@ -113,29 +110,21 @@ def train_ensemble_models(submodel_params, X_train, y_train, feature_cols, horiz
 
         # Clean GPU memory between groups
         if training_optimizer.has_gpu:
-            try:
-                import tensorflow as tf
-
-                tf.keras.backend.clear_session()
-                import gc
-
-                gc.collect()
-            except Exception as e:
-                logger.warning(f"Error cleaning GPU memory: {e}")
+            from src.utils.memory_utils import cleanup_tf_session
+            cleanup_tf_session()
 
     # Return ensemble predictor function
     def ensemble_predict(X, weights=None):
         if weights is None:
-            # Equal weighting by default if no weights provided
-            weights = {mtype: 1.0 / len(models) for mtype in models}
+            weights = {mtype: 1.0 for mtype in models.keys()}
 
         predictions = {}
         for mtype, model in models.items():
-            if weights.get(mtype, 0) > 0:
-                try:
-                    predictions[mtype] = model.predict(X)
-                except Exception as e:
-                    logger.error(f"Error predicting with {repr(mtype)}: {e}")
+            try:
+                pred = model.predict(X, verbose=0)
+                predictions[mtype] = pred
+            except Exception as e:
+                logger.error(f"Error predicting with {mtype} model: {e}")
 
         # Combine predictions
         return combine_predictions(predictions, weights)
@@ -154,34 +143,62 @@ def _train_ensemble_model(
         # Get optimal configuration for this model type
         model_config = training_optimizer.get_model_config(model_type, "medium")
 
-        # Build the model using builder from LazyImportManager
-        model = build_model_by_type(
-            model_type=model_type,
-            num_features=len(feature_cols),
-            horizon=horizon,
-            learning_rate=params.get("lr", model_config["learning_rate"]),
-            dropout_rate=params.get("dropout", 0.2),
-            loss_function=params.get("loss_function", "mean_squared_error"),
-            lookback=params.get("lookback", 30),
-            architecture_params=params.get("architecture_params", {}),
-        )
+        # Special handling for nbeats model
+        if model_type == "nbeats":
+            from src.models.nbeats_model import build_nbeats_model
+            model = build_nbeats_model(
+                lookback=params.get("lookback", 30),
+                horizon=horizon,
+                num_features=len(feature_cols),
+                learning_rate=params.get("lr", 0.001),
+                layer_width=params.get("layer_width", 256),
+                num_blocks=params.get("num_blocks", [3, 3]),
+                num_layers=params.get("num_layers", [4, 4]),
+                thetas_dim=params.get("thetas_dim", 10),
+                include_price_specific_stack=params.get("include_price_specific_stack", True),
+                dropout_rate=params.get("dropout_rate", 0.1),
+                use_batch_norm=params.get("use_batch_norm", True),
+            )
+        elif model_type == "ltc":
+            from src.models.ltc_model import build_ltc_model
+            model = build_ltc_model(
+                num_features=len(feature_cols),
+                horizon=horizon,
+                learning_rate=params.get("lr", 0.001),
+                loss_function=params.get("loss_function", "mse"),
+                lookback=params.get("lookback", 30),
+                units=params.get("units", 64),
+                num_layers=params.get("num_layers", 1),
+                use_attention=params.get("use_attention", False),
+                dropout_rate=params.get("dropout_rate", 0.1),
+                recurrent_dropout_rate=params.get("recurrent_dropout_rate", 0.0),
+            )
+        else:
+            # Create model using architecture parameters
+            model = build_model_by_type(
+                model_type=model_type,
+                num_features=len(feature_cols),
+                horizon=horizon,
+                learning_rate=params.get("lr", 0.001),
+                dropout_rate=params.get("dropout", 0.2),
+                loss_function=params.get("loss_function", "mean_squared_error"),
+                lookback=params.get("lookback", 30),
+                architecture_params=params,
+            )
 
         # Extract training parameters with default values from training_optimizer
-        training_params = {
-            "epochs": params.get("epochs", 10),
-            "batch_size": params.get("batch_size", model_config["batch_size"]),
-            "verbose": 0,
-        }
-
-        # Train the model
-        logger.info(f"Training {model_type} model...")
-        model.fit(X_train, y_train, **training_params)
-        logger.info(f"Completed training {model_type} model")
-
-        # Store the model in the shared models dictionary
+        batch_size = params.get("batch_size", model_config.get("batch_size", 32))
+        epochs = params.get("epochs", 10)
+        
+        # Train model with optimized parameters
+        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
+        
+        # Store model in shared dictionary with thread safety
         with model_lock:
             models[model_type] = model
+            
+        logger.info(f"Successfully trained {model_type} model")
 
     except Exception as e:
-        logger.error(f"Error training {repr(model_type)}: {e}")
-        # Skip this model in the ensemble
+        logger.error(f"Error training {model_type} model: {e}")
+        logger.error(traceback.format_exc())

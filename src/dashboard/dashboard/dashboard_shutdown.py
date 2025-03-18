@@ -3,6 +3,7 @@ Provides graceful shutdown functionality for the dashboard.
 This helps ensure all data is saved and resources are released properly.
 """
 
+import os
 import atexit
 import logging
 import signal
@@ -11,7 +12,6 @@ import time
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Callable, Optional
-
 import streamlit as st
 
 # Import the dashboard_error module for robust error handling
@@ -65,6 +65,8 @@ except ImportError:
 
 # Set up logger
 logger = logging.getLogger(__name__)
+
+
 
 # Track active dashboard components
 _dashboard_components = {}
@@ -174,13 +176,64 @@ def handle_dashboard_errors(component_name: str = "dashboard"):
             initiate_shutdown(source=f"Critical error in {component_name}")
 
 
+def reset_tuning_status_file():
+    """
+    Emergency function to reset the tuning status file.
+    This is a standalone function designed to be fast and reliable,
+    with minimal dependencies.
+    """
+    try:
+        # Try multiple approaches to ensure the status file is updated
+        
+        # Approach 1: Direct file write
+        try:
+            # Find the data directory 
+            current_file = os.path.abspath(__file__)
+            dashboard_dir = os.path.dirname(current_file)
+            dashboard_parent = os.path.dirname(dashboard_dir)
+            src_dir = os.path.dirname(dashboard_parent)
+            project_root = os.path.dirname(src_dir)
+            data_dir = os.path.join(project_root, "data")
+            
+            # Write directly to status file
+            status_file = os.path.join(data_dir, "tuning_status.txt")
+            if os.path.exists(status_file):
+                with open(status_file, 'w') as f:
+                    f.write("status: stopped\nis_running: false\nstopped_manually: true\n")
+                logger.info(f"Reset tuning status file directly: {status_file}")
+        except Exception as e:
+            logger.warning(f"Could not directly update tuning status file: {e}")
+        
+        # Approach 2: Try using the progress_helper
+        try:
+            from src.tuning.progress_helper import write_tuning_status
+            write_tuning_status({
+                "status": "stopped",
+                "is_running": False,
+                "stopped_manually": True,
+                "stop_time": time.time()
+            })
+            logger.info("Reset tuning status using progress_helper")
+        except Exception as e:
+            logger.warning(f"Could not update tuning status via progress_helper: {e}")
+            
+    except Exception as e:
+        logger.error(f"Failed to reset tuning status during dashboard shutdown: {e}")
+
+# Register emergency tuning status reset for both atexit and signal handlers
+atexit.register(reset_tuning_status_file)
+
 def setup_dashboard_shutdown() -> None:
     """Initialize dashboard shutdown handlers."""
     # Register the dashboard cleanup as a shutdown callback
     register_shutdown_callback(cleanup_dashboard_components)
+    
+    # Register specific handler for tuning status reset
+    register_shutdown_callback(reset_tuning_status_file)
 
     # Register exit handler
     atexit.register(cleanup_dashboard_components)
+    atexit.register(reset_tuning_status_file)
 
     # Only register signal handlers in the main thread
     if threading.current_thread() is threading.main_thread():
@@ -188,6 +241,8 @@ def setup_dashboard_shutdown() -> None:
             # Try to register signal handler
             def handle_keyboard_interrupt(sig, frame):
                 logger.info("Shutdown initiated by user (Ctrl+C)")
+                # Reset tuning status immediately when receiving a signal
+                reset_tuning_status_file()
                 initiate_shutdown(source="Keyboard Interrupt (Ctrl+C)")
                 return True
 
@@ -220,39 +275,29 @@ def initiate_shutdown(source="unknown"):
     _is_shutting_down = True
     _shutdown_event.set()
 
+    # Reset tuning status as the very first step
+    reset_tuning_status_file()
+
     # Stop tuning if it's running
     try:
-        # Import here to avoid circular imports
+        # Update session state immediately for UI responsiveness
         import streamlit as st
-
         if st.session_state.get("tuning_in_progress", False):
+            st.session_state["tuning_in_progress"] = False
+            
+            # Try to directly import from meta_tuning first for more reliable shutdown
             try:
-                # Try to directly import from meta_tuning first for more reliable shutdown
                 from src.tuning.meta_tuning import stop_tuning_process
-
                 logger.info("Stopping tuning process directly")
                 stop_tuning_process()
             except ImportError:
                 # Fallback to going through dashboard_model
-                from src.dashboard.dashboard.dashboard_model import stop_tuning
-
-                logger.info("Stopping tuning processes via dashboard_model")
-                stop_tuning()
-
-            # Update tuning status directly to ensure it's marked as stopped
-            try:
-                from src.tuning.progress_helper import write_tuning_status
-
-                write_tuning_status(
-                    {
-                        "is_running": False,
-                        "stopped_manually": True,
-                        "stop_time": time.time(),
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                )
-            except Exception as e:
-                logger.error(f"Error updating tuning status file: {e}")
+                try:
+                    from src.dashboard.dashboard.dashboard_model import stop_tuning
+                    logger.info("Stopping tuning processes via dashboard_model")
+                    stop_tuning()
+                except Exception as e:
+                    logger.error(f"Error stopping tuning via dashboard_model: {e}")
     except Exception as e:
         logger.error(f"Error stopping tuning during shutdown: {e}")
 
@@ -271,7 +316,6 @@ def initiate_shutdown(source="unknown"):
     # Ensure session state is updated
     try:
         import streamlit as st
-
         st.session_state["tuning_in_progress"] = False
     except Exception:
         pass

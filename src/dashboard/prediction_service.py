@@ -1,4 +1,3 @@
-# prediction_service.py
 """
 Provides interfaces for both programmatic and web-based prediction.
 """
@@ -7,7 +6,7 @@ import json
 import logging
 import os
 import sys
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Tuple
 
 import joblib
 import numpy as np
@@ -229,6 +228,54 @@ class PredictionService:
             logger.error(f"Error during prediction: {e}")
             return np.array([])
 
+    def predict_with_confidence(
+        self,
+        data: Union[pd.DataFrame, np.ndarray, List],
+        feature_names: List[str] = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Make predictions with confidence scores using the loaded model.
+
+        Args:
+            data: Input data for prediction (DataFrame, numpy array, or list)
+            feature_names: Optional feature names when data is not a DataFrame
+
+        Returns:
+            Tuple of (predictions, confidence_scores)
+        """
+        if self.model is None:
+            logger.error("No model loaded. Call load_model() first.")
+            return np.array([]), np.array([])
+
+        try:
+            # Preprocess data if needed
+            processed_data = self._preprocess_input(data, feature_names)
+
+            # Check if model has confidence prediction method
+            if hasattr(self.model, 'predict_with_confidence'):
+                # Ensemble models with confidence support
+                predictions, confidence_scores, _ = self.model.predict_with_confidence(processed_data)
+                logger.info(
+                    f"Prediction with confidence successful: shape={predictions.shape if hasattr(predictions, 'shape') else 'scalar'}"
+                )
+                return predictions, confidence_scores
+            else:
+                # Regular prediction without confidence
+                predictions = self.model.predict(processed_data)
+                
+                # Generate default confidence scores (lower for longer horizons)
+                if hasattr(predictions, 'shape') and len(predictions.shape) > 0:
+                    # Decaying confidence based on horizon
+                    horizon = predictions.shape[0] if len(predictions.shape) == 1 else predictions.shape[1]
+                    confidence_scores = np.ones_like(predictions) * 75 * np.exp(-0.1 * np.arange(horizon))
+                else:
+                    confidence_scores = np.array([75.0])  # Default confidence level
+                    
+                return predictions, confidence_scores
+        except Exception as e:
+            logger.error(f"Error during prediction with confidence: {e}")
+            return np.array([]), np.array([])
+
     def predict_and_log(
         self,
         data: Union[pd.DataFrame, np.ndarray, List],
@@ -390,59 +437,116 @@ class PredictionService:
             logger.error(f"Error parsing parameters file: {e}")
             return {}
 
-    def generate_forecast(
-        self,
-        df: pd.DataFrame,
-        feature_cols: List[str],
-        lookback: int = 30,
-        horizon: int = 30,
-    ) -> List[float]:
-        """
-        Generate forecast for future time periods.
+def generate_forecast(
+    self,
+    df: pd.DataFrame,
+    feature_cols: List[str],
+    lookback: int = 30,
+    horizon: int = 30,
+    with_confidence: bool = False,
+    market_regime: bool = False
+) -> Union[List[float], Tuple[List[float], List[float], Dict]]:
+    """
+    Generate forecast for future time periods with optional confidence scores.
 
-        Args:
-            df: DataFrame with historical data
-            feature_cols: Features to use for prediction
-            lookback: Number of past days to use for input
-            horizon: Number of days to forecast
+    Args:
+        df: DataFrame with historical data
+        feature_cols: Features to use for prediction
+        lookback: Number of past days to use for input
+        horizon: Number of days to forecast
+        with_confidence: Whether to include confidence scores
+        market_regime: Whether to detect market regime for enhanced forecasting
 
-        Returns:
-            List of forecasted values
-        """
-        if self.model is None:
-            logger.error("No model loaded for forecasting")
-            return []
+    Returns:
+        If with_confidence=False: List of forecasted values
+        If with_confidence=True: Tuple of (forecast_values, confidence_scores, confidence_components)
+    """
+    if self.model is None:
+        logger.error("No model loaded for forecasting")
+        return ([], [], {}) if with_confidence else []
+
+    try:
+        # Apply market regime analysis if requested
+        current_regime = "unknown"
+        context_similarity = 0.5
+        original_weights = None
+        
+        if market_regime and hasattr(self, 'market_regime_system'):
+            # Initialize market regime system if needed
+            if self.market_regime_system is None:
+                from src.training.market_regime import MarketRegimeSystem
+                regime_memory_file = os.path.join(DATA_DIR, "market_regime_memory.json")
+                self.market_regime_system = MarketRegimeSystem(regime_memory_file=regime_memory_file)
+                
+            # Use market regime information if available for ensemble models
+            if hasattr(self.model, 'weights') and hasattr(self.model, 'models'):
+                original_weights = self.model.weights.copy()
+                current_features = self.market_regime_system.extract_market_features(df)
+                current_regime = self.market_regime_system.detect_regime(df)
+                context_similarity = self.market_regime_system.calculate_context_similarity(current_features)
+                
+                # Get optimized weights for current regime
+                optimized_weights = self.market_regime_system.get_optimal_weights(
+                    regime=current_regime,
+                    base_weights=original_weights,
+                    context_similarity=context_similarity
+                )
+                
+                # Update model weights for prediction
+                self.model.weights = optimized_weights
+                logger.info(f"Using regime-optimized weights for {current_regime} regime (similarity: {context_similarity:.2f})")
+
+        # Check if model supports confidence prediction directly
+        use_model_confidence = with_confidence and hasattr(self.model, 'predict_with_confidence')
+        
+        # Get the last 'lookback' days of data for input
+        if len(df) < lookback:
+            logger.error(f"DataFrame has fewer rows ({len(df)}) than lookback ({lookback})")
+            return ([], [], {}) if with_confidence else []
+
+        last_data = df.iloc[-lookback:].copy()
+
+        # Create a scaler for feature normalization
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        scaler.fit(last_data[feature_cols])
+
+        # Initialize arrays to store predictions and confidence
+        future_prices = []
+        confidence_scores = []
+        confidence_components = {}
+        current_data = last_data.copy()
 
         try:
-            # Get the last 'lookback' days of data for input
-            if len(df) < lookback:
-                logger.error(
-                    f"DataFrame has fewer rows ({len(df)}) than lookback ({lookback})"
-                )
-                return []
-
-            last_data = df.iloc[-lookback:].copy()
-
-            # Create a scaler for feature normalization
-            from sklearn.preprocessing import StandardScaler
-
-            scaler = StandardScaler()
-            scaler.fit(last_data[feature_cols])
-
-            # Initialize array to store predictions
-            future_prices = []
-            current_data = last_data.copy()
-
             # Import create_sequences once
-            try:
-                from src.data.preprocessing import create_sequences
+            from src.data.preprocessing import create_sequences
 
-                # First attempt - use create_sequences to generate input sequence
-                X_input, _ = create_sequences(
-                    current_data, feature_cols, "Close", lookback, 1
-                )
+            # Generate input sequence for prediction
+            X_input, _ = create_sequences(current_data, feature_cols, "Close", lookback, 1)
 
-                # Make prediction for each day in the horizon
+            # Make prediction with confidence if requested and supported
+            if use_model_confidence:
+                future_prices, confidence_scores, confidence_components = self.model.predict_with_confidence(X_input, verbose=0)
+                
+                # Process outputs to ensure proper format
+                if isinstance(future_prices, np.ndarray):
+                    future_prices = future_prices.flatten().tolist()[:horizon]
+                if isinstance(confidence_scores, np.ndarray):
+                    confidence_scores = confidence_scores.flatten().tolist()[:horizon]
+                    
+                # Pad or truncate to match horizon
+                if len(future_prices) < horizon:
+                    future_prices = future_prices + [future_prices[-1]] * (horizon - len(future_prices))
+                if len(confidence_scores) < horizon:
+                    confidence_scores = confidence_scores + [confidence_scores[-1]] * (horizon - len(confidence_scores))
+                
+                # Add market regime info to confidence components
+                if market_regime and hasattr(self, 'market_regime_system'):
+                    confidence_components['market_regime'] = current_regime
+                    confidence_components['context_similarity'] = context_similarity
+                    
+            else:
+                # Standard iterative prediction for each day in the horizon
                 for i in range(horizon):
                     # Use model to predict
                     preds = self.model.predict(X_input, verbose=0)
@@ -454,8 +558,12 @@ class PredictionService:
                         next_price = float(preds[0])
 
                     future_prices.append(next_price)
+                    
+                    # Generate default confidence scores if needed
+                    if with_confidence:
+                        confidence_scores.append(max(30, 80 - i * 1.5))
 
-                    # Update input data with the prediction
+                    # Update input data with the prediction for next iteration
                     next_row = current_data.iloc[-1:].copy()
                     if isinstance(next_row.index[0], pd.Timestamp):
                         next_row.index = [next_row.index[0] + pd.Timedelta(days=1)]
@@ -476,55 +584,94 @@ class PredictionService:
                         current_scaled, feature_cols, "Close", lookback, 1
                     )
 
-            except ImportError:
-                logger.warning(
-                    "Using simplified forecast approach without create_sequences"
-                )
+        except ImportError:
+            logger.warning("Using simplified forecast approach without create_sequences")
+            # Simplified approach without create_sequences
+            feature_data = last_data[feature_cols].values
+            X_input = np.array([feature_data])
 
-                # Simplified approach without create_sequences
-                feature_data = last_data[feature_cols].values
+            for i in range(horizon):
+                # Use model to predict
+                preds = self.model.predict(X_input, verbose=0)
+
+                # Get the predicted price
+                if hasattr(preds, "shape") and len(preds.shape) > 1:
+                    next_price = float(preds[0][0])
+                else:
+                    next_price = float(preds[0])
+
+                future_prices.append(next_price)
+                
+                # Generate default confidence scores if needed
+                if with_confidence:
+                    confidence_scores.append(max(30, 80 - i * 1.5))
+
+                # Update input data with the prediction
+                next_row = current_data.iloc[-1:].copy()
+                if isinstance(next_row.index[0], pd.Timestamp):
+                    next_row.index = [next_row.index[0] + pd.Timedelta(days=1)]
+                else:
+                    next_row.index = [next_row.index[0] + 1]
+
+                next_row["Close"] = next_price
+                current_data = pd.concat([current_data.iloc[1:], next_row])
+
+                # Get new feature data for next prediction
+                feature_data = current_data[feature_cols].values
                 X_input = np.array([feature_data])
 
-                # Make prediction for each day in the horizon
-                for i in range(horizon):
-                    # Use model to predict
-                    preds = self.model.predict(X_input, verbose=0)
+        # Restore original weights if modified
+        if original_weights is not None:
+            self.model.weights = original_weights
 
-                    # Get the predicted price
-                    if hasattr(preds, "shape") and len(preds.shape) > 1:
-                        next_price = float(preds[0][0])
-                    else:
-                        next_price = float(preds[0])
-
-                    future_prices.append(next_price)
-
-                    # Update input data with the prediction
-                    next_row = current_data.iloc[-1:].copy()
-                    if isinstance(next_row.index[0], pd.Timestamp):
-                        next_row.index = [next_row.index[0] + pd.Timedelta(days=1)]
-                    else:
-                        next_row.index = [next_row.index[0] + 1]
-
-                    next_row["Close"] = next_price
-                    current_data = pd.concat([current_data.iloc[1:], next_row])
-
-                    # Get new feature data for next prediction
-                    feature_data = current_data[feature_cols].values
-                    X_input = np.array([feature_data])
-
-            logger.info(f"Generated {len(future_prices)} day forecast")
+        logger.info(f"Generated {len(future_prices)} day forecast" + 
+                    (" with confidence scores" if with_confidence else ""))
+                    
+        # Return based on with_confidence parameter
+        if with_confidence:
+            return future_prices, confidence_scores, confidence_components
+        else:
             return future_prices
 
-        except Exception as e:
-            logger.error(f"Error generating forecast: {e}", exc_info=True)
-            return []
+    except Exception as e:
+        logger.error(f"Error generating forecast: {e}", exc_info=True)
+        return ([], [], {}) if with_confidence else []
+    
 
+def generate_forecast_with_confidence(
+    self,
+    df: pd.DataFrame,
+    feature_cols: List[str],
+    lookback: int = 30,
+    horizon: int = 30,
+) -> Tuple[List[float], List[float], Dict]:
+    """
+    Generate forecast with confidence scores (wrapper for unified function).
+    
+    Args:
+        df: DataFrame with historical data
+        feature_cols: Features to use for prediction
+        lookback: Number of past days to use for input
+        horizon: Number of days to forecast
+        
+    Returns:
+        Tuple of (forecast_values, confidence_scores, confidence_components)
+    """
+    return self.generate_forecast(
+        df=df, 
+        feature_cols=feature_cols, 
+        lookback=lookback, 
+        horizon=horizon, 
+        with_confidence=True,
+        market_regime=True  # Enable market regime analysis
+    )
 
 def generate_predictions(
     model, df, feature_cols, lookback=30, horizon=30, return_sequences=False
 ):
     """
     Generate predictions using the provided model.
+    Wrapper that uses the consolidated forecast generator.
 
     Args:
         model: Trained prediction model
@@ -538,19 +685,7 @@ def generate_predictions(
         Predicted values
     """
     try:
-        # Get the last 'lookback' days of data for input
-        if len(df) < lookback:
-            logger.error(
-                f"DataFrame has fewer rows ({len(df)}) than lookback ({lookback})"
-            )
-            return []
-
-        last_data = df.iloc[-lookback:].copy()
-
-        # Initialize predictions array
-        predictions = []
-
-        # Use PredictionService if available
+        # Use PredictionService for all prediction functionality
         service = PredictionService(model_instance=model)
         forecast = service.generate_forecast(df, feature_cols, lookback, horizon)
 
@@ -558,30 +693,9 @@ def generate_predictions(
             return forecast
 
         logger.warning(
-            "Unable to generate predictions using PredictionService, trying direct model prediction"
+            "Unable to generate predictions using PredictionService"
         )
-
-        # Fallback to direct model prediction if service approach fails
-        try:
-            from src.data.preprocessing import create_sequences
-
-            X_input, _ = create_sequences(
-                last_data, feature_cols, "Close", lookback, horizon
-            )
-            preds = model.predict(X_input)
-
-            if isinstance(preds, np.ndarray):
-                if len(preds.shape) > 1:
-                    predictions = preds[0].tolist()
-                else:
-                    predictions = preds.tolist()
-            else:
-                predictions = list(preds)
-
-            return predictions[:horizon]  # Return only requested horizon length
-        except Exception as e:
-            logger.error(f"Error in direct model prediction: {e}", exc_info=True)
-            return []
+        return []
 
     except Exception as e:
         logger.error(f"Error generating predictions: {e}", exc_info=True)
@@ -590,21 +704,19 @@ def generate_predictions(
 
 def update_dashboard_forecast(model, df, feature_cols, ensemble_weights=None):
     """
-    Unified function to update the dashboard forecast from a trained model.
-    This function serves as the central point for forecast updates.
-
+    Unified function to update the dashboard forecast with confidence scores.
+    
     Args:
-        model: The trained model (ensemble or single model)
+        model: The trained model
         df: DataFrame with historical data
         feature_cols: Feature columns to use
         ensemble_weights: Optional weights for ensemble models
-
+        
     Returns:
         List of forecast values or None if failed
     """
     try:
         from datetime import datetime
-
         import streamlit as st
 
         # Get context information from session state or directly passed
@@ -623,15 +735,29 @@ def update_dashboard_forecast(model, df, feature_cols, ensemble_weights=None):
             model_instance=model, ticker=ticker, timeframe=timeframe, monitor=monitor
         )
 
-        # Generate forecast
-        forecast = service.generate_forecast(
-            df, feature_cols, lookback, forecast_window
+        # Generate forecast with confidence
+        forecast, confidence_scores, confidence_components = service.generate_forecast(
+            df, feature_cols, lookback, forecast_window, with_confidence=True, market_regime=True
         )
 
         # Update session state with forecast results
         if forecast and len(forecast) > 0:
             st.session_state["future_forecast"] = forecast
+            st.session_state["forecast_confidence"] = confidence_scores
+            st.session_state["confidence_components"] = confidence_components
             st.session_state["last_forecast_update"] = datetime.now()
+            
+            # Store metadata for dashboard display
+            if not hasattr(service, 'metadata'):
+                service.metadata = {}
+            
+            service.metadata['current_regime'] = confidence_components.get('market_regime', 'unknown')
+            service.metadata['context_similarity'] = confidence_components.get('context_similarity', 0.5)
+            
+            if hasattr(service, 'market_regime_system'):
+                service.metadata['regime_stats'] = service.market_regime_system.get_regime_stats()
+                
+            st.session_state['metadata'] = service.metadata
 
             # Store ensemble weights if provided
             if ensemble_weights:
@@ -668,7 +794,7 @@ def update_dashboard_forecast(model, df, feature_cols, ensemble_weights=None):
             except ImportError:
                 logger.debug("Could not import save_best_prediction")
 
-            logger.info(f"Updated dashboard forecast with {len(forecast)} days")
+            logger.info(f"Updated dashboard forecast with {len(forecast)} days and confidence scores")
             return forecast
         else:
             logger.warning("Generated forecast was empty")

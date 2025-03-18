@@ -4,8 +4,8 @@ dashboard_utils.py
 Utility functions for the dashboard that don't fit in other categories.
 """
 
-import base64
 import os
+import base64
 from datetime import datetime
 
 import pandas as pd

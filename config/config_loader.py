@@ -84,10 +84,10 @@ if "project" in system_config:
             system_config["project"]["files"][key] = resolve_path(path)
 
 # Extract commonly used constants
-TICKER = user_config.get("tickers", {}).get("default", "BTC-USD")
-TICKERS = user_config.get("tickers", {}).get("symbols", ["BTC-USD"])
+TICKER = user_config.get("tickers", {}).get("default", "ETH-USD")
+TICKERS = user_config.get("tickers", {}).get("symbols", ["ETH-USD"])
 TIMEFRAMES = user_config.get("time_series", {}).get("timeframes", ["1d"])
-MODEL_TYPES = ["lstm", "rnn", "random_forest", "xgboost", "tft", "ltc", "tabnet", "cnn"]
+MODEL_TYPES = ["lstm", "rnn", "random_forest", "xgboost", "tft", "ltc", "tabnet", "cnn", "nbeats"]
 ACTIVE_MODEL_TYPES = []
 
 for model_type in MODEL_TYPES:
@@ -126,7 +126,7 @@ LOOKBACK = user_config.get("model", {}).get("default_lookback", 30)
 # Constants for hyperparameter tuning
 N_STARTUP_TRIALS = user_config.get("hyperparameter", {}).get(
     "n_startup_trials",
-    system_config.get("hyperparameter", {}).get("n_startup_trials", 5000),
+    system_config.get("hyperparameter", {}).get("n_startup_trials", 10000),
 )
 TUNING_TRIALS_PER_CYCLE_min = (
     system_config.get("hyperparameter", {}).get("trials_per_cycle", {}).get("min", 10)
@@ -222,6 +222,20 @@ LOGS_DIR = (
     .get("logs", os.path.join(DATA_DIR, "Logs"))
 )
 
+# Add new registry directory constants
+REGISTRY_DIR = (
+    system_config.get("project", {})
+    .get("data_dirs", {})
+    .get("registry", os.path.join(MODELS_DIR, "Registry"))
+)
+
+# Add registry configuration constants
+REGISTRY_MAX_MODELS = system_config.get("registry", {}).get(
+    "max_saved_models", MAX_SAVED_MODELS
+)
+REGISTRY_AUTO_CLEAN = system_config.get("registry", {}).get("auto_clean", True)
+REGISTRY_VERSION_TIMEOUT = system_config.get("registry", {}).get("version_timeout", 3600)
+
 # Get centralized file paths from system_config.json
 PROGRESS_FILE = (
     system_config.get("project", {})
@@ -259,6 +273,9 @@ SHOW_TRAINING_HISTORY = user_config.get("dashboard", {}).get(
 SHOW_WEIGHT_HISTOGRAMS = user_config.get("dashboard", {}).get(
     "show_weight_histograms", True
 )
+UPDATE_DURING_WALK_FORWARD = user_config.get("dashboard", {}).get(
+    "update_during_walk_forward", True
+)
 
 # Create directories if they don't exist
 for directory in [
@@ -269,11 +286,18 @@ for directory in [
     DB_DIR,
     RAW_DATA_DIR,
     PROCESSED_DATA_DIR,
+    REGISTRY_DIR, 
 ]:
     try:
         os.makedirs(directory, exist_ok=True)
     except Exception as e:
         logger.warning(f"Error creating directory {directory}: {e}")
+
+# Create registry directory
+try:
+    os.makedirs(REGISTRY_DIR, exist_ok=True)
+except Exception as e:
+    logger.warning(f"Error creating registry directory {REGISTRY_DIR}: {e}")
 
 # Set default interval
 INTERVAL = user_config.get("time_series", {}).get("default_interval", "1d")
@@ -451,6 +475,7 @@ def get_config():
     merged["WALK_FORWARD_DEFAULT"] = WALK_FORWARD_DEFAULT
     merged["PREDICTION_HORIZON"] = PREDICTION_HORIZON
     merged["START_DATE"] = START_DATE
+    merged["UPDATE_DURING_WALK_FORWARD"] = UPDATE_DURING_WALK_FORWARD
 
     return merged
 
@@ -556,45 +581,62 @@ def get_active_feature_names():
     active_features = []
 
     # Add base features
-    base_features = system_config.get("features", {}).get(
-        "base_features", ["Open", "High", "Low", "Close", "Volume"]
-    )
+    base_features = system_config.get("features", {}).get("base_features", ["Open", "High", "Low", "Close", "Volume"])
     active_features.extend(base_features)
-
-    # Add technical indicators based on toggles
-    if user_config.get("features", {}).get("toggles", {}).get("rsi", False):
-        active_features.append("RSI")
-
-    if user_config.get("features", {}).get("toggles", {}).get("macd", False):
-        active_features.extend(["MACD", "MACD_signal", "MACD_hist"])
-
-    if user_config.get("features", {}).get("toggles", {}).get("bollinger_bands", False):
-        active_features.extend(["BB_upper", "BB_middle", "BB_lower"])
-
-    if user_config.get("features", {}).get("toggles", {}).get("atr", False):
-        active_features.append("ATR")
-
-    if user_config.get("features", {}).get("toggles", {}).get("obv", False):
-        active_features.append("OBV")
-
-    if user_config.get("features", {}).get("toggles", {}).get("werpi", False):
-        active_features.append("WERPI")
-
-    if user_config.get("features", {}).get("toggles", {}).get("vmli", False):
-        active_features.append("VMLI")
-
-    # Return unique features (in case of duplicates)
-    return list(dict.fromkeys(active_features))
+    
+    # Add technical indicators if enabled
+    tech_indicators = system_config.get("features", {}).get("technical_indicators", {})
+    for indicator, settings in tech_indicators.items():
+        if user_config.get("features", {}).get("technical_indicators", {}).get(indicator, True):
+            indicator_name = indicator.upper() if indicator in ["rsi", "macd", "atr"] else indicator.capitalize()
+            active_features.append(indicator_name)
+            
+            # Add sub-components for indicators like MACD that have multiple outputs
+            if indicator == "macd":
+                active_features.extend(["MACD_Signal", "MACD_Hist"])
+            elif indicator == "bollinger_bands":
+                active_features.extend(["BB_Upper", "BB_Lower"])
+                
+    # Add any custom features from user config
+    custom_features = user_config.get("features", {}).get("custom_features", [])
+    active_features.extend(custom_features)
+    
+    return active_features
 
 
-def get_api_key(service):
+def get_gpu_settings():
+    """Get a dictionary of all GPU-related settings"""
+    return {
+        "use_mixed_precision": get_value("hardware.use_mixed_precision", False),
+        "use_xla": get_value("hardware.use_xla", True),
+        "memory_growth": get_value("hardware.memory_growth", True)
+    }
+
+def set_all_random_states(seed):
     """
-    Get API key for the specified service.
-
-    Args:
-        service: Service name (e.g., 'alphavantage', 'finnhub')
-
-    Returns:
-        str: API key for the service or None if not found
+    Set random seeds for reproducibility using:
+    - Python random,
+    - NumPy,
+    - TensorFlow,
+    - PyTorch (if available)
+    Returns the seed set.
     """
-    return API_KEYS.get(service.lower())
+    import random
+    import numpy as np
+    try:
+        import tensorflow as tf
+        tf.random.set_seed(seed)
+    except Exception:
+        pass
+    random.seed(seed)
+    np.random.seed(seed)
+    try:
+        import torch
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+    except ImportError:
+        pass
+    return seed

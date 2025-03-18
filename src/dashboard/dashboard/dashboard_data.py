@@ -261,9 +261,12 @@ def calculate_indicators(df):
 
 @robust_error_boundary
 @streamlit_cache  # Using our compatible cache decorator
-def load_data(ticker, start_date, end_date=None, interval="1d", training_mode=False):
+def load_data(ticker, start_date, end_date=None, interval="1d", training_mode=False, training_start_date=None):
     """Load market data with caching and robust error handling from multiple sources"""
     try:
+        # Use training_start_date if provided, otherwise use start_date
+        fetch_start_date = training_start_date if training_start_date is not None else start_date
+        
         # Determine the appropriate data source based on ticker and settings
         data_source = st.session_state.get("data_source", "auto")
 
@@ -275,8 +278,8 @@ def load_data(ticker, start_date, end_date=None, interval="1d", training_mode=Fa
                 data_source = "yfinance"  # Default to Yahoo Finance for stocks
 
         # Convert string dates to datetime if needed
-        if isinstance(start_date, str):
-            start_date = pd.to_datetime(start_date)
+        if isinstance(fetch_start_date, str):
+            fetch_start_date = pd.to_datetime(fetch_start_date)
 
         if isinstance(end_date, str) and end_date is not None:
             end_date = pd.to_datetime(end_date)
@@ -290,33 +293,31 @@ def load_data(ticker, start_date, end_date=None, interval="1d", training_mode=Fa
 
         # Log data fetch attempt
         logger.info(
-            f"Fetching {ticker} data from {start_date} to {api_end_date} using {data_source}"
+            f"Fetching {ticker} data from {fetch_start_date} to {api_end_date} using {data_source}"
         )
 
         # Attempt to load data from the selected API
         df = None
         if data_source == "yfinance":
             # Use Yahoo Finance as the primary data source
-
-            df = fetch_data_from_yfinance(ticker, start_date, api_end_date, interval)
+            df = fetch_data_from_yfinance(ticker, fetch_start_date, api_end_date, interval)
         elif data_source == "coingecko":
             # Use CoinGecko for cryptocurrency data
-            df = fetch_data_from_coingecko(ticker, start_date, api_end_date, interval)
+            df = fetch_data_from_coingecko(ticker, fetch_start_date, api_end_date, interval)
         elif data_source == "alphavantage":
             # Use Alpha Vantage for stock data
             df = fetch_data_from_alphavantage(
-                ticker, start_date, api_end_date, interval
+                ticker, fetch_start_date, api_end_date, interval
             )
         else:
             # Default to Yahoo Finance
-
-            df = fetch_data_from_yfinance(ticker, start_date, api_end_date, interval)
+            df = fetch_data_from_yfinance(ticker, fetch_start_date, api_end_date, interval)
 
         if df is None or df.empty:
             logger.warning(
                 f"No data received for {ticker}. Trying backup data sources..."
             )
-            df = load_data_from_backup(ticker, start_date, end_date, interval)
+            df = load_data_from_backup(ticker, fetch_start_date, end_date, interval)
 
         # Ensure the date column is properly handled
         if df is not None and not df.empty:
@@ -330,6 +331,9 @@ def load_data(ticker, start_date, end_date=None, interval="1d", training_mode=Fa
 
             # Store in session state for other components to use
             st.session_state[f"{ticker}_{interval}_data"] = df
+            
+            # Store the actual start_date separately for display purposes
+            st.session_state[f"{ticker}_{interval}_display_start"] = start_date
 
         return df
 
@@ -391,36 +395,54 @@ def fetch_data_from_coingecko(ticker, start_date, end_date, interval):
         coin_id = ticker.replace("-USD", "").replace("USDT", "").lower()
 
         # Convert start_date and end_date to unix timestamps
-        if not isinstance(start_date, str):
-            start_timestamp = int(
-                datetime.combine(start_date, datetime.min.time()).timestamp()
-            )
+        # Ensure we're handling date formats properly
+        if start_date:
+            if isinstance(start_date, str):
+                try:
+                    start_timestamp = int(pd.to_datetime(start_date).timestamp())
+                except Exception as e:
+                    logger.error(f"Error parsing start date '{start_date}': {e}")
+                    start_timestamp = int(datetime.now().timestamp()) - (86400 * 365)  # One year ago
+            else:
+                start_timestamp = int(datetime.combine(start_date, datetime.min.time()).timestamp())
         else:
-            start_timestamp = int(pd.to_datetime(start_date).timestamp())
+            start_timestamp = int(datetime.now().timestamp()) - (86400 * 365)  # One year ago
 
         if end_date is None:
             end_timestamp = int(datetime.now().timestamp())
-        elif not isinstance(end_date, str):
-            end_timestamp = int(
-                datetime.combine(end_date, datetime.min.time()).timestamp()
-            )
+        elif isinstance(end_date, str):
+            try:
+                end_timestamp = int(pd.to_datetime(end_date).timestamp())
+            except Exception as e:
+                logger.error(f"Error parsing end date '{end_date}': {e}")
+                end_timestamp = int(datetime.now().timestamp())
         else:
-            end_timestamp = int(pd.to_datetime(end_date).timestamp())
+            end_timestamp = int(datetime.combine(end_date, datetime.min.time()).timestamp())
 
         # Initialize CoinGecko API
         cg = CoinGeckoAPI()
 
-        # Convert interval to days
-        if interval.endswith("d"):
-            days = int(interval[:-1])
-        elif interval.endswith("h"):
-            days = 1  # Default to daily for any hourly interval
-        else:
-            days = 1  # Default to daily
+        # Convert interval to days for CoinGecko API
+        days_map = {
+            "1d": 1,
+            "3d": 3,
+            "1wk": 7,
+            "1mo": 30,
+            "1h": 1,
+            "5m": 1,
+            "15m": 1,
+            "30m": 1,
+            "60m": 1,
+        }
+        days = days_map.get(interval, 1)
+
+        # Calculate days from timestamps to ensure proper date range
+        days_from_timestamps = max(1, int((end_timestamp - start_timestamp) / 86400))
+        days = min(days_from_timestamps, 365 * 5)  # Cap at 5 years
 
         # Show download message
         with st.spinner(f"Downloading data from CoinGecko for {ticker}..."):
-            # Get market chart data
+            # Get market chart data by date range
             chart_data = cg.get_coin_market_chart_range_by_id(
                 id=coin_id,
                 vs_currency="usd",
@@ -1095,15 +1117,32 @@ def ensure_indicators_applied(df, ticker, interval="1d"):
 
     return df
 
-
 # Modified function to update dashboard data with indicators
 @robust_error_boundary
-def get_dashboard_data(ticker, start_date, end_date=None, interval="1d"):
+def get_dashboard_data(ticker, start_date, end_date=None, interval="1d", training_start_date=None):
     """
     Get data for dashboard with all indicators applied based on user selections.
+    
+    Args:
+        ticker: Symbol to fetch data for
+        start_date: Start date for displayed data (chart visualization only)
+        end_date: End date for data 
+        interval: Data interval (e.g. '1d', '1h')
+        training_start_date: Earlier date for fetching training data
+        
+    Returns:
+        DataFrame with price data and indicators
     """
+    # Always fetch data from training_start_date for model training purposes
+    # but keep track of start_date for chart visualization
+    fetch_start = training_start_date if training_start_date is not None else start_date
+    
     # First load the raw data
-    df = load_data(ticker, start_date, end_date, interval)
+    df = load_data(ticker, fetch_start, end_date, interval)
+    
+    # Store both dates in session state for visualization and model training
+    st.session_state[f"{ticker}_{interval}_display_start"] = start_date
+    st.session_state[f"{ticker}_{interval}_training_start"] = fetch_start
 
     if df is not None and not df.empty:
         # Ensure all selected indicators are applied

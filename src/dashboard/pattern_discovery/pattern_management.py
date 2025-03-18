@@ -783,6 +783,14 @@ def discover_patterns_from_df(df, lookback=90, min_occurrences=5, min_zscore=1.5
                 zscore_3d = avg_return_3d / (std_return_3d + 1e-10)
                 zscore_5d = avg_return_5d / (std_return_5d + 1e-10)
 
+                # Convert numpy values to Python native types to prevent reindexing errors
+                if isinstance(zscore_1d, np.number):
+                    zscore_1d = float(zscore_1d)
+                if isinstance(zscore_3d, np.number):
+                    zscore_3d = float(zscore_3d)
+                if isinstance(zscore_5d, np.number):
+                    zscore_5d = float(zscore_5d)
+
                 # Get the max z-score and corresponding period
                 zscores = [zscore_1d, zscore_3d, zscore_5d]
                 max_zscore_idx = np.argmax(np.abs(zscores))
@@ -792,25 +800,21 @@ def discover_patterns_from_df(df, lookback=90, min_occurrences=5, min_zscore=1.5
 
                 # Only add significant patterns
                 if abs(max_zscore) >= min_zscore:
+                    # Ensure all values are Python native types, not numpy types
+                    # to prevent DataFrame operation errors later
                     pattern = {
                         "id": f"{indicator}_above_{percentile}pct",
                         "name": f"{indicator} Above {percentile}th Percentile",
-                        "description": f"When {indicator} rises above {threshold:.2f}, price tends to move {'up' if max_zscore > 0 else 'down'} in the next {best_period} days.",
+                        "description": f"When {indicator} rises above {float(threshold):.2f}, price tends to move {'up' if max_zscore > 0 else 'down'} in the next {best_period} days.",
                         "conditions": [
                             {
                                 "indicator": indicator,
                                 "operator": ">",
-                                "value": threshold,
+                                "value": float(threshold),
                             }
                         ],
-                        "expected_return": float(
-                            df.loc[above_mask, f"return_{best_period}d"].mean()
-                        ),
-                        "reliability": float(
-                            np.sign(df.loc[above_mask, f"return_{best_period}d"]).mean()
-                            * 0.5
-                            + 0.5
-                        ),
+                        "expected_return": float(df.loc[above_mask, f"return_{best_period}d"].mean()),
+                        "reliability": float(np.sign(df.loc[above_mask, f"return_{best_period}d"]).mean() * 0.5 + 0.5),
                         "timeframe": f"{best_period}d",
                         "occurrences": int(above_mask.sum()),
                         "discovery_date": datetime.datetime.now().strftime("%Y-%m-%d"),
@@ -844,6 +848,14 @@ def discover_patterns_from_df(df, lookback=90, min_occurrences=5, min_zscore=1.5
                 zscore_3d = avg_return_3d / (std_return_3d + 1e-10)
                 zscore_5d = avg_return_5d / (std_return_5d + 1e-10)
 
+                # Convert numpy values to Python native types to prevent reindexing errors
+                if isinstance(zscore_1d, np.number):
+                    zscore_1d = float(zscore_1d)
+                if isinstance(zscore_3d, np.number):
+                    zscore_3d = float(zscore_3d)
+                if isinstance(zscore_5d, np.number):
+                    zscore_5d = float(zscore_5d)
+
                 # Get the max z-score and corresponding period
                 zscores = [zscore_1d, zscore_3d, zscore_5d]
                 max_zscore_idx = np.argmax(np.abs(zscores))
@@ -853,25 +865,21 @@ def discover_patterns_from_df(df, lookback=90, min_occurrences=5, min_zscore=1.5
 
                 # Only add significant patterns
                 if abs(max_zscore) >= min_zscore:
+                    # Ensure all values are Python native types, not numpy types
+                    # to prevent DataFrame operation errors later
                     pattern = {
                         "id": f"{indicator}_below_{percentile}pct",
                         "name": f"{indicator} Below {percentile}th Percentile",
-                        "description": f"When {indicator} falls below {threshold:.2f}, price tends to move {'up' if max_zscore > 0 else 'down'} in the next {best_period} days.",
+                        "description": f"When {indicator} falls below {float(threshold):.2f}, price tends to move {'up' if max_zscore > 0 else 'down'} in the next {best_period} days.",
                         "conditions": [
                             {
                                 "indicator": indicator,
                                 "operator": "<",
-                                "value": threshold,
+                                "value": float(threshold),
                             }
                         ],
-                        "expected_return": float(
-                            df.loc[below_mask, f"return_{best_period}d"].mean()
-                        ),
-                        "reliability": float(
-                            np.sign(df.loc[below_mask, f"return_{best_period}d"]).mean()
-                            * 0.5
-                            + 0.5
-                        ),
+                        "expected_return": float(df.loc[below_mask, f"return_{best_period}d"].mean()),
+                        "reliability": float(np.sign(df.loc[below_mask, f"return_{best_period}d"]).mean() * 0.5 + 0.5),
                         "timeframe": f"{best_period}d",
                         "occurrences": int(below_mask.sum()),
                         "discovery_date": datetime.datetime.now().strftime("%Y-%m-%d"),

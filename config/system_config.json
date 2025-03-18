@@ -8,7 +8,8 @@
       "models": "__project_root__/data/Models",
       "hyperparams": "__project_root__/data/Models/Hyperparameters",
       "raw_data": "__project_root__/data/Raw",
-      "processed_data": "__project_root__/data/Processed"
+      "processed_data": "__project_root__/data/Processed",
+      "registry": "__project_root__/data/Models/Registry"
     },
     "files": {
       "progress_file": "__project_root__/data/progress.yaml",
@@ -188,5 +189,12 @@
   "data": {
     "use_caching": true,
     "cache_expiry_days": 7
+  },
+  "registry": {
+    "base_dir": "__project_root__/data/Models/Registry",
+    "max_saved_models": 100,
+    "fallback_location": "__project_root__/data/Models/Registry_Fallback",
+    "auto_clean": true,
+    "version_timeout": 3600
   }
 }

@@ -1,31 +1,66 @@
 """
 Visualization functions for the dashboard.
 Includes functions for plotting price history, feature importance, and model performance.
+
+This module serves as the visualization layer for the financial prediction dashboard.
+It provides interactive charts and data visualization components that display:
+- Price history with candlestick or line charts
+- Technical indicators (RSI, MACD, Bollinger Bands, etc.)
+- Model forecasts with confidence levels
+- Performance metrics and statistics
+- Feature importance visualizations
+- Market regime analysis
+
+Dependencies:
+- streamlit: For rendering interactive UI components
+- plotly: For creating interactive charts
+- pandas: For data manipulation and analysis
+- numpy: For numerical operations
+
+Module Integration:
+- This module is imported by the main dashboard application
+- It consumes data processed by the data pipeline modules
+- It visualizes predictions from the model training modules
+- It connects to disk storage for saving/loading prediction history
+
+Usage:
+This module is not meant to be run directly but is imported by the dashboard
+application to provide visualization capabilities.
 """
 
-import logging
-import os
+import os  
 import sys
 from typing import Dict, List, Optional, Tuple, Union
-
+import logging
 import pandas as pd
 import numpy as np
 import streamlit as st
 import plotly.graph_objects as go
 
+# Add debugging to check import status
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("dashboard_visualization")
+logger.info("Starting dashboard_visualization module")
+logger.info(f"os module imported: {os is not None}")
+
 # Add project root to Python path
 current_file = os.path.abspath(__file__)
+logger.info(f"Current file path: {current_file}")
 dashboard_dir = os.path.dirname(current_file)
 dashboard_parent = os.path.dirname(dashboard_dir)
 src_dir = os.path.dirname(dashboard_parent)
 project_root = os.path.dirname(src_dir)
+logger.info(f"Project root: {project_root}")
 
 # Add project root to sys.path if not already there
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
+    logger.info(f"Added {project_root} to sys.path")
 
-# Set up logger
-logger = logging.getLogger("dashboard_visualization")
+# Set up logger - changed to avoid redefining
+if not logger.handlers:
+    logger.setLevel(logging.INFO)
+    logger.info("Logger initialized in dashboard_visualization")
 
 # Define color dictionary for consistent styling across visualizations
 COLORS = {
@@ -141,12 +176,20 @@ def save_best_prediction(df: pd.DataFrame, current_predictions: List[float]) -> 
     Returns:
         Updated past_predictions dictionary
     """
+    # Debugging statement
+    logger.info("Entering save_best_prediction function")
+    
+    # Import needed modules here to ensure they're available
+    import os
+    import json
+    
     # Initialize past_predictions if not already in session state
     if "past_predictions" not in st.session_state:
         st.session_state["past_predictions"] = {}
     
     # Return if df is invalid
     if df is None or df.empty:
+        logger.warning("DataFrame is None or empty in save_best_prediction")
         return st.session_state["past_predictions"]
     
     # Ensure date column is present
@@ -200,15 +243,19 @@ def save_best_prediction(df: pd.DataFrame, current_predictions: List[float]) -> 
     
     # ADDED: Save predictions to disk for long-term storage
     try:
-        import json
+        # Explicitly use the imported os module
         
         # Create directory if it doesn't exist
         predictions_dir = os.path.join(project_root, "data", "predictions")
+        logger.info(f"Creating predictions directory: {predictions_dir}")
+        
         os.makedirs(predictions_dir, exist_ok=True)
         
         # Save to a ticker and timeframe specific file
         filename = f"{ticker}_{timeframe}_predictions.json"
         filepath = os.path.join(predictions_dir, filename)
+        
+        logger.info(f"Saving predictions to: {filepath}")
         
         # Convert predictions to serializable format
         serializable_predictions = {}
@@ -223,7 +270,7 @@ def save_best_prediction(df: pd.DataFrame, current_predictions: List[float]) -> 
         
         logger.info(f"Saved {len(serializable_predictions)} predictions to {filepath}")
     except Exception as e:
-        logger.error(f"Error saving predictions to disk: {e}")
+        logger.error(f"Error saving predictions to disk: {e}", exc_info=True)
     
     # Return the updated predictions
     return st.session_state["past_predictions"]
@@ -237,16 +284,25 @@ def load_past_predictions_from_disk() -> Dict:
     Returns:
         Dictionary of past predictions
     """
+    # Debugging statement
+    logger.info("Entering load_past_predictions_from_disk function")
+    
     try:
+        # Import needed modules here to ensure they're available
+        import os
         import json
         
         ticker = st.session_state.get("selected_ticker", "unknown")
         timeframe = st.session_state.get("selected_timeframe", "1d")
         
+        logger.info(f"Loading predictions for {ticker} ({timeframe})")
+        
         # Path to predictions file
         predictions_dir = os.path.join(project_root, "data", "predictions")
         filename = f"{ticker}_{timeframe}_predictions.json"
         filepath = os.path.join(predictions_dir, filename)
+        
+        logger.info(f"Looking for predictions file: {filepath}")
         
         # Check if file exists
         if not os.path.exists(filepath):
@@ -260,7 +316,7 @@ def load_past_predictions_from_disk() -> Dict:
         logger.info(f"Loaded {len(predictions)} predictions from {filepath}")
         return predictions
     except Exception as e:
-        logger.error(f"Error loading predictions from disk: {e}")
+        logger.error(f"Error loading predictions from disk: {e}", exc_info=True)
         return {}
 
 
@@ -268,7 +324,8 @@ def load_past_predictions_from_disk() -> Dict:
 def create_interactive_price_chart(
     df: pd.DataFrame, 
     options: Dict, 
-    future_forecast: Optional[List[float]] = None, 
+    future_forecast: Optional[List[float]] = None,
+    confidence_scores: Optional[List[float]] = None,  # Added confidence_scores parameter
     indicators: Optional[Dict[str, bool]] = None, 
     height: int = 600
 ) -> None:
@@ -279,6 +336,7 @@ def create_interactive_price_chart(
         df: DataFrame with price data
         options: Options for chart display
         future_forecast: List of future price predictions
+        confidence_scores: List of confidence scores for predictions
         indicators: Dictionary of indicator display flags
         height: Height of the chart in pixels
     
@@ -310,6 +368,7 @@ def create_interactive_price_chart(
             "show_werpi": False,
             "show_vmli": False,
             "show_forecast": True,
+            "show_confidence": True,
         }
     
     # Create subplot layout with main chart and volume/indicators
@@ -579,6 +638,7 @@ def create_interactive_price_chart(
         )
     
     # Add forecast if available and requested
+    future_dates = None
     if future_forecast is not None and len(future_forecast) > 0 and indicators.get("show_forecast", True):
         last_date = df[date_col].iloc[-1]
         last_price = df["Close"].iloc[-1] if "Close" in df.columns else None
@@ -603,6 +663,65 @@ def create_interactive_price_chart(
                 row=1,
                 col=1,
             )
+            
+            # Add confidence bands if available
+            if confidence_scores is not None and len(confidence_scores) > 0 and indicators.get("show_confidence", True):
+                # Calculate upper and lower bounds based on confidence
+                # Convert confidence (0-100) to a range multiplier (0-0.3)
+                if isinstance(confidence_scores, (list, np.ndarray)) and len(confidence_scores) == len(future_forecast):
+                    confidence_multipliers = 1.0 - (np.array(confidence_scores) / 100.0) * 0.3
+                    
+                    # Calculate bounds
+                    upper_bound = np.array(future_forecast) * (1 + confidence_multipliers)
+                    lower_bound = np.array(future_forecast) * (1 - confidence_multipliers)
+                    
+                    # Plot upper bound
+                    fig.add_trace(
+                        go.Scatter(
+                            x=list(future_dates),
+                            y=upper_bound,
+                            mode='lines',
+                            line=dict(width=0),
+                            showlegend=False,
+                            name='Upper Bound'
+                        ),
+                        row=1,
+                        col=1
+                    )
+                    
+                    # Plot lower bound
+                    fig.add_trace(
+                        go.Scatter(
+                            x=list(future_dates),
+                            y=lower_bound,
+                            mode='lines',
+                            fill='tonexty',
+                            fillcolor='rgba(31, 119, 180, 0.2)',
+                            line=dict(width=0),
+                            showlegend=False,
+                            name='Lower Bound'
+                        ),
+                        row=1,
+                        col=1
+                    )
+                    
+                    # Add confidence overlay to bottom panel
+                    fig.add_trace(
+                        go.Bar(
+                            x=future_dates,
+                            y=confidence_scores,
+                            name="Confidence",
+                            marker_color=[f'rgba(0, {int(score*2.25)}, 0, 0.7)' for score in confidence_scores],
+                            opacity=0.7,
+                        ),
+                        row=2,
+                        col=1,
+                    )
+                    
+                    # Add reference lines for confidence levels
+                    fig.add_hline(y=80, line_width=1, line_dash="dash", line_color="green", row=2, col=1)
+                    fig.add_hline(y=50, line_width=1, line_dash="dash", line_color="yellow", row=2, col=1)
+                    fig.add_hline(y=30, line_width=1, line_dash="dash", line_color="red", row=2, col=1)
         else:
             # If we don't have the last price, just plot the forecast
             fig.add_trace(
@@ -622,37 +741,173 @@ def create_interactive_price_chart(
     timeframe = options.get("timeframe", "")
     chart_title = f"{ticker} - {timeframe} Chart" if ticker and timeframe else "Price Chart"
     
-    # Update layout
+    # Calculate smart default view
+    if "chart_start_date" in st.session_state:
+        # Use the chart visualization start date from core settings
+        default_start_date = pd.to_datetime(st.session_state["chart_start_date"])
+    elif "start_date_user" in st.session_state:
+        # Use the date from the sidebar control panel (user-selected start date, default 2 months ago)
+        default_start_date = pd.to_datetime(st.session_state["start_date_user"])
+    elif "start_date" in st.session_state:
+        # Fall back to start_date if start_date_user is not available
+        default_start_date = pd.to_datetime(st.session_state["start_date"])
+    else:
+        # Default to 2 months ago if not specified
+        default_start_date = pd.to_datetime(df[date_col].iloc[-1]) - pd.Timedelta(days=60)
+
+    # Ensure default_start_date is not earlier than the earliest data point
+    earliest_date = pd.to_datetime(df[date_col].iloc[0])
+    if default_start_date < earliest_date:
+        default_start_date = earliest_date
+    
+    # Calculate end date including forecast if available
+    default_end_date = future_dates[-1] if future_dates is not None else pd.to_datetime(df[date_col].iloc[-1])
+    
+    # Calculate full range view
+    full_start_date = pd.to_datetime(df[date_col].iloc[0])
+    full_end_date = future_dates[-1] if future_dates is not None else pd.to_datetime(df[date_col].iloc[-1])
+    
+    # Helper function to calculate y-axis range for a given time window
+    def calculate_y_range(start_date, end_date, padding_percent=0.05):
+        # Filter data to the visible range
+        visible_df = df[(pd.to_datetime(df[date_col]) >= start_date) & 
+                       (pd.to_datetime(df[date_col]) <= end_date)]
+        
+        # Include forecast in range calculation if applicable
+        min_y, max_y = float('inf'), float('-inf')
+        
+        # Get range from actual data
+        if 'Close' in visible_df.columns and not visible_df.empty:
+            min_y = min(min_y, visible_df['Close'].min())
+            max_y = max(max_y, visible_df['Close'].max())
+            
+            # Also check High/Low if available
+            if 'High' in visible_df.columns:
+                max_y = max(max_y, visible_df['High'].max())
+            if 'Low' in visible_df.columns:
+                min_y = min(min_y, visible_df['Low'].min())
+        
+        # Include forecast in range calculation
+        if future_forecast is not None and future_dates is not None:
+            # Find forecast points that fall within the time window
+            if end_date >= future_dates[0]:
+                max_y = max(max_y, max(future_forecast))
+                min_y = min(min_y, min(future_forecast))
+        
+        # If we didn't find valid min/max, use the overall data
+        if min_y == float('inf') or max_y == float('-inf'):
+            if 'Close' in df.columns:
+                min_y = df['Close'].min()
+                max_y = df['Close'].max()
+            else:
+                min_y, max_y = 0, 100  # Fallback default
+        
+        # Add padding
+        range_height = max_y - min_y
+        min_y = min_y - (range_height * padding_percent)
+        max_y = max_y + (range_height * padding_percent)
+        
+        return [min_y, max_y]
+    
+    # Determine appropriate title for the indicator panel
+    if indicators.get("show_confidence", True) and confidence_scores is not None:
+        indicator_title = "Prediction Confidence (%)"
+        # Update y-axis range for confidence
+        fig.update_yaxes(title_text=indicator_title, range=[0, 100], row=2, col=1)
+    else:
+        # Use original indicator title logic
+        indicator_title = ""
+        if indicators.get("show_rsi", False):
+            indicator_title = "RSI"
+        elif indicators.get("show_macd", False):
+            indicator_title = "MACD"
+        elif indicators.get("show_werpi", False):
+            indicator_title = "WERPI"
+        elif indicators.get("show_vmli", False):
+            indicator_title = "VMLI"
+        elif "Volume" in df.columns:
+            indicator_title = "Volume"
+        
+        # Update y-axis title for indicator panel
+        fig.update_yaxes(title_text=indicator_title, row=2, col=1)
+    
+    # Update layout with custom buttons and fixed height/width
     fig.update_layout(
         title=chart_title,
         xaxis_title="Date",
         yaxis_title="Price",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        height=height,
+        height=height,  # Fixed height
+        autosize=True,  # Allow auto-width
+        width=None,  # Allow full width
         hovermode="x unified",
         xaxis_rangeslider_visible=False,
         template="plotly_white",
-        margin=dict(l=20, r=20, t=50, b=20),
+        margin=dict(l=10, r=10, t=50, b=10),  # Reduce margins to maximize width
+        updatemenus=[
+            dict(
+                type="buttons",
+                direction="right",
+                x=0.38, 
+                y=1.08,
+                buttons=[
+                    dict(
+                        label="From Start Date",
+                        method="relayout",
+                        args=[{
+                            "xaxis.range": [default_start_date, default_end_date],
+                            "yaxis.range": calculate_y_range(default_start_date, default_end_date)
+                        }]
+                    ),
+                    dict(
+                        label="1 Month",
+                        method="relayout",
+                        args=[{
+                            "xaxis.range": [pd.to_datetime(df[date_col].iloc[-1]) - pd.Timedelta(days=30), default_end_date],
+                            "yaxis.range": calculate_y_range(pd.to_datetime(df[date_col].iloc[-1]) - pd.Timedelta(days=30), default_end_date)
+                        }]
+                    ),
+                    dict(
+                        label="3 Months",
+                        method="relayout",
+                        args=[{
+                            "xaxis.range": [pd.to_datetime(df[date_col].iloc[-1]) - pd.Timedelta(days=90), default_end_date],
+                            "yaxis.range": calculate_y_range(pd.to_datetime(df[date_col].iloc[-1]) - pd.Timedelta(days=90), default_end_date)
+                        }]
+                    ),
+                    dict(
+                        label="1 Year",
+                        method="relayout",
+                        args=[{
+                            "xaxis.range": [pd.to_datetime(df[date_col].iloc[-1]) - pd.Timedelta(days=365), default_end_date],
+                            "yaxis.range": calculate_y_range(pd.to_datetime(df[date_col].iloc[-1]) - pd.Timedelta(days=365), default_end_date)
+                        }]
+                    ),
+                    dict(
+                        label="Full",
+                        method="relayout",
+                        args=[{
+                            "xaxis.range": [full_start_date, full_end_date],
+                            "yaxis.range": calculate_y_range(full_start_date, full_end_date)
+                        }]
+                    ),
+                ],
+            )
+        ],
     )
     
-    # Determine appropriate title for the indicator panel
-    indicator_title = ""
-    if indicators.get("show_rsi", False):
-        indicator_title = "RSI"
-    elif indicators.get("show_macd", False):
-        indicator_title = "MACD"
-    elif indicators.get("show_werpi", False):
-        indicator_title = "WERPI"
-    elif indicators.get("show_vmli", False):
-        indicator_title = "VMLI"
-    elif "Volume" in df.columns:
-        indicator_title = "Volume"
+    # Set initial view to default start date
+    fig.update_xaxes(range=[default_start_date, default_end_date])
+    fig.update_yaxes(range=calculate_y_range(default_start_date, default_end_date), row=1, col=1)
     
-    # Update y-axis title for indicator panel
-    fig.update_yaxes(title_text=indicator_title, row=2, col=1)
-    
-    # Display the chart
-    st.plotly_chart(fig, use_container_width=True)
+    # Display the chart with enhanced width settings
+    st.plotly_chart(fig, use_container_width=True, config={
+        'displayModeBar': True,
+        'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'eraseshape'],
+        'modeBarButtonsToRemove': ['autoScale2d'],
+        'doubleClick': 'reset',
+        'responsive': True,  # Ensure responsiveness
+    })
 
 
 @robust_error_boundary
@@ -1396,3 +1651,311 @@ def create_technical_indicators_chart(df: pd.DataFrame, options: Optional[Dict] 
                 line=dict(color="darkgreen", width=1.5),
             )
         )
+
+
+@robust_error_boundary
+def show_market_regime_info(regime_stats: Dict) -> None:
+    """
+    Display detailed market regime information.
+    
+    This function visualizes information about the current market regime,
+    including descriptions, duration, model performance in different regimes,
+    and historical distribution of market regimes.
+    
+    Pipeline Integration:
+    - Consumes market regime analysis data from the prediction model
+    - Displays regime information directly in the Streamlit UI
+    - Helps users understand how models perform in different market conditions
+    
+    Args:
+        regime_stats: Market regime statistics dictionary containing regime information,
+                     performance metrics, and historical data
+    """
+    if not regime_stats:
+        st.info("No market regime data available")
+        return
+    
+    # Define regime descriptions
+    regime_info = {
+        "trending_up_strong": {
+            "color": "darkgreen",
+            "emoji": "🚀",
+            "description": "Strong upward trend with high momentum. Algorithms specializing in trend following typically excel."
+        },
+        "trending_up_weak": {
+            "color": "green",
+            "emoji": "📈",
+            "description": "Moderate upward trend. Balanced strategies that combine trend following with some downside protection work well."
+        },
+        "trending_down_strong": {
+            "color": "darkred",
+            "emoji": "💥",
+            "description": "Strong downward trend with negative momentum. Algorithms with strong risk management or short capabilities perform best."
+        },
+        "trending_down_weak": {
+            "color": "red",
+            "emoji": "📉",
+            "description": "Moderate downward trend. Conservative strategies with emphasis on capital preservation are preferred."
+        },
+        "ranging_tight": {
+            "color": "darkblue",
+            "emoji": "↔️",
+            "description": "Tight sideways movement with low volatility. Mean-reversion strategies typically excel in this environment."
+        },
+        "ranging_wide": {
+            "color": "blue",
+            "emoji": "↕️",
+            "description": "Wider sideways movement with moderate volatility. Strategies that can capitalize on oscillations perform well."
+        },
+        "high_volatility": {
+            "color": "orange",
+            "emoji": "⚡",
+            "description": "Extreme price fluctuations with unpredictable direction. Conservative strategies with robust risk management are recommended."
+        },
+        "low_volatility": {
+            "color": "teal",
+            "emoji": "🌊",
+            "description": "Unusually calm market conditions. Good environment for higher leverage or longer-term positions."
+        },
+        "breakout": {
+            "color": "purple",
+            "emoji": "🚀",
+            "description": "Price breaking through key resistance or support. Momentum strategies often perform well in this regime."
+        },
+        "reversal": {
+            "color": "brown",
+            "emoji": "🔄",
+            "description": "Market changing direction after extended trend. Counter-trend strategies may excel here."
+        },
+        "unknown": {
+            "color": "gray",
+            "emoji": "❓",
+            "description": "Unable to determine current market regime with confidence. Balanced approach recommended."
+        }
+    }
+    
+    # Extract info
+    current_regime = regime_stats.get('current_regime', 'unknown')
+    regime_duration = regime_stats.get('regime_duration', 0)
+    
+    # Get regime details
+    info = regime_info.get(current_regime, regime_info["unknown"])
+    
+    # Create two columns
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        # Show regime emoji
+        st.markdown(f"<h1 style='font-size:3rem; text-align:center; color:{info['color']};'>{info['emoji']}</h1>", unsafe_allow_html=True)
+    
+    with col2:
+        # Show regime name and duration
+        st.subheader(f"{current_regime.replace('_', ' ').title()}")
+        st.caption(f"Duration: {regime_duration} periods")
+        
+        # Style the description
+        st.markdown(f"<div style='padding:10px;border-left:4px solid {info['color']};background-color:rgba(0,0,0,0.05);'>{info['description']}</div>", unsafe_allow_html=True)
+    
+    # Show model weights if available
+    if 'regime_performance' in regime_stats and current_regime in regime_stats['regime_performance']:
+        st.subheader("Model Performance in This Regime")
+        
+        # Create dataframe for model performance
+        performance_data = []
+        for model, metric in regime_stats['regime_performance'][current_regime].items():
+            # Get learning rate if available
+            learning_rate = regime_stats.get('model_learning_rates', {}).get(model, '-')
+            performance_data.append({
+                'Model': model,
+                'Performance Metric': float(metric),
+                'Learning Rate': learning_rate if isinstance(learning_rate, float) else '-'
+            })
+        
+        if performance_data:
+            performance_df = pd.DataFrame(performance_data)
+            # Sort by performance (lower is better)
+            performance_df = performance_df.sort_values('Performance Metric')
+            
+            # Display the dataframe
+            st.dataframe(
+                performance_df.style.format({
+                    'Performance Metric': '{:.4f}',
+                    'Learning Rate': '{:.3f}' if isinstance(performance_df['Learning Rate'].iloc[0], float) else '{}'
+                }),
+                use_container_width=True
+            )
+            
+            # Create a bar chart of performance
+            import plotly.express as px
+            fig = px.bar(
+                performance_df, 
+                x='Model', 
+                y='Performance Metric',
+                color='Performance Metric',
+                color_continuous_scale='RdYlGn_r',  # Red for high (bad), green for low (good)
+                title='Model Performance by Regime (Lower is Better)'
+            )
+            fig.update_layout(height=300)
+            st.plotly_chart(fig, use_container_width=True)
+    
+    # Show regime history if available (removed duplicate section)
+    if 'regime_counts' in regime_stats and len(regime_stats['regime_counts']) > 1:
+        st.subheader("Regime Distribution")
+        
+        # Create dataframe for regime counts
+        regime_counts = []
+        for regime, count in regime_stats['regime_counts'].items():
+            regime_counts.append({
+                'Regime': regime.replace('_', ' ').title(),
+                'Count': count
+            })
+        
+        if regime_counts:
+            counts_df = pd.DataFrame(regime_counts)
+            counts_df = counts_df.sort_values('Count', ascending=False)
+            
+            # Create a pie chart
+            import plotly.express as px
+            fig = px.pie(
+                counts_df,
+                values='Count',
+                names='Regime',
+                title='Market Regime Distribution'
+            )
+            fig.update_layout(height=350)
+            st.plotly_chart(fig, use_container_width=True)
+
+
+@robust_error_boundary
+def show_confidence_breakdown(confidence_components, future_dates):
+    """
+    Display a breakdown of prediction confidence components.
+    
+    Args:
+        confidence_components: Dictionary containing confidence component scores
+        future_dates: Dates for the forecast points
+    """
+    if not confidence_components:
+        st.info("No confidence component data available.")
+        return
+    
+    # Convert dates to strings for display
+    if isinstance(future_dates, (list, np.ndarray)):
+        date_strs = [d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d) 
+                     for d in future_dates]
+    else:
+        date_strs = ["N/A"]
+    
+    # Create a DataFrame for the confidence components
+    df_components = pd.DataFrame(index=date_strs)
+    
+    # Add each component as a column
+    for component, values in confidence_components.items():
+        if isinstance(values, (list, np.ndarray)) and len(values) == len(date_strs):
+            df_components[component] = values
+    
+    # Only proceed if we have actual data
+    if df_components.empty or df_components.shape[1] == 0:
+        st.warning("Confidence breakdown data is incomplete or malformed.")
+        return
+    
+    # Display the component data as a bar chart
+    st.write("### Confidence Components")
+    st.bar_chart(df_components)
+    
+    # Also show as a table with the dates
+    st.write("### Component Details")
+    st.dataframe(df_components)
+    
+    # Add descriptions for each component
+    st.write("### Component Descriptions")
+    
+    # Define descriptions for known components
+    descriptions = {
+        "ensemble_agreement": "Agreement between different models in the ensemble",
+        "historical_accuracy": "Historical accuracy under similar market conditions",
+        "volatility_impact": "Impact of market volatility on prediction reliability",
+        "data_quality": "Quality and completeness of input data",
+        "model_uncertainty": "Model's internal uncertainty estimation",
+        "regime_consistency": "Consistency of current market regime"
+    }
+    
+    # Display descriptions for components that are present
+    for component in df_components.columns:
+        description = descriptions.get(component, "No description available")
+        st.markdown(f"**{component}**: {description}")
+
+
+@robust_error_boundary
+def create_correlation_heatmap(df):
+    """
+    Create a correlation heatmap for numeric features in the DataFrame
+    
+    Args:
+        df: DataFrame containing numeric features
+        
+    Returns:
+        plotly.graph_objects.Figure: Correlation heatmap figure
+    """
+    import plotly.graph_objs as go
+    
+    # Let user select features (default to all numeric)
+    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    
+    # Check if we're in a Streamlit context
+    in_streamlit = 'st' in globals() or 'streamlit' in sys.modules
+    
+    if in_streamlit:
+        import streamlit as st
+        selected_features = st.sidebar.multiselect("Select features for correlation heatmap", numeric_cols, default=numeric_cols)
+        
+        if not selected_features:
+            st.warning("No features selected. Showing full numeric set.")
+            selected_features = numeric_cols
+    else:
+        selected_features = numeric_cols
+    
+    # Calculate correlation matrix
+    corr = df[selected_features].corr()
+    
+    # Create heatmap
+    heatmap_fig = go.Figure(data=go.Heatmap(
+        z=corr.values,
+        x=corr.columns,
+        y=corr.index,
+        colorscale="Viridis",
+        colorbar=dict(title="Correlation")
+    ))
+    
+    # Update layout
+    heatmap_fig.update_layout(
+        title="Correlation Heatmap",
+        xaxis_title="Features",
+        yaxis_title="Features",
+        template="plotly_white"
+    )
+    
+    return heatmap_fig
+
+
+@robust_error_boundary
+def display_model_metrics_dashboard(cycle_num=None) -> None:
+    """
+    Display model metrics in the dashboard.
+    
+    Args:
+        cycle_num: Optional cycle number to display metrics for (default: latest)
+    
+    Returns:
+        None - Displays metrics in Streamlit
+    """
+    try:
+        # Import the display function from dashboard_model
+        from src.dashboard.dashboard.dashboard_model import display_model_metrics
+        
+        # Call the display function
+        display_model_metrics(filter_by_cycle=cycle_num)
+    except ImportError:
+        st.warning("Could not import display_model_metrics from dashboard_model")
+    except Exception as e:
+        st.error(f"Error displaying model metrics: {e}")

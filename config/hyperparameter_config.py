@@ -47,13 +47,44 @@ def register_param(
     return default
 
 
+def suggest_param(trial, name, override_range=None):
+    """
+    Suggest a parameter value using an Optuna trial.
+    Utilizes the HYPERPARAMETER_REGISTRY.
+    """
+    if name not in HYPERPARAMETER_REGISTRY:
+        raise KeyError(f"Parameter '{name}' not registered")
+    config = HYPERPARAMETER_REGISTRY[name]
+    param_type = config["type"]
+    param_range = override_range or config.get("range")
+    use_log = config.get("log_scale", False)
+    if param_type == "int":
+        if param_range:
+            return trial.suggest_int(name, param_range[0], param_range[1], log=use_log)
+        else:
+            return config["default"]
+    elif param_type == "float":
+        if param_range:
+            return trial.suggest_float(name, param_range[0], param_range[1], log=use_log)
+        else:
+            return config["default"]
+    elif param_type == "categorical":
+        if param_range:
+            return trial.suggest_categorical(name, param_range)
+        else:
+            return config["default"]
+    elif param_type == "bool":
+        return trial.suggest_categorical(name, [True, False])
+    return config["default"]
+
+
 # Pruning settings
 PRUNING_ENABLED = register_param("pruning_enabled", True, "bool", None, "pruning")
 PRUNING_MEDIAN_FACTOR = register_param(
     "pruning_median_factor", 1.9, "float", [1.1, 5.0], "pruning"
 )
 PRUNING_MIN_TRIALS = register_param(
-    "pruning_min_trials", 10, "int", [5, 100], "pruning"
+    "pruning_min_trials", 10, "int", [5, 1000], "pruning"
 )
 PRUNING_ABSOLUTE_RMSE_FACTOR = register_param(
     "pruning_absolute_rmse_factor", 2.0, "float", [1.1, 5.0], "pruning"
@@ -70,14 +101,14 @@ AUTO_RUN_TUNING = False  # Start tuning automatically on startup
 
 # Meta-tuning parameters with min/max ranges - use values from config_loader for consistency
 META_TUNING_PARAMS = {
-    "TOTAL_STEPS": {"min": 1, "max": 500},  # Steps for splitting evaluation
+    "TOTAL_STEPS": {"min": 1, "max": 1000},  # Steps for splitting evaluation
     "N_STARTUP_TRIALS": {
         "min": 5,
         "max": 10000,
         "default": N_STARTUP_TRIALS,
     },  # Trials before pruning starts
-    "N_WARMUP_STEPS": {"min": 5, "max": 500},  # Steps before pruning enabled
-    "INTERVAL_STEPS": {"min": 1, "max": 50},  # Interval between pruning checks
+    "N_WARMUP_STEPS": {"min": 500, "max": 5000},  # Steps before pruning enabled
+    "INTERVAL_STEPS": {"min": 1, "max": 500},  # Interval between pruning checks
     "PRUNING_PERCENTILE": {"min": 1, "max": 90},  # Percentile for pruning
     "META_TUNING_ENABLED": True,  # Toggle for meta-tuning
     "TRIALS_PER_CYCLE": {
@@ -87,39 +118,133 @@ META_TUNING_PARAMS = {
 }
 
 # Define model types
-MODEL_TYPES = ["lstm", "rnn", "random_forest", "xgboost", "tft", "ltc", "tabnet"]
+MODEL_TYPES = ["lstm", "rnn", "random_forest", "xgboost", "tft", "ltc", "tabnet", "nbeats", "cnn"]
 
 # Set search method to Optuna only
 HYPERPARAM_SEARCH_METHOD = "optuna"
 
-# Add LTC-specific hyperparameters to the registry
+# CNN hyperparameters
+HYPERPARAMETER_REGISTRY.update(
+    {
+        "cnn_num_conv_layers": {
+            "type": "int",
+            "default": 3,
+            "range": [1, 10],
+            "group": "cnn",
+        },
+        "cnn_num_filters": {
+            "type": "int",
+            "default": 64,
+            "range": [16, 2048],
+            "group": "cnn",
+            "log_scale": True,
+        },
+        "cnn_kernel_size": {
+            "type": "int",
+            "default": 3,
+            "range": [2, 14],
+            "group": "cnn",
+        },
+        "cnn_stride": {
+            "type": "int",
+            "default": 1,
+            "range": [1, 6],
+            "group": "cnn",
+        },
+        "cnn_dropout_rate": {
+            "type": "float",
+            "default": 0.2,
+            "range": [0.0, 0.8],
+            "group": "cnn",
+        },
+        "cnn_activation": {
+            "type": "categorical",
+            "default": "relu",
+            "range": ["relu", "leaky_relu", "elu"],
+            "group": "cnn",
+        },
+        "cnn_use_adaptive_pooling": {
+            "type": "bool",
+            "default": True,
+            "range": [True, False],
+            "group": "cnn",
+        },
+        "cnn_fc_layer_1": {
+            "type": "int",
+            "default": 128,
+            "range": [32, 2048],
+            "group": "cnn",
+            "log_scale": True,
+        },
+        "cnn_fc_layer_2": {
+            "type": "int",
+            "default": 64,
+            "range": [16, 2048],
+            "group": "cnn",
+            "log_scale": True,
+        },
+        "cnn_lookback": {
+            "type": "int",
+            "default": 30,
+            "range": [7, 120],
+            "group": "cnn",
+        },
+        "cnn_lr": {
+            "type": "float",
+            "default": 0.001,
+            "range": [1e-6, 1e-1],
+            "group": "cnn",
+            "log_scale": True,
+        },
+        "cnn_batch_size": {
+            "type": "categorical",
+            "default": 64,
+            "range": [16, 32, 64, 128, 256, 512, 1024, 2048, 4096],
+            "group": "cnn",
+        },
+        "cnn_early_stopping_patience": {
+            "type": "int",
+            "default": 5,
+            "range": [3, 20],
+            "group": "cnn",
+        },
+        "cnn_base_epochs": {
+            "type": "int",
+            "default": 5,
+            "range": [1, 1000],
+            "group": "cnn",
+        },
+    }
+)
+
+#LTC-specific hyperparameters to the registry
 HYPERPARAMETER_REGISTRY.update(
     {
         "ltc_units": {
             "type": "int",
-            "default": 64,
-            "range": [32, 512],
+            "default": 256,
+            "range": [32, 2048],
             "group": "ltc",
             "log_scale": True,
         },
         "ltc_lr": {
             "type": "float",
             "default": 0.001,
-            "range": [1e-5, 1e-2],
+            "range": [1e-6, 1e-1],
             "group": "ltc",
             "log_scale": True,
         },
         "ltc_lookback": {
             "type": "int",
             "default": 30,
-            "range": [7, 90],
+            "range": [7, 120],
             "group": "ltc",
         },
-        "ltc_epochs": {"type": "int", "default": 25, "range": [5, 100], "group": "ltc"},
+        "ltc_epochs": {"type": "int", "default": 100, "range": [5, 5000], "group": "ltc"},
         "ltc_batch_size": {
             "type": "int",
-            "default": 32,
-            "range": [16, 128],
+            "default": 256,
+            "range": [16, 4096],
             "group": "ltc",
         },
         "ltc_loss": {
@@ -137,28 +262,28 @@ HYPERPARAMETER_REGISTRY.update(
         # Architecture parameters
         "n_d": {
             "type": "int",
-            "default": 64,
-            "range": [8, 256],
+            "default": 256,
+            "range": [8, 2048],
             "group": "tabnet",
             "log_scale": True,
         },
         "n_a": {
             "type": "int",
-            "default": 64,
-            "range": [8, 256],
+            "default": 256,
+            "range": [8, 2048],
             "group": "tabnet",
             "log_scale": True,
         },
-        "n_steps": {"type": "int", "default": 5, "range": [1, 15], "group": "tabnet"},
+        "n_steps": {"type": "int", "default": 8, "range": [1, 20], "group": "tabnet"},
         "gamma": {
             "type": "float",
             "default": 1.5,
-            "range": [0.5, 3.0],
+            "range": [0.5, 3.5],
             "group": "tabnet",
         },
         "lambda_sparse": {
             "type": "float",
-            "default": 0.001,
+            "default": 0.0001,
             "range": [1e-7, 1e-1],
             "group": "tabnet",
             "log_scale": True,
@@ -166,26 +291,26 @@ HYPERPARAMETER_REGISTRY.update(
         # Training parameters
         "tabnet_max_epochs": {
             "type": "int",
-            "default": 200,
-            "range": [50, 500],
+            "default": 500,
+            "range": [10, 5000],
             "group": "tabnet",
         },
         "tabnet_patience": {
             "type": "int",
-            "default": 15,
-            "range": [5, 50],
+            "default": 50,
+            "range": [5, 500],
             "group": "tabnet",
         },
         "tabnet_batch_size": {
             "type": "categorical",
             "default": 1024,
-            "range": [128, 256, 512, 1024, 2048, 4096],
+            "range": [64,128, 256, 512, 1024, 2048, 4096],
             "group": "tabnet",
         },
         "tabnet_virtual_batch_size": {
             "type": "int",
             "default": 128,
-            "range": [16, 1024],
+            "range": [8, 512],
             "group": "tabnet",
             "log_scale": True,
         },
@@ -199,7 +324,7 @@ HYPERPARAMETER_REGISTRY.update(
         "tabnet_optimizer_lr": {
             "type": "float",
             "default": 0.02,
-            "range": [1e-5, 0.5],
+            "range": [1e-6, 0.1],
             "group": "tabnet",
             "log_scale": True,
         },
@@ -212,27 +337,27 @@ HYPERPARAMETER_REGISTRY.update(
         "lstm_units_1": {
             "type": "int",
             "default": 128,
-            "range": [16, 512],
+            "range": [32, 4096],
             "group": "lstm",
             "log_scale": True,
         },
         "lstm_units_2": {
             "type": "int",
             "default": 64,
-            "range": [16, 256],
+            "range": [16, 2048],
             "group": "lstm",
             "log_scale": True,
         },
         "lstm_units_3": {
             "type": "int",
             "default": 32,
-            "range": [16, 128],
+            "range": [8, 1048],
             "group": "lstm",
         },
         "lstm_lr": {
             "type": "float",
             "default": 0.001,
-            "range": [1e-5, 1e-2],
+            "range": [1e-6, 1e-1],
             "group": "lstm",
             "log_scale": True,
         },
@@ -262,19 +387,19 @@ HYPERPARAMETER_REGISTRY.update(
     {
         "tft_hidden_size": {
             "type": "int",
-            "default": 64,
-            "range": [32, 256],
+            "default": 256,
+            "range": [32, 2048],
             "group": "tft",
             "log_scale": True,
         },
         "tft_lstm_units": {
             "type": "int",
-            "default": 128,
-            "range": [64, 512],
+            "default": 1024,
+            "range": [64, 4096],
             "group": "tft",
             "log_scale": True,
         },
-        "tft_num_heads": {"type": "int", "default": 4, "range": [1, 8], "group": "tft"},
+        "tft_num_heads": {"type": "int", "default": 6, "range": [2, 8], "group": "tft"},
         "tft_dropout": {
             "type": "float",
             "default": 0.2,
@@ -284,7 +409,7 @@ HYPERPARAMETER_REGISTRY.update(
         "tft_lr": {
             "type": "float",
             "default": 0.001,
-            "range": [1e-5, 1e-2],
+            "range": [1e-6, 1e-1],
             "group": "tft",
             "log_scale": True,
         },
@@ -297,13 +422,13 @@ HYPERPARAMETER_REGISTRY.update(
         "tft_batch_size": {
             "type": "categorical",
             "default": 64,
-            "range": [16, 32, 64, 128, 256],
+            "range": [16, 32, 64, 128, 256, 512, 1024, 2048, 4096],
             "group": "tft",
         },
         "tft_epochs": {
             "type": "int",
-            "default": 50,
-            "range": [10, 200],
+            "default": 300,
+            "range": [10, 5000],
             "group": "tft",
         },
     }

@@ -1,5 +1,3 @@
-# Add this to a new file Scripts/explainable_ai.py
-
 import base64
 import io
 import logging

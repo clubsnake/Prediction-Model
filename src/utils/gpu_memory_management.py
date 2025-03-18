@@ -1,6 +1,9 @@
 """
 Centralized GPU memory management to avoid conflicts between different modules.
 This file should be imported BEFORE any TensorFlow operations.
+
+Note: This module only manages GPU memory allocation and does not affect model
+hyperparameters like batch sizes, which are determined solely by Optuna during tuning.
 """
 
 import logging
@@ -16,6 +19,91 @@ logger = logging.getLogger(__name__)
 # Track if memory has already been configured
 _MEMORY_CONFIGURED = False
 
+# Add performance mode flag - when True, maximizes GPU utilization
+_PERFORMANCE_MODE = False
+
+def set_performance_mode(enabled=True):
+    """
+    Enable or disable performance mode.
+    
+    In performance mode, memory growth is disabled and maximum GPU utilization is prioritized
+    over multi-model efficiency. This will push your GPU harder and "get those fans spinning".
+    
+    Args:
+        enabled: Whether to enable performance mode
+        
+    Returns:
+        Current performance mode state
+    """
+    global _PERFORMANCE_MODE
+    _PERFORMANCE_MODE = enabled
+    logger.info(f"GPU Performance Mode {'ENABLED' if enabled else 'DISABLED'}")
+    
+    # Apply performance settings if memory already configured
+    if _MEMORY_CONFIGURED:
+        _apply_performance_optimizations(enabled)
+    
+    return _PERFORMANCE_MODE
+
+def _apply_performance_optimizations(enabled=True):
+    """Apply aggressive performance optimizations to maximize GPU utilization"""
+    try:
+        import tensorflow as tf
+        
+        if enabled:
+            # For maximum GPU utilization:
+            # 1. Enable XLA JIT compilation which can increase performance
+            tf.config.optimizer.set_jit(True)
+            
+            # 2. Set aggressive GPU options
+            gpu_options = tf.config.optimizer.get_experimental_options()
+            aggressive_options = {
+                "layout_optimizer": True,
+                "constant_folding": True,
+                "shape_optimization": True,
+                "remapping": True,
+                "arithmetic_optimization": True,
+                "dependency_optimization": True,
+                "loop_optimization": True,
+                "auto_mixed_precision": True,
+                "disable_meta_optimizer": False,
+                "min_graph_nodes": 1,
+            }
+            tf.config.optimizer.set_experimental_options(aggressive_options)
+            
+            # 3. Use autograph aggressively 
+            os.environ["TF_AUTOGRAPH_STRICT_CONVERSION"] = "1"
+            
+            # 4. Allow TensorFlow to use more GPU memory for caching
+            os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
+            
+            # 5. Set CUDA memory allocation to maximum performance
+            os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
+            
+            # 6. Use cudnn autotune for best performance
+            os.environ["TF_CUDNN_USE_AUTOTUNE"] = "1"
+            
+            # 7. Disable operations on CPU when possible
+            os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"
+            
+            logger.info("Applied aggressive GPU performance optimizations")
+        else:
+            # Reset to default behavior
+            tf.config.optimizer.set_jit(False)
+            tf.config.optimizer.set_experimental_options({})
+            
+            # Reset environment variables
+            if "TF_AUTOGRAPH_STRICT_CONVERSION" in os.environ:
+                del os.environ["TF_AUTOGRAPH_STRICT_CONVERSION"]
+            os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
+            if "TF_GPU_ALLOCATOR" in os.environ:
+                del os.environ["TF_GPU_ALLOCATOR"]
+            if "TF_GPU_THREAD_MODE" in os.environ:
+                del os.environ["TF_GPU_THREAD_MODE"]
+                
+            logger.info("Reset GPU optimizations to default")
+    except Exception as e:
+        logger.error(f"Error applying performance optimizations: {e}")
 
 def detect_amd_gpu() -> bool:
     """Detect if the system has an AMD GPU."""
@@ -32,10 +120,12 @@ def detect_amd_gpu() -> bool:
         logger.warning(f"Error detecting GPU type: {e}")
         return False
 
-
 def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
     """
     Configure GPU memory settings. This should be called only once.
+    
+    Note: This only affects hardware resource allocation and never modifies
+    model hyperparameters like batch sizes that should be controlled by Optuna.
 
     Args:
         config: Dictionary with configuration options
@@ -43,7 +133,7 @@ def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
     Returns:
         Dictionary with configuration results
     """
-    global _MEMORY_CONFIGURED
+    global _MEMORY_CONFIGURED, _PERFORMANCE_MODE
 
     # Default configuration
     DEFAULT_CONFIG = {
@@ -55,6 +145,7 @@ def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
         "visible_gpus": None,
         "directml_enabled": True,
         "use_gpu": True,
+        "performance_mode": _PERFORMANCE_MODE,  # Use current performance mode
     }
 
     # Don't reconfigure if already done
@@ -73,12 +164,22 @@ def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
             if key not in config:
                 config[key] = value
 
+    # Update performance mode from config
+    _PERFORMANCE_MODE = config.get("performance_mode", _PERFORMANCE_MODE)
+    
+    # If in performance mode, override certain settings
+    if _PERFORMANCE_MODE:
+        logger.info("PERFORMANCE MODE ENABLED: Configuring for maximum GPU utilization")
+        config["allow_growth"] = False  # Disable growth for maximum performance
+        config["use_xla"] = True  # Always use XLA
+        config["gpu_memory_fraction"] = 0.95  # Use 95% of GPU memory
+
     # Explicitly check for TF_FORCE_FLOAT32 environment variable
     if "TF_FORCE_FLOAT32" in os.environ and os.environ["TF_FORCE_FLOAT32"] == "1":
         config["mixed_precision"] = False
         logger.info("TF_FORCE_FLOAT32 set to 1, forcing float32 precision")
 
-    results = {"success": True, "gpus_found": 0}
+    results = {"success": True, "gpus_found": 0, "performance_mode": _PERFORMANCE_MODE}
 
     # Disable GPU if requested
     if not config["use_gpu"]:
@@ -138,11 +239,13 @@ def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
             logger.info(f"Found {len(gpus)} GPU(s)")
 
             try:
-                # Apply memory growth setting
-                if config["allow_growth"]:
+                # Apply memory growth setting - but not in performance mode
+                if config["allow_growth"] and not _PERFORMANCE_MODE:
                     for gpu in gpus:
                         tf.config.experimental.set_memory_growth(gpu, True)
                     logger.info("Memory growth enabled for all GPUs")
+                elif not config["allow_growth"] or _PERFORMANCE_MODE:
+                    logger.info("Memory growth DISABLED for maximum GPU utilization")
 
                 # Enable XLA JIT compilation if requested
                 if config["use_xla"]:
@@ -161,6 +264,10 @@ def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
                 else:
                     tf.keras.mixed_precision.set_global_policy("float32")
                     logger.info("Mixed precision DISABLED (float32)")
+
+                # Apply performance optimizations if in performance mode
+                if _PERFORMANCE_MODE:
+                    _apply_performance_optimizations(True)
 
                 # Verify the policy was applied
                 actual_policy = tf.keras.mixed_precision.global_policy()
@@ -198,7 +305,6 @@ def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
         results["error"] = str(e)
 
     return results
-
 
 def configure_mixed_precision(use_mixed_precision=None):
     """
@@ -257,7 +363,6 @@ def configure_mixed_precision(use_mixed_precision=None):
         logger.error(f"Error configuring mixed precision: {e}")
         return None
 
-
 def clean_gpu_memory(force_gc=True):
     """
     Clean GPU memory by clearing TensorFlow caches and running garbage collection.
@@ -279,7 +384,6 @@ def clean_gpu_memory(force_gc=True):
     except Exception as e:
         logger.error(f"Error cleaning GPU memory: {e}")
         return False
-
 
 # Add a helper function to get memory info
 def get_memory_info(device_idx=0):
@@ -331,6 +435,170 @@ def get_memory_info(device_idx=0):
         logger.error(f"Error getting memory info: {e}")
         return {"error": str(e)}
 
+def get_gpu_utilization(device_idx=0):
+    """Get current GPU utilization percentage (compute usage, not just memory)"""
+    try:
+        import subprocess
+        
+        result = subprocess.run(
+            ["nvidia-smi", 
+             f"--id={device_idx}", 
+             "--query-gpu=utilization.gpu", 
+             "--format=csv,noheader,nounits"],
+            stdout=subprocess.PIPE,
+            check=True,
+            universal_newlines=True
+        )
+        
+        utilization = int(result.stdout.strip())
+        return utilization
+    except Exception:
+        # If nvidia-smi fails or isn't available, try GPUtil
+        try:
+            import GPUtil
+            gpus = GPUtil.getGPUs()
+            if device_idx < len(gpus):
+                return gpus[device_idx].load * 100  # Convert to percentage
+        except ImportError:
+            pass
+            
+        # If all else fails, return an estimate based on memory usage
+        mem_info = get_memory_info(device_idx)
+        total = mem_info.get("total_mb", 0)
+        used = mem_info.get("used_mb", 0)
+        if total > 0:
+            return (used / total) * 100
+        return 0
+
+def stress_test_gpu(duration_seconds=10, intensity=0.9):
+    """
+    Run a stress test on the GPU to check stability and maximum performance.
+    
+    Args:
+        duration_seconds: How long to run the test
+        intensity: How intensive the test should be (0.1-1.0)
+        
+    Returns:
+        Dict with test results
+    """
+    try:
+        import tensorflow as tf
+        import time
+        import numpy as np
+        
+        # Create a large tensor to fill GPU memory
+        memory_info = get_memory_info(0)
+        total_gb = memory_info.get("total_mb", 8192) / 1024  # Convert to GB
+        
+        # Calculate tensor size to use a percentage of available memory
+        tensor_gb = total_gb * intensity * 0.8  # Use 80% of desired intensity
+        
+        # Create a compute-intensive model
+        logger.info(f"Running GPU stress test at {intensity:.1%} intensity for {duration_seconds}s")
+        logger.info(f"Creating tensors using approximately {tensor_gb:.2f}GB GPU memory")
+        
+        # Use half precision if available to allow larger tensors
+        dtype = tf.float16 if tensor_gb > 2 else tf.float32
+        
+        # Calculate tensor dimensions (prefer square tensors)
+        elements = int(tensor_gb * (1024**3) / (2 if dtype == tf.float16 else 4))
+        side_length = int(np.sqrt(elements // 4))  # 4 dims for matrix multiplication
+        
+        # Create a stress test model - matrix multiplications are compute-intensive
+        @tf.function(jit_compile=True)  # Use XLA for faster execution
+        def stress_op(x):
+            for _ in range(5):  # Multiple iterations increases compute intensity
+                x = tf.matmul(x, x)
+            return x
+        
+        # Create a large tensor
+        with tf.device("/gpu:0"):
+            # Use random data to prevent optimization shortcuts
+            x = tf.random.normal([side_length, side_length], dtype=dtype)
+            
+            # Record start time and initial utilization
+            start_time = time.time()
+            initial_util = get_gpu_utilization(0)
+            utilization_samples = [initial_util]
+            temperature_samples = []
+            
+            # Try to get initial temperature if available
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
+                    stdout=subprocess.PIPE, check=True, universal_newlines=True
+                )
+                initial_temp = int(result.stdout.strip())
+                temperature_samples.append(initial_temp)
+                has_temp = True
+            except:
+                has_temp = False
+                
+            logger.info(f"Starting stress test - initial GPU utilization: {initial_util}%")
+            
+            # Run the stress test loop
+            while time.time() - start_time < duration_seconds:
+                # Run compute-intensive operations
+                result = stress_op(x)
+                
+                # Force execution of the op (prevent optimization removing it)
+                tf.debugging.check_numerics(result, "Stress test error")
+                
+                # Sample utilization every second
+                if int(time.time() - start_time) != len(utilization_samples) - 1:
+                    utilization_samples.append(get_gpu_utilization(0))
+                    
+                    # Sample temperature if available
+                    if has_temp:
+                        try:
+                            result = subprocess.run(
+                                ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
+                                stdout=subprocess.PIPE, check=True, universal_newlines=True
+                            )
+                            temperature_samples.append(int(result.stdout.strip()))
+                        except:
+                            pass
+            
+            # Calculate results
+            end_time = time.time()
+            duration = end_time - start_time
+            max_util = max(utilization_samples)
+            avg_util = sum(utilization_samples) / len(utilization_samples)
+            
+            # Temperature changes if available
+            temp_info = {}
+            if has_temp and len(temperature_samples) >= 2:
+                temp_info = {
+                    "initial_temp": temperature_samples[0],
+                    "final_temp": temperature_samples[-1],
+                    "temp_increase": temperature_samples[-1] - temperature_samples[0],
+                    "max_temp": max(temperature_samples)
+                }
+                
+            logger.info(f"Stress test complete - max GPU utilization: {max_util}%, avg: {avg_util:.1f}%")
+            if temp_info:
+                logger.info(f"Temperature increased from {temp_info['initial_temp']}°C to {temp_info['final_temp']}°C")
+            
+            # Clean up and return results
+            clean_gpu_memory(True)
+            
+            # Prepare results
+            results = {
+                "duration": duration,
+                "initial_utilization": initial_util,
+                "max_utilization": max_util,
+                "avg_utilization": avg_util,
+                "utilization_samples": utilization_samples,
+                "fans_spinning": avg_util > 80,  # Fan threshold
+                **temp_info  # Add temperature info if available
+            }
+            
+            return results
+            
+    except Exception as e:
+        logger.error(f"Error during GPU stress test: {e}")
+        return {"error": str(e), "fans_spinning": False}
 
 # Define HAS_GPUTIL for use above
 try:
@@ -340,3 +608,168 @@ try:
 except ImportError:
     logger.warning("GPUtil not installed. Detailed GPU monitoring will be limited.")
     HAS_GPUTIL = False
+
+# Add an automatic resource management function to replace the static performance mode
+
+def apply_optimal_gpu_settings(workload_intensity=None):
+    """
+    Dynamically apply optimal GPU settings based on workload intensity.
+    
+    This replaces the old static performance mode with a more dynamic approach
+    that automatically adjusts settings based on the current workload needs.
+    
+    Args:
+        workload_intensity: Optional float from 0.0-1.0 indicating workload intensity
+                           (None = auto-detect based on current utilization)
+    Returns:
+        Dict of applied settings
+    """
+    import os
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        import tensorflow as tf
+        
+        # Detect GPU devices
+        gpus = tf.config.list_physical_devices('GPU')
+        if not gpus:
+            logger.info("No GPUs detected - using CPU only")
+            return {"status": "cpu_only"}
+            
+        # Determine workload intensity if not provided
+        if workload_intensity is None:
+            # Try to detect current GPU utilization
+            try:
+                # First attempt: check memory usage via TensorFlow
+                gpu_util = 0.0
+                for i, gpu in enumerate(gpus):
+                    try:
+                        mem_info = tf.config.experimental.get_memory_info(f"GPU:{i}")
+                        if "current" in mem_info and "total" in mem_info:
+                            gpu_util = max(gpu_util, mem_info["current"] / mem_info["total"])
+                    except:
+                        pass
+                        
+                # Second attempt: use nvidia-smi
+                if gpu_util == 0.0:
+                    try:
+                        import subprocess
+                        result = subprocess.run(['nvidia-smi', '--query-gpu=utilization.gpu', '--format=csv,noheader,nounits'], 
+                                              stdout=subprocess.PIPE, check=True)
+                        util_values = [float(x) for x in result.stdout.decode().strip().split('\n')]
+                        if util_values:
+                            gpu_util = max(util_values) / 100.0
+                    except:
+                        pass
+                        
+                # Set workload intensity based on utilization
+                if gpu_util > 0.0:
+                    workload_intensity = min(1.0, gpu_util * 1.5)  # Scale up slightly
+                else:
+                    # Default to medium intensity when detection fails
+                    workload_intensity = 0.5
+                    
+            except Exception as e:
+                logger.debug(f"Error detecting GPU utilization: {e}")
+                workload_intensity = 0.5  # Default to medium intensity
+        
+        # Apply settings based on intensity
+        settings = {}
+        
+        # For high intensity workloads (training, complex inference)
+        if workload_intensity > 0.7:
+            # Enable XLA JIT compilation
+            tf.config.optimizer.set_jit(True)
+            
+            # Set aggressive optimization options
+            optimizer_options = {
+                "layout_optimizer": True,
+                "constant_folding": True,
+                "shape_optimization": True,
+                "remapping": True,
+                "arithmetic_optimization": True,
+                "dependency_optimization": True,
+                "loop_optimization": True,
+                "function_optimization": True,
+                "debug_stripper": True,
+                "auto_mixed_precision": True,
+                "disable_meta_optimizer": False,
+                "scoped_allocator_optimization": True,
+            }
+            tf.config.optimizer.set_experimental_options(optimizer_options)
+            
+            # Environment variables for high performance
+            os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"
+            os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
+            os.environ["TF_CUDNN_USE_AUTOTUNE"] = "1"
+            os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
+            
+            settings = {
+                "profile": "high_performance",
+                "memory_growth": False,
+                "xla_enabled": True,
+                "mixed_precision": True,
+            }
+            
+            logger.info("Applied high-performance GPU optimization settings")
+            
+        # For medium intensity workloads
+        elif workload_intensity > 0.3:
+            # More balanced settings
+            tf.config.optimizer.set_jit(True)  # Still use XLA
+            
+            optimizer_options = {
+                "layout_optimizer": True,
+                "constant_folding": True, 
+                "auto_mixed_precision": True,
+            }
+            tf.config.optimizer.set_experimental_options(optimizer_options)
+            
+            # Allow memory growth for more flexibility with multiple models
+            for gpu in gpus:
+                try:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+                except Exception as e:
+                    logger.debug(f"Error setting memory growth: {e}")
+                    
+            os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
+            os.environ["TF_CUDNN_USE_AUTOTUNE"] = "1"
+            
+            settings = {
+                "profile": "balanced",
+                "memory_growth": True,
+                "xla_enabled": True,
+                "mixed_precision": True,
+            }
+            
+            logger.info("Applied balanced GPU optimization settings")
+            
+        # For low intensity or multiple small workloads
+        else:
+            # Conservative settings optimized for memory efficiency
+            tf.config.optimizer.set_jit(False)  # Disable XLA for more predictable memory usage
+            
+            # Enable memory growth to conserve memory
+            for gpu in gpus:
+                try:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+                except Exception as e:
+                    logger.debug(f"Error setting memory growth: {e}")
+            
+            os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
+            
+            settings = {
+                "profile": "memory_efficient",
+                "memory_growth": True,
+                "xla_enabled": False,
+                "mixed_precision": False,
+            }
+            
+            logger.info("Applied memory-efficient GPU settings")
+            
+        return settings
+    
+    except Exception as e:
+        logger.warning(f"Error applying GPU settings: {e}")
+        return {"status": "error", "message": str(e)}

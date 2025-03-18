@@ -1,6 +1,12 @@
+aggregated_current_trial: 0
+aggregated_total_trials: 0
+best_mape: .inf
+best_model: lstm
+best_rmse: .inf
 current_trial: 0
 cycle: 1
+remaining_trials: 10000
 ticker: ETH-USD
 timeframe: 1d
-timestamp: 1741748051.1281238
+timestamp: 1742262378.705692
 total_trials: 10000

@@ -76,7 +76,7 @@ def validate_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     date_columns = ["Date", "Datetime", "date", "datetime"]
     for col in date_columns:
-        if col in df.columns:
+        if (col in df.columns):
             df = df.rename(columns={col: "date"})
             break
 
@@ -662,3 +662,88 @@ def adaptive_memory_clean(level="medium"):
     except Exception as e:
         logger.error(f"Memory cleanup failed: {e}")
         return False
+
+
+# Replace tuning_coordinator utilities with direct interface to study_manager
+def get_tuning_status():
+    """Get the current status of hyperparameter tuning"""
+    try:
+        from src.tuning.study_manager import study_manager
+        if hasattr(study_manager, "get_status"):
+            return study_manager.get_status()
+        
+        # Fallback if function not available - check active model types
+        if hasattr(study_manager, "get_active_model_types"):
+            active_models = study_manager.get_active_model_types()
+            if active_models:
+                return {
+                    "is_running": True,
+                    "active_models": list(active_models)
+                }
+    except ImportError:
+        pass
+    
+    # If study_manager is not available or doesn't have tuning info
+    try:
+        # Check if meta_tuning has tuning status info
+        from src.tuning.meta_tuning import read_tuning_status
+        return read_tuning_status() or {"is_running": False}
+    except ImportError:
+        pass
+        
+    return {"is_running": False}
+
+def get_tuning_progress():
+    """Get the current progress of hyperparameter tuning"""
+    try:
+        from src.tuning.study_manager import study_manager
+        
+        # Check for active model types first
+        active_models = set()
+        if hasattr(study_manager, "get_active_model_types"):
+            active_models = study_manager.get_active_model_types()
+        
+        # Check study status tracking
+        completed_trials = 0
+        total_trials = 0
+        
+        if hasattr(study_manager, "study_status"):
+            for study_name, status in study_manager.study_status.items():
+                if "trials" in status:
+                    completed_trials += status["trials"]
+                if "model_type" in status and status["model_type"] in active_models:
+                    # Estimated total if available from study config
+                    if hasattr(study_manager, "study_configs") and study_name in study_manager.study_configs:
+                        n_trials = study_manager.study_configs[study_name].get("n_trials", 0)
+                        if n_trials > 0:
+                            total_trials += n_trials
+        
+        # Calculate progress
+        if total_trials > 0:
+            progress = (completed_trials / total_trials) * 100
+        else:
+            progress = 0
+            
+        return {
+            "completed_trials": completed_trials,
+            "total_trials": total_trials or 1,  # Avoid division by zero
+            "progress_percentage": progress,
+        }
+    except ImportError:
+        pass
+    
+    # If study_manager not available, try meta_tuning
+    try:
+        from src.tuning.meta_tuning import read_progress_from_yaml
+        progress = read_progress_from_yaml()
+        if progress:
+            return {
+                "completed_trials": progress.get("current_trial", 0),
+                "total_trials": progress.get("total_trials", 1),
+                "progress_percentage": progress.get("trial_progress", 0) * 100,
+            }
+    except ImportError:
+        pass
+        
+    # Default response if no data available
+    return {"completed_trials": 0, "total_trials": 1, "progress_percentage": 0}

@@ -7,7 +7,7 @@ Logs detailed trial information live to session state and YAML files:
 - cycle_metrics.yaml with cycle-level summaries.
 """
 
-# Standard library imports
+# Standard library imports - Make sure these are at the very top
 import os
 import sys
 import traceback
@@ -19,16 +19,10 @@ import time
 from datetime import datetime
 import warnings
 
-# Third-party imports
-import numpy as np
-import optuna
-import streamlit as st
-import yaml
-
 # Configure logger
 logger = logging.getLogger(__name__)
 if not logger.hasHandlers():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 # Add project root to sys.path for absolute imports
 current_file = os.path.abspath(__file__)
@@ -58,8 +52,19 @@ os.makedirs(os.path.dirname(BEST_PARAMS_FILE), exist_ok=True)  # Ensure director
 DB_DIR = os.path.join(DATA_DIR, "DB")
 os.makedirs(DB_DIR, exist_ok=True)
 
+# Third-party imports
+import numpy as np
+import optuna
+import streamlit as st
+import yaml
+import torch
+
 # Set optimized environment variables early
 from src.utils.env_setup import setup_tf_environment
+
+# Import GPU memory management tools
+from src.utils.gpu_memory_manager import GPUMemoryManager
+from src.utils.gpu_memory_management import set_performance_mode, get_memory_info, get_gpu_utilization
 
 # Get mixed precision setting from config first
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -73,8 +78,8 @@ env_vars = setup_tf_environment(memory_growth=True, mixed_precision=use_mixed_pr
 
 # Import study_manager for unified model tuning
 from src.tuning.study_manager import (
+    StudyManager,
     create_model_objective,
-    create_resilient_study,
     evaluate_model_with_walkforward,
     study_manager,
     suggest_model_hyperparameters,
@@ -108,8 +113,9 @@ from src.utils.threadsafe import safe_read_yaml, safe_write_yaml
 from src.utils.training_optimizer import get_training_optimizer
 from src.utils.utils import adaptive_memory_clean
 
-# Initialize training optimizer
+# Initialize training optimizer and GPU memory manager
 training_optimizer = get_training_optimizer()
+gpu_memory_manager = GPUMemoryManager()
 
 # Ignore future warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -125,6 +131,27 @@ if sys.platform != "win32":
         set_stop_requested(True)
     signal.signal(signal.SIGINT, signal_handler)
 
+# Initialize GPU for optimal performance
+def initialize_gpu_for_tuning():
+    """Initialize GPU for optimal performance during tuning."""
+    try:
+        logger.info("Initializing GPU for hyperparameter tuning...")
+        
+        # Initialize GPU memory manager
+        gpu_memory_manager.initialize()
+        
+        # Warm up the GPU to improve initial performance
+        peak_util = gpu_memory_manager.warmup_gpu(intensity=0.7)
+        logger.info(f"GPU warmed up to {peak_util}% utilization")
+        
+        # Log initial memory state
+        mem_info = get_memory_info()
+        logger.info(f"Initial GPU memory: {mem_info.get('free_mb', 0)} MB free")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error initializing GPU: {e}")
+        return False
 
 def convert_to_builtin_type(obj):
     """Convert numpy types to Python built-in types for serialization."""
@@ -190,7 +217,7 @@ class AdaptiveEnsembleWeighting:
         # Apply memory factor to blend with previous weights
         total_weight = sum(avg_perf.values())
 
-        if total_weight > 0:
+        if (total_weight > 0):
             for mtype in self.weights:
                 # New weight is a blend of old weight and new performance
                 new_weight = (1.0 - self.memory_factor) * (
@@ -243,7 +270,7 @@ def prune_old_cycles(filename=CYCLE_METRICS_FILE, max_cycles=50):
         if os.path.exists(filename):
             with open(filename, "r") as f:
                 cycles = yaml.safe_load(f)
-            if len(cycles) > max_cycles:
+            if cycles and len(cycles) > max_cycles:
                 cycles = cycles[-max_cycles:]
                 with open(filename, "w") as f:
                     yaml.safe_dump(cycles, f)
@@ -319,27 +346,9 @@ def get_model_prediction(
     """
     Get predictions from a model without circular imports.
     Uses lazy imports to avoid circular dependencies.
-    
-    Args:
-        mtype: Model type (e.g., 'lstm', 'rnn', 'cnn')
-        submodel_params: Dictionary of model parameters
-        X_train: Training features
-        y_train: Training targets
-        X_test: Test features
-        horizon: Prediction horizon
-        unified_lookback: Lookback period for sequence models
-        feature_cols: Feature column names
-        
-    Returns:
-        numpy.ndarray: Model predictions
     """
     # Get optimal configuration for this model type
     model_config = training_optimizer.get_model_config(mtype)
-
-    # Use optimized batch size if not specified
-    if mtype in ["lstm", "rnn", "tft", "cnn", "ltc"]:
-        if "batch_size" not in submodel_params[mtype]:
-            submodel_params[mtype]["batch_size"] = model_config["batch_size"]
 
     if mtype in ["lstm", "rnn"]:
         arch_params = {
@@ -445,6 +454,117 @@ def get_model_prediction(
         cnn_model.fit(X_train, y_train)
         preds = cnn_model.predict(X_test)
         return preds
+    elif mtype == "nbeats":
+        # Import nbeats model builder
+        from src.models.nbeats_model import build_nbeats_model
+        
+        # Parse NBEATS parameters
+        nbeats_params = submodel_params[mtype]
+        
+        # Apply optimizer settings
+        if "batch_size" not in nbeats_params:
+            nbeats_params["batch_size"] = model_config.get("batch_size", 32)
+            
+        # Create model with optimized parameters
+        model = build_nbeats_model(
+            lookback=nbeats_params.get("lookback", unified_lookback),
+            horizon=horizon,
+            num_features=len(feature_cols),
+            learning_rate=nbeats_params.get("lr", 0.001),
+            layer_width=nbeats_params.get("layer_width", 256),
+            num_blocks=nbeats_params.get("num_blocks", [3, 3]),
+            num_layers=nbeats_params.get("num_layers", [4, 4]),
+            thetas_dim=nbeats_params.get("thetas_dim", 10),
+            include_price_specific_stack=nbeats_params.get("include_price_specific_stack", True),
+            dropout_rate=nbeats_params.get("dropout_rate", 0.1),
+            use_batch_norm=nbeats_params.get("use_batch_norm", True),
+        )
+        
+        # Train the model
+        batch_size = nbeats_params.get("batch_size", 32)
+        epochs = nbeats_params.get("epochs", 10)
+        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
+        
+        # Make predictions
+        preds = model.predict(X_test)
+        return preds
+    elif mtype == "tabnet":
+        # Import TabNet module - using lazy import pattern
+        try:
+            # Try to import PyTorch TabNet implementation first
+            from src.models.tabnet_model import TabNetRegressor
+            
+            # Get TabNet parameters
+            tabnet_params = submodel_params[mtype]
+            
+            # Create TabNet model
+            tabnet_model = TabNetRegressor(
+                n_d=tabnet_params.get("n_d", 64),
+                n_a=tabnet_params.get("n_a", 64),
+                n_steps=tabnet_params.get("n_steps", 5),
+                gamma=tabnet_params.get("gamma", 1.5),
+                lambda_sparse=tabnet_params.get("lambda_sparse", 1e-3),
+                optimizer_params={"lr": tabnet_params.get("optimizer_lr", 0.02)},
+                optimizer_fn=torch.optim.Adam if "torch" in sys.modules else None,
+                mask_type='entmax',  # 'entmax' or 'sparsemax'
+                scheduler_params={'step_size': 10, 'gamma': 0.9},
+                device_name="auto" if "torch" in sys.modules else "cpu",
+                verbose=0,
+            )
+            
+            # Reshape data for TabNet
+            X_tr_flat = X_train.reshape(X_train.shape[0], -1)
+            y_tr_flat = y_train[:, 0] if y_train.ndim > 1 else y_train
+            
+            # Train model
+            tabnet_model.fit(
+                X_tr_flat, y_tr_flat,
+                batch_size=tabnet_params.get("batch_size", 1024),
+                virtual_batch_size=tabnet_params.get("virtual_batch_size", 128),
+                max_epochs=tabnet_params.get("max_epochs", 100),
+                patience=tabnet_params.get("patience", 10)
+            )
+            
+            # Predict
+            X_te_flat = X_test.reshape(X_test.shape[0], -1)
+            preds_1d = tabnet_model.predict(X_te_flat)
+            preds = np.tile(preds_1d.reshape(-1, 1), (1, horizon))
+            
+            return preds
+        except ImportError:
+            logger.warning("TabNet implementation not found. Returning zeros as predictions.")
+            preds = np.zeros((X_test.shape[0], horizon))
+    elif mtype == "tft":
+        # Implement TFT model prediction
+        try:
+            from src.models.temporal_fusion_transformer import build_tft_model
+            
+            # Get TFT parameters
+            tft_params = submodel_params[mtype]
+            
+            # Build TFT model
+            model = build_tft_model(
+                num_features=len(feature_cols),
+                horizon=horizon,
+                learning_rate=tft_params.get("lr", 0.001),
+                hidden_size=tft_params.get("hidden_size", 64),
+                dropout_rate=tft_params.get("dropout", 0.1),
+                lookback=tft_params.get("lookback", unified_lookback),
+                num_heads=tft_params.get("num_heads", 4),
+                use_batch_norm=tft_params.get("use_batch_norm", True),
+            )
+            
+            # Train the model
+            epochs = tft_params.get("epochs", 10)
+            batch_size = tft_params.get("batch_size", 32)
+            model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
+            
+            # Make predictions
+            preds = model.predict(X_test)
+            return preds
+        except ImportError:
+            logger.warning("TFT model implementation not found. Returning zeros as predictions.")
+            preds = np.zeros((X_test.shape[0], horizon))
 
     return preds
 
@@ -612,48 +732,51 @@ class OptunaSuggester:
                     "lr": self.trial.suggest_float("optimizer_lr", 1e-5, 5e-1, log=True)
                 },
             }
+        elif model_type == "nbeats":
+            return {
+                "lookback": self.suggest("nbeats_lookback"),
+                "lr": self.suggest("nbeats_lr"),
+                "layer_width": self.suggest("nbeats_layer_width"),
+                "num_blocks": self.suggest("nbeats_num_blocks"),
+                "num_layers": self.suggest("nbeats_num_layers"),
+                "thetas_dim": self.suggest("nbeats_thetas_dim"),
+                "include_price_specific_stack": self.suggest("nbeats_price_specific"),
+                "dropout_rate": self.suggest("nbeats_dropout"),
+                "use_batch_norm": self.suggest("nbeats_batch_norm"),
+            }
         elif model_type == "cnn":
-            # Calculate epochs based on multiplier
             base_epochs = self.trial.suggest_int("cnn_base_epochs", 1, 10)
-            actual_epochs = max(
-                1, int(base_epochs * st.session_state.get("epochs_multiplier", 1.0))
-            )
-
-            # Get complexity multiplier
-            complexity_multiplier = st.session_state.get("tuning_multipliers", {}).get(
-                "complexity_multiplier", 1.0
-            )
-
-            # Adjust ranges based on complexity multiplier
+            actual_epochs = max(1, int(base_epochs * st.session_state.get("epochs_multiplier", 1.0)))
+            complexity_multiplier = st.session_state.get("tuning_multipliers", {}).get("complexity_multiplier", 1.0)
             max_filters = int(256 * complexity_multiplier)
-
             return {
                 "num_conv_layers": self.trial.suggest_int("cnn_num_conv_layers", 1, 5),
-                "num_filters": self.trial.suggest_int(
-                    "cnn_num_filters", 16, max_filters, log=True
-                ),
+                "num_filters": self.trial.suggest_int("cnn_num_filters", 16, max_filters, log=True),
                 "kernel_size": self.trial.suggest_int("cnn_kernel_size", 2, 7),
                 "stride": self.trial.suggest_int("cnn_stride", 1, 2),
                 "dropout_rate": self.trial.suggest_float("cnn_dropout_rate", 0.0, 0.5),
-                "activation": self.trial.suggest_categorical(
-                    "cnn_activation", ["relu", "leaky_relu", "elu"]
-                ),
-                "use_adaptive_pooling": self.trial.suggest_categorical(
-                    "cnn_use_adaptive_pooling", [True, False]
-                ),
+                "activation": self.trial.suggest_categorical("cnn_activation", ["relu", "leaky_relu", "elu"]),
+                "use_adaptive_pooling": self.trial.suggest_categorical("cnn_use_adaptive_pooling", [True, False]),
                 "fc_layers": [
                     self.trial.suggest_int("cnn_fc_layer_1", 32, 256, log=True),
                     self.trial.suggest_int("cnn_fc_layer_2", 16, 128, log=True),
                 ],
                 "lookback": self.trial.suggest_int("cnn_lookback", 7, 90),
                 "lr": self.trial.suggest_float("cnn_lr", 1e-5, 1e-2, log=True),
-                "batch_size": self.trial.suggest_categorical(
-                    "cnn_batch_size", [16, 32, 64, 128]
-                ),
+                "batch_size": self.trial.suggest_categorical("cnn_batch_size", [16, 32, 64, 128]),
                 "epochs": actual_epochs,
-                "early_stopping_patience": self.trial.suggest_int(
-                    "cnn_early_stopping_patience", 3, 10
-                ),
+                "early_stopping_patience": self.trial.suggest_int("cnn_early_stopping_patience", 3, 10),
+            }
+        elif model_type == "tft":
+            return {
+                "lr": self.trial.suggest_float("tft_lr", 1e-5, 1e-2, log=True),
+                "hidden_size": self.trial.suggest_int("tft_hidden_size", 16, 256),
+                "dropout": self.trial.suggest_float("tft_dropout", 0.0, 0.5),
+                "lookback": self.trial.suggest_int("tft_lookback", 7, 90),
+                "num_heads": self.trial.suggest_int("tft_num_heads", 1, 8),
+                "use_batch_norm": self.trial.suggest_categorical("tft_batch_norm", [True, False]),
+                "epochs": self.trial.suggest_int("tft_epochs", 5, 50),
+                "batch_size": self.trial.suggest_categorical("tft_batch_size", [16, 32, 64, 128]),
             }
         return {}
 
@@ -792,7 +915,7 @@ def register_best_model(study, trial, ticker, timeframe):
         }
 
         # Only try to build and register neural network models
-        if model_type in ["lstm", "rnn", "tft"]:
+        if model_type in ["lstm", "rnn", "tft", "cnn", "ltc", "nbeats"]:
             # Build the model
             build_model_by_type = LazyImportManager.get_model_builder()
             model = build_model_by_type(
@@ -840,63 +963,6 @@ def register_best_model(study, trial, ticker, timeframe):
     except Exception as e:
         print(f"❌ Error registering model: {e}")
         return None
-
-
-def create_study(
-    study_name,
-    storage_name=None,
-    direction="minimize",
-    n_startup_trials=10,
-    load_if_exists=True,
-):
-    """
-    Create a new Optuna study or load an existing one.
-    This is a simplified wrapper around optuna.create_study that handles common errors.
-
-    Args:
-        study_name: Name of the study
-        storage_name: Database URL for storage (e.g., "sqlite:///db.sqlite3")
-        direction: Direction of optimization ("minimize" or "maximize")
-        n_startup_trials: Number of random trials before TPE kicks in
-        load_if_exists: Whether to load existing study if it exists
-
-    Returns:
-        optuna.Study: Created or loaded study
-    """
-    import optuna
-
-    # Default to TPE sampler with seed for reproducibility
-    sampler = optuna.samplers.TPESampler(n_startup_trials=n_startup_trials, seed=42)
-
-    try:
-        # Try to create study with specified storage
-        if storage_name:
-            study = optuna.create_study(
-                study_name=study_name,
-                storage=storage_name,
-                load_if_exists=load_if_exists,
-                sampler=sampler,
-                direction=direction,
-            )
-        else:
-            # In-memory study if no storage specified
-            study = optuna.create_study(sampler=sampler, direction=direction)
-
-        return study
-    except (ValueError, KeyError, ImportError) as e:
-        logger.warning(f"Error creating study with storage {storage_name}: {e}")
-        logger.warning("Creating in-memory study as fallback")
-
-        # Create in-memory study as fallback
-        study = optuna.create_study(sampler=sampler, direction=direction)
-        return study
-    except Exception as e:
-        logger.error(f"Unexpected error creating study: {e}")
-        raise
-
-
-# Create backward compatibility alias
-create_resilient_study = create_study
 
 
 def robust_objective_wrapper(objective_fn):
@@ -1006,23 +1072,35 @@ def create_progress_callback(cycle=1, ticker="unknown", timeframe="unknown", ran
         update_progress_in_yaml(progress_data)
         update_trial_info_in_yaml(TESTED_MODELS_FILE, trial_info)
 
-        # Save to session state if available
-        if "streamlit" in sys.modules and hasattr(st, "session_state"):
-            # Store summary in session state for UI
-            if "trial_logs" not in st.session_state:
-                st.session_state["trial_logs"] = []
-
-            st.session_state["trial_logs"].append(trial_info)
-
-            # Keep only the most recent 100 trials in memory
-            if len(st.session_state["trial_logs"]) > 100:
-                st.session_state["trial_logs"] = st.session_state["trial_logs"][-100:]
+        # Save to session state if available - using more robust error handling
+        try:
+            import streamlit as st
+            if "st" in globals() and hasattr(st, "session_state"):
+                # First check if trial_logs exists, create if not
+                if "trial_logs" not in st.session_state:
+                    st.session_state["trial_logs"] = []
+                    
+                # Now it's safe to append
+                st.session_state["trial_logs"].append(trial_info)
+                
+                # Keep only the most recent 100 trials in memory
+                if len(st.session_state["trial_logs"]) > 100:
+                    st.session_state["trial_logs"] = st.session_state["trial_logs"][-100:]
+        except Exception as e:
+            # Just log the error but continue - don't let UI issues break tuning
+            logger.warning(f"Error updating session state: {e}")
 
         # Clean memory periodically
         if trial.number % 5 == 0:
-            adaptive_memory_clean("small")
+            # Use training optimizer for more efficient cleanup
+            training_optimizer.cleanup_memory(level="light") 
+            
         if trial.number % 20 == 0:
-            adaptive_memory_clean("medium")
+            # More thorough cleanup every 20 trials
+            gpu_memory_manager.clean_memory(True)
+            # Check GPU utilization
+            gpu_util = get_gpu_utilization(0)
+            logger.info(f"GPU utilization at trial {trial.number}: {gpu_util}%")
 
         print(f"TUNING-DEBUG: Completed trial {trial.number}")
 
@@ -1037,7 +1115,7 @@ def ensemble_with_walkforward_objective(trial, ticker, timeframe, range_cat="all
         trial: Optuna trial object
         ticker: Ticker symbol
         timeframe: Timeframe
-        range_cat: Range category
+        range_cat: Range category ("all" or specific range)
 
     Returns:
         float: Combined objective score (lower is better)
@@ -1057,6 +1135,130 @@ def ensemble_with_walkforward_objective(trial, ticker, timeframe, range_cat="all
     score = metrics.get("rmse", float("inf")) + 0.5 * metrics.get("mape", float("inf"))
 
     return score
+
+
+def calculate_combined_metrics(results):
+    """
+    Calculate combined metrics from all model results.
+    Also includes ensemble weights in the metrics.
+    
+    Args:
+        results: Dictionary of results from different models
+        
+    Returns:
+        Dictionary with combined metrics
+    """
+    # Initialize with worst possible values
+    combined_metrics = {
+        "rmse": float('inf'),
+        "mape": float('inf'),
+        "directional_accuracy": 0.0,
+        "combined_score": float('inf'),
+        "total_trials": 0,
+        "completed_trials": 0,
+        "model_metrics": {},
+        "timestamp": datetime.now().isoformat(),
+        "ensemble_weights": {}  # Track ensemble weights
+    }
+    
+    # Extract and combine metrics from each model
+    for model_type, result in results.items():
+        if "error" in result:
+            logger.warning(f"Skipping {model_type} due to error: {result['error']}")
+            continue
+            
+        study = result.get("study")
+        best_trial = result.get("best_trial")
+        
+        if not study or not study.trials:
+            logger.warning(f"No trials for {model_type}, skipping")
+            continue
+            
+        # Count trials
+        combined_metrics["total_trials"] += study.user_attrs.get("n_trials", 0)
+        combined_metrics["completed_trials"] += len(study.trials)
+        
+        # Extract best metrics from this model's best trial
+        try:
+            if best_trial:
+                model_rmse = best_trial.user_attrs.get("rmse", float('inf'))
+                model_mape = best_trial.user_attrs.get("mape", float('inf'))
+                model_da = best_trial.user_attrs.get("directional_accuracy", 0.0)
+                model_score = best_trial.value if hasattr(best_trial, 'value') else float('inf')
+                
+                # Track the best model's weight (from trial params or default to 1.0)
+                weight = best_trial.params.get("ensemble_weight", 1.0)
+                combined_metrics["ensemble_weights"][model_type] = weight
+                
+                # Update best overall metrics
+                if model_rmse < combined_metrics["rmse"]:
+                    combined_metrics["rmse"] = model_rmse
+                    combined_metrics["best_rmse"] = model_rmse
+                    combined_metrics["best_model_rmse"] = model_type
+                    
+                if model_mape < combined_metrics["mape"]:
+                    combined_metrics["mape"] = model_mape
+                    combined_metrics["best_mape"] = model_mape
+                    combined_metrics["best_model_mape"] = model_type
+                    
+                if model_da > combined_metrics["directional_accuracy"]:
+                    combined_metrics["directional_accuracy"] = model_da
+                    combined_metrics["best_directional_accuracy"] = model_da
+                    combined_metrics["best_model_da"] = model_type
+                    
+                if model_score < combined_metrics["combined_score"]:
+                    combined_metrics["combined_score"] = model_score
+                    combined_metrics["best_model"] = model_type
+                
+                # Store individual model metrics
+                combined_metrics["model_metrics"][model_type] = {
+                    "rmse": model_rmse,
+                    "mape": model_mape,
+                    "directional_accuracy": model_da,
+                    "combined_score": model_score,
+                    "completed_trials": len(study.trials),
+                    "total_trials": study.user_attrs.get("n_trials", 0),
+                    "weight": weight  # Store the model's weight for ensemble calculation
+                }
+        except Exception as e:
+            logger.error(f"Error processing metrics for {model_type}: {e}")
+    
+    # Calculate weighted ensemble metrics if we have weights
+    if combined_metrics["ensemble_weights"]:
+        try:
+            # Normalize weights
+            total_weight = sum(combined_metrics["ensemble_weights"].values())
+            if total_weight > 0:
+                normalized_weights = {
+                    model: weight/total_weight 
+                    for model, weight in combined_metrics["ensemble_weights"].items()
+                }
+                
+                # Calculate weighted metrics
+                weighted_rmse = sum(
+                    normalized_weights.get(model, 0) * metrics.get("rmse", float('inf'))
+                    for model, metrics in combined_metrics["model_metrics"].items()
+                )
+                
+                weighted_mape = sum(
+                    normalized_weights.get(model, 0) * metrics.get("mape", float('inf'))
+                    for model, metrics in combined_metrics["model_metrics"].items()
+                )
+                
+                weighted_da = sum(
+                    normalized_weights.get(model, 0) * metrics.get("directional_accuracy", 0)
+                    for model, metrics in combined_metrics["model_metrics"].items()
+                )
+                
+                # Store weighted ensemble metrics
+                combined_metrics["ensemble_rmse"] = weighted_rmse
+                combined_metrics["ensemble_mape"] = weighted_mape
+                combined_metrics["ensemble_directional_accuracy"] = weighted_da
+                combined_metrics["normalized_weights"] = normalized_weights
+        except Exception as e:
+            logger.error(f"Error calculating ensemble metrics: {e}")
+    
+    return combined_metrics
 
 
 def tune_for_combo(
@@ -1088,6 +1290,13 @@ def tune_for_combo(
 
     # Clean memory before starting
     adaptive_memory_clean("large")
+    
+    # Initialize GPU for optimal performance
+    initialize_gpu_for_tuning()
+    
+    # Enable performance mode for intensive operations
+    logger.info("Enabling GPU performance mode for tuning...")
+    set_performance_mode(True)
 
     # Get tuning multipliers
     if tuning_multipliers is None:
@@ -1165,60 +1374,60 @@ def tune_for_combo(
 
     # Update cycle metrics with summary
     try:
-        # Find best model across all studies
+        # Calculate combined metrics from all model results
+        combined_metrics = calculate_combined_metrics(results)
+        
+        # Add cycle and identification info
+        combined_metrics.update({
+            "cycle": cycle,
+            "ticker": ticker,
+            "timeframe": timeframe
+        })
+        
+        # Find best model across all studies (keep original logic)
         best_model_type, best_params, best_value = study_manager.get_best_model()
-
+        
+        # Add best model info
         if best_model_type:
-            # Get best trial info
-            best_result = results.get(best_model_type, {})
-            best_trial = best_result.get("best_trial")
-
-            if best_trial:
-                best_trial_info = {
-                    "trial_number": best_trial.number,
-                    "model_type": best_model_type,
-                    "rmse": best_trial.user_attrs.get("rmse"),
-                    "mape": best_trial.user_attrs.get("mape"),
-                    "directional_accuracy": best_trial.user_attrs.get(
-                        "directional_accuracy"
-                    ),
-                    "combined_score": best_value,
-                    "params": best_params,
-                }
-
-                # Prepare cycle summary
-                cycle_summary = {
-                    "cycle": cycle,
-                    "ticker": ticker,
-                    "timeframe": timeframe,
-                    "total_trials": n_trials * len(ACTIVE_MODEL_TYPES),
-                    "completed_trials": sum(
-                        len(results[mt].get("study", {}).trials)
-                        for mt in results
-                        if "study" in results[mt]
-                    ),
-                    "best_trial": best_trial_info,
-                    "best_model_type": best_model_type,
-                    "timestamp": datetime.now().isoformat(),
-                }
-
-                # Save cycle metrics
-                update_cycle_metrics(cycle_summary, cycle_num=cycle)
-
-        else:
-            logger.warning("No best model found across studies")
+            combined_metrics["best_model_type"] = best_model_type
+            combined_metrics["best_model_value"] = best_value
+            combined_metrics["best_model_params"] = best_params
+        
+        # Save cycle metrics
+        update_cycle_metrics(combined_metrics, cycle_num=cycle)
+        
+        # Update final progress to indicate completion
+        final_progress = {
+            "current_trial": combined_metrics["completed_trials"],
+            "total_trials": combined_metrics["total_trials"],
+            "current_rmse": combined_metrics.get("rmse"),
+            "current_mape": combined_metrics.get("mape"),
+            "best_rmse": combined_metrics.get("best_rmse"),
+            "best_mape": combined_metrics.get("best_mape"),
+            "best_model": combined_metrics.get("best_model"),
+            "cycle": cycle,
+            "trial_progress": 1.0,  # Set to 100% complete
+            "timestamp": time.time(),
+            "ticker": ticker,
+            "timeframe": timeframe,
+            "status": "completed",
+        }
+        update_progress_in_yaml(final_progress)
 
     except Exception as e:
         logger.error(f"Error updating cycle metrics: {e}")
         traceback.print_exc()
 
+    # Disable performance mode to save energy
+    set_performance_mode(False)
+    
     # Clean memory after optimization
     adaptive_memory_clean("large")
 
     return results
 
 
-def start_tuning_process(ticker, timeframe, multipliers=None):
+def start_tuning_process(ticker, timeframe, multipliers=None, force_start=False):
     """
     Start the tuning process by calling tune_for_combo.
     Sets session state to indicate tuning is in progress.
@@ -1227,24 +1436,25 @@ def start_tuning_process(ticker, timeframe, multipliers=None):
         ticker (str): The ticker symbol
         timeframe (str): The timeframe (e.g. "1d")
         multipliers (dict, optional): Dictionary of tuning multipliers
+        force_start (bool, optional): Whether to force start even if already running
         
     Returns:
         dict: Results from tuning, or None if error
     """
     print(f"TUNING-DEBUG: Starting tuning process for {ticker} {timeframe}")
-
+    
     # Check if tuning is already running
     current_status = read_tuning_status()
-    if current_status.get("is_running", False):
-        logger.warning(
-            f"Tuning already in progress for {current_status.get('ticker')} ({current_status.get('timeframe')})"
-        )
-        # Update session state to reflect this
-        st.session_state["tuning_in_progress"] = True
+    if current_status.get("is_running", False) and not force_start:
+        logger.warning("Tuning process is already running")
         return None
 
     # Reset the stop event to make sure we're not in a stopped state
     set_stop_requested(False)
+    
+    #Start all studies
+    from src.tuning.study_manager import run_all_studies
+    run_all_studies(ticker, timeframe)
 
     # Set session state to indicate tuning is in progress
     st.session_state["tuning_in_progress"] = True
@@ -1253,99 +1463,67 @@ def start_tuning_process(ticker, timeframe, multipliers=None):
     # Store multipliers in session state if provided
     if multipliers is not None:
         st.session_state["tuning_multipliers"] = multipliers
-        # Calculate correct trial count
-        trials_multiplier = multipliers.get("trials_multiplier", 1.0)
-        # Get startup trials from config
-        try:
-            adjusted_trials = max(100, int(N_STARTUP_TRIALS * trials_multiplier))
-        except:
-            adjusted_trials = 5000  # Default if can't access N_STARTUP_TRIALS
     else:
-        try:
-            adjusted_trials = N_STARTUP_TRIALS
-        except:
-            adjusted_trials = 5000  # Default if can't access N_STARTUP_TRIALS
+        multipliers = st.session_state.get("tuning_multipliers", None)
 
-    # Update tuning status file first
-    status_written = write_tuning_status(
-        {
-            "ticker": ticker,
-            "timeframe": timeframe,
-            "is_running": True,
-            "start_time": time.time(),
-            "timestamp": datetime.now().isoformat(),
-        }
-    )
-
-    if not status_written:
-        logger.error("Failed to write tuning status - may cause coordination issues")
-
-    # Ensure progress file is updated with correct total_trials
-    progress_written = update_progress_in_yaml(
-        {
-            "ticker": ticker,
-            "timeframe": timeframe,
-            "total_trials": adjusted_trials,
-            "timestamp": time.time(),
-            "current_trial": 0,
-        }
-    )
-
-    if not progress_written:
-        logger.error(
-            "Failed to update progress file - UI may not reflect tuning progress"
+    # Calculate adjusted trials based on mode multipliers
+    adjusted_trials = TUNING_TRIALS_PER_CYCLE_min
+    if multipliers:
+        # Get mode from multipliers or use default
+        trials_multiplier = multipliers.get("trials", 1.0)
+        adjusted_trials = max(
+            TUNING_TRIALS_PER_CYCLE_min,
+            min(TUNING_TRIALS_PER_CYCLE_max, int(TUNING_TRIALS_PER_CYCLE_min * trials_multiplier)),
         )
+
+    # Update tuning status
+    write_tuning_status({
+        "is_running": True,
+        "ticker": ticker,
+        "timeframe": timeframe,
+        "total_trials": adjusted_trials * len(ACTIVE_MODEL_TYPES),
+        "start_time": time.time(),
+        "cycle": 1
+    })
+
+    # Initialize GPU for optimal performance
+    initialize_gpu_for_tuning()
 
     try:
-        # Start the actual tuning process with the correct trial count
-        logger.info(
-            f"Starting tuning for {ticker} ({timeframe}) with {adjusted_trials} trials"
-        )
-        print("TUNING-DEBUG: About to start tuning with study_manager")
-
-        # Define default metric weights
-        metric_weights = {"rmse": 1.0, "mape": 0.5, "da": 0.3}
-
-        # Call the tune_for_combo that uses study_manager
-        result = tune_for_combo(
+        # Run tuning for combination
+        results = tune_for_combo(
             ticker,
             timeframe,
             range_cat="all",
             n_trials=adjusted_trials,
             cycle=1,
             tuning_multipliers=multipliers,
-            metric_weights=metric_weights,
         )
-        return result
-    except Exception as e:
-        # Reset tuning status on error
+        
+        # Update tuning status on completion
+        write_tuning_status({
+            "is_running": False,
+            "status": "completed",
+            "end_time": time.time()
+        })
+        
+        # Update session state
         st.session_state["tuning_in_progress"] = False
-        write_tuning_status(
-            {
-                "ticker": ticker,
-                "timeframe": timeframe,
-                "is_running": False,
-                "error": str(e),
-                "error_traceback": traceback.format_exc(),
-                "timestamp": datetime.now().isoformat(),
-            }
-        )
+        
+        return results
+    except Exception as e:
         logger.error(f"Error in tuning process: {e}")
-        traceback.print_exc()
+        # Always disable performance mode on error
+        set_performance_mode(False)
+        
+        # Update status file
+        write_tuning_status({
+            "is_running": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat(),
+        })
+        
         return None
-    finally:
-        # Ensure status is updated when tuning completes (successfully or with error)
-        if not is_stop_requested():  # Only if it wasn't explicitly stopped
-            st.session_state["tuning_in_progress"] = False
-            write_tuning_status(
-                {
-                    "ticker": ticker,
-                    "timeframe": timeframe,
-                    "is_running": False,
-                    "end_time": time.time(),
-                    "timestamp": datetime.now().isoformat(),
-                }
-            )
 
 
 def stop_tuning_process():
@@ -1379,6 +1557,9 @@ def main():
     """Main entry point for tuning."""
     # Clean memory at start
     adaptive_memory_clean("large")
+    
+    # Initialize GPU for optimal performance
+    initialize_gpu_for_tuning()
 
     # Loop through tuning cycles
     for cycle in range(1, TUNING_LOOP + 1):
@@ -1387,6 +1568,9 @@ def main():
 
     # Final memory cleanup
     adaptive_memory_clean("large")
+    
+    # Disable performance mode when done to save energy
+    set_performance_mode(False)
 
 
 # Call the initialize function when imported

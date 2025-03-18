@@ -315,6 +315,7 @@ def feature_engineering_with_params(
     vmli_smooth_period: int = 3,
     vmli_winsorize_pct: float = 0.01,
     vmli_use_ema: bool = True,
+    timeframe: str = "1d",  
     # Other advanced indicator flags:
     use_keltner: bool = True,
     use_ichimoku: bool = True,
@@ -407,7 +408,21 @@ def feature_engineering_with_params(
 
     df.dropna(inplace=True)
     df.reset_index(drop=True, inplace=True)
-    return df
+    
+    # Ensure we return a valid list of feature columns
+    # Exclude non-feature columns like date and OHLCV
+    exclude_cols = ["date", "Date", "Open", "High", "Low", "Close", "Volume"]
+    feature_column_list = [col for col in df.columns if col not in exclude_cols]
+    
+    # Ensure we never return an empty list
+    if not feature_column_list:
+        logger.warning("No feature columns generated! Using default RSI and MACD.")
+        # Add at least basic RSI and MACD if nothing else worked
+        df = add_rsi(df)
+        df = add_macd(df)
+        feature_column_list = ["RSI", "MACD", "MACD_Signal"]
+    
+    return df, feature_column_list
 
 
 # Add a new function to load and apply Optuna-tuned parameters
@@ -1226,4 +1241,34 @@ def feature_engineering_with_params(
     # Clean up and return
     result_df.dropna(inplace=True)
     result_df.reset_index(drop=True, inplace=True)
-    return result_df
+    
+    # Ensure we return a valid list of feature columns
+    # Exclude non-feature columns like date and OHLCV
+    exclude_cols = ["date", "Date", "Open", "High", "Low", "Close", "Volume"]
+    feature_column_list = [col for col in result_df.columns if col not in exclude_cols]
+    
+    # Ensure we never return an empty list
+    if not feature_column_list:
+        logger.warning("No feature columns generated! Using default RSI and MACD.")
+        # Add at least basic RSI and MACD if nothing else worked
+        result_df = add_rsi(result_df)
+        result_df = add_macd(result_df)
+        feature_column_list = ["RSI", "MACD", "MACD_Signal"]
+    
+    return result_df, feature_column_list
+
+
+def add_fibonacci_retracement(df: pd.DataFrame, window: int = 100) -> pd.DataFrame:
+    """
+    Compute a simple Fibonacci retracement level based on the highest high and lowest low
+    over the past window periods and add it as the 'Fibonacci' column.
+    Note: This is a simplistic implementation and can be adjusted.
+    """
+    df = df.copy()
+    df["Fib_High"] = df["Close"].rolling(window=window, min_periods=1).max()
+    df["Fib_Low"] = df["Close"].rolling(window=window, min_periods=1).min()
+    # For example, use the 61.8% retracement level:
+    diff = df["Fib_High"] - df["Fib_Low"]
+    df["Fibonacci"] = df["Fib_High"] - diff * 0.618
+    # ...existing code to clean up or drop temporary columns if desired...
+    return df

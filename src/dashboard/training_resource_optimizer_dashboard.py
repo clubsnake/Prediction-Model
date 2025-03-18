@@ -10,7 +10,7 @@ from datetime import datetime
 import altair as alt
 import pandas as pd
 import streamlit as st
-
+from streamlit_autorefresh import st_autorefresh
 from src.utils.training_optimizer import TrainingOptimizer, get_training_optimizer
 
 
@@ -62,136 +62,360 @@ def render_hardware_resources_section(optimizer: TrainingOptimizer):
     # Hardware specs
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("CPU Cores", f"{optimizer.cpu_count}")
+        st.metric("Threads", f"{optimizer.cpu_count}")  # renamed from CPU Cores
         st.metric("System Memory", f"{optimizer.system_memory_gb:.1f} GB")
-
-        # Show CPU utilization if available
-        try:
-            import psutil
-
-            process = psutil.Process()
-            with st.expander("CPU Details", expanded=False):
-                # Refresh button for real-time updates
-                if st.button("Refresh CPU Info", key="refresh_cpu"):
-                    st.session_state["last_cpu_refresh"] = datetime.now()
-
-                # CPU usage by core
-                cpu_percent = psutil.cpu_percent(interval=0.5, percpu=True)
-
-                # Create a DataFrame for the chart
-                cpu_df = pd.DataFrame(
-                    {
-                        "Core": [f"Core {i}" for i in range(len(cpu_percent))],
-                        "Usage": cpu_percent,
-                    }
-                )
-
-                # Create chart
-                cpu_chart = (
-                    alt.Chart(cpu_df)
-                    .mark_bar()
-                    .encode(
-                        x=alt.X(
-                            "Usage:Q", title="Usage %", scale=alt.Scale(domain=[0, 100])
-                        ),
-                        y=alt.Y("Core:N", title=None),
-                        color=alt.Color("Usage:Q", scale=alt.Scale(scheme="blues")),
-                    )
-                )
-
-                st.altair_chart(cpu_chart, use_container_width=True)
-
-                # Process info
-                st.write("##### Process Information")
-                st.write(f"Process CPU: {process.cpu_percent()}%")
-                st.write(f"Thread Count: {process.num_threads()}")
-        except Exception as e:
-            st.write(f"CPU utilization details unavailable: {e}")
 
     with col2:
         st.metric("GPUs", f"{optimizer.gpu_count}")
         if optimizer.has_gpu:
             st.metric("GPU Memory", f"{optimizer.gpu_memory_gb:.1f} GB")
-
-            # Show GPU utilization if available
-            with st.expander("GPU Details", expanded=False):
-                # Refresh button for real-time updates
-                if st.button("Refresh GPU Info", key="refresh_gpu"):
-                    st.session_state["last_gpu_refresh"] = datetime.now()
-
-                try:
-                    import subprocess
-
-                    # Try nvidia-smi for NVIDIA GPUs
-                    try:
-                        result = subprocess.run(
-                            [
-                                "nvidia-smi",
-                                "--query-gpu=index,name,utilization.gpu,utilization.memory,memory.used,memory.total",
-                                "--format=csv,noheader",
-                            ],
-                            stdout=subprocess.PIPE,
-                            check=True,
-                            text=True,
-                        )
-
-                        # Parse the output
-                        gpu_info = []
-                        for line in result.stdout.strip().split("\n"):
-                            parts = [part.strip() for part in line.split(",")]
-                            if len(parts) >= 6:
-                                gpu_info.append(
-                                    {
-                                        "index": parts[0],
-                                        "name": parts[1],
-                                        "gpu_util": parts[2],
-                                        "mem_util": parts[3],
-                                        "mem_used": parts[4],
-                                        "mem_total": parts[5],
-                                    }
-                                )
-
-                        # Display GPU info
-                        for gpu in gpu_info:
-                            st.write(f"##### {gpu['name']} (GPU {gpu['index']})")
-
-                            # Parse memory values
-                            mem_used = float(gpu["mem_used"].split()[0])
-                            mem_total = float(gpu["mem_total"].split()[0])
-                            mem_pct = mem_used / mem_total * 100
-
-                            # Usage bars
-                            st.write(f"Compute: {gpu['gpu_util']}")
-                            st.progress(float(gpu["gpu_util"].rstrip("%")) / 100)
-
-                            st.write(
-                                f"Memory: {gpu['mem_util']} ({mem_used} / {mem_total} MiB)"
-                            )
-                            st.progress(mem_pct / 100)
-
-                    except Exception:
-                        # If nvidia-smi fails, try TensorFlow API
-                        import tensorflow as tf
-
-                        gpus = tf.config.list_physical_devices("GPU")
-                        for i, gpu in enumerate(gpus):
-                            st.write(f"##### GPU {i}: {gpu.name}")
-                            try:
-                                mem_info = tf.config.experimental.get_memory_info(
-                                    f"GPU:{i}"
-                                )
-                                if "current" in mem_info and "peak" in mem_info:
-                                    current_mb = mem_info["current"] / (1024 * 1024)
-                                    peak_mb = mem_info["peak"] / (1024 * 1024)
-                                    st.write(f"Current Memory: {current_mb:.1f} MB")
-                                    st.write(f"Peak Memory: {peak_mb:.1f} MB")
-                            except:
-                                st.write("Memory information not available")
-
-                except Exception as e:
-                    st.write(f"GPU details unavailable: {e}")
         else:
             st.warning("No GPUs detected. Models will run on CPU only.")
+    
+    # Auto-refresh checkbox instead of toggle
+    auto_refresh = st.checkbox("Auto-refresh metrics", value=True, key="hardware_auto_refresh")
+    if "last_refresh_time" not in st.session_state:
+        st.session_state["last_refresh_time"] = time.time()
+        
+    # Add time interval selector when auto-refresh is enabled
+    refresh_interval = 5
+    if auto_refresh:
+        refresh_interval = st.slider("Refresh interval (seconds)", min_value=1, max_value=30, value=5)
+        
+        # Check if it's time to refresh
+        current_time = time.time()
+        if current_time - st.session_state["last_refresh_time"] >= refresh_interval:
+            st.session_state["last_refresh_time"] = current_time
+            # Trigger rerun to refresh data
+            st.expiremental_rerun()
+    else:
+        # Manual refresh button when auto-refresh is off
+        if st.button("Refresh Metrics Now"):
+            st.session_state["last_refresh_time"] = time.time()
+            # Will rerun automatically when button is clicked
+    
+    # Display last refresh time
+    st.caption(f"Last updated: {datetime.fromtimestamp(st.session_state['last_refresh_time']).strftime('%H:%M:%S')}")
+    
+    # Create metrics container
+    metrics_container = st.container()
+    
+    # Update resource metrics
+    with metrics_container:
+        # Combined Resource Usage Chart Section
+        st.subheader("System Resource Utilization")
+        
+        # Create data for the combined chart
+        try:
+            import psutil
+            import pandas as pd
+            import altair as alt
+            
+            # Function to get current disk IO
+            def get_disk_io():
+                try:
+                    io_counters = psutil.disk_io_counters()
+                    return {
+                        "read_bytes": io_counters.read_bytes / 1024 / 1024,  # MB
+                        "write_bytes": io_counters.write_bytes / 1024 / 1024,  # MB
+                        "read_count": io_counters.read_count,
+                        "write_count": io_counters.write_count
+                    }
+                except:
+                    return {"read_bytes": 0, "write_bytes": 0, "read_count": 0, "write_count": 0}
+            
+            # Gather resource data
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+            memory = psutil.virtual_memory()
+            memory_percent = memory.percent
+            disk_io = get_disk_io()
+            
+            # GPU data if available
+            gpu_compute_percent = 0
+            gpu_memory_percent = 0
+            
+            if optimizer.has_gpu:
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        [
+                            "nvidia-smi",
+                            "--query-gpu=utilization.gpu,utilization.memory",
+                            "--format=csv,noheader",
+                        ],
+                        stdout=subprocess.PIPE,
+                        check=True,
+                        text=True,
+                    )
+                    parts = [part.strip() for part in result.stdout.split(",")]
+                    if len(parts) >= 2:
+                        gpu_compute_percent = float(parts[0].rstrip("%"))
+                        gpu_memory_percent = float(parts[1].rstrip("%"))
+                except:
+                    try:
+                        import GPUtil
+                        gpus = GPUtil.getGPUs()
+                        if gpus:
+                            gpu = gpus[0]  # Use first GPU for summary
+                            gpu_compute_percent = gpu.load * 100
+                            gpu_memory_percent = (gpu.memoryUsed / gpu.memoryTotal * 100) if gpu.memoryTotal else 0
+                    except:
+                        pass
+            
+            # Create DataFrame for unified resources chart
+            resource_data = pd.DataFrame([
+                {"Resource": "CPU", "Utilization": cpu_percent, "Type": "Processing"},
+                {"Resource": "RAM", "Utilization": memory_percent, "Type": "Memory"},
+                {"Resource": "Disk Write", "Utilization": min(100, disk_io["write_bytes"]), "Type": "I/O"},
+                {"Resource": "Disk Read", "Utilization": min(100, disk_io["read_bytes"]), "Type": "I/O"}
+            ])
+            
+            if optimizer.has_gpu:
+                resource_data = pd.concat([resource_data, pd.DataFrame([
+                    {"Resource": "GPU", "Utilization": gpu_compute_percent, "Type": "Processing"},
+                    {"Resource": "VRAM", "Utilization": gpu_memory_percent, "Type": "Memory"}
+                ])])
+            
+            # Create chart for all resources
+            resource_chart = (
+                alt.Chart(resource_data)
+                .mark_bar()
+                .encode(
+                    x=alt.X("Utilization:Q", title="Utilization (%)", scale=alt.Scale(domain=[0, 100])),
+                    y=alt.Y("Resource:N", title=None),
+                    color=alt.Color("Type:N", scale=alt.Scale(domain=["Processing", "Memory", "I/O"],
+                                                            range=["#1f77b4", "#ff7f0e", "#2ca02c"])),
+                    tooltip=["Resource:N", "Utilization:Q", "Type:N"]
+                )
+                .properties(title="Current System Resource Utilization")
+            )
+            
+            st.altair_chart(resource_chart, use_container_width=True)
+            
+            # Time series for resource history
+            if "resource_history" not in st.session_state:
+                st.session_state["resource_history"] = []
+            
+            # Update history with current values
+            current_timestamp = time.time()
+            
+            # Add new datapoint
+            st.session_state["resource_history"].append({
+                "time": current_timestamp,
+                "cpu": cpu_percent,
+                "ram": memory_percent,
+                "gpu": gpu_compute_percent,
+                "vram": gpu_memory_percent,
+                "disk_read": disk_io["read_bytes"],
+                "disk_write": disk_io["write_bytes"]
+            })
+            
+            # Keep only last 60 datapoints (5 minutes with 5-second refresh)
+            max_history = 60
+            if len(st.session_state["resource_history"]) > max_history:
+                st.session_state["resource_history"] = st.session_state["resource_history"][-max_history:]
+            
+            # Create time series chart if we have enough data points
+            if len(st.session_state["resource_history"]) > 1:
+                # Convert to DataFrame for Altair
+                history_df = pd.DataFrame(st.session_state["resource_history"])
+                
+                # Calculate relative time in seconds
+                min_time = history_df["time"].min()
+                history_df["relative_time"] = history_df["time"] - min_time
+                
+                # Melt for easier charting
+                melted_df = pd.melt(
+                    history_df,
+                    id_vars=["time", "relative_time"],
+                    value_vars=["cpu", "ram", "gpu", "vram", "disk_read", "disk_write"],
+                    var_name="resource",
+                    value_name="utilization"
+                )
+                
+                # Map resource types
+                resource_type_map = {
+                    "cpu": "Processing", "gpu": "Processing",
+                    "ram": "Memory", "vram": "Memory",
+                    "disk_read": "I/O", "disk_write": "I/O"
+                }
+                melted_df["type"] = melted_df["resource"].map(resource_type_map)
+                
+                # Create time series chart
+                time_chart = (
+                    alt.Chart(melted_df)
+                    .mark_line()
+                    .encode(
+                        x=alt.X("relative_time:Q", title="Time (seconds)"),
+                        y=alt.Y("utilization:Q", title="Utilization (%)", scale=alt.Scale(domain=[0, 100])),
+                        color="resource:N",
+                        strokeDash=alt.StrokeDash("type:N"),
+                        tooltip=["resource:N", "utilization:Q"]
+                    )
+                    .properties(title="Resource Utilization Over Time")
+                )
+                
+                st.altair_chart(time_chart, use_container_width=True)
+            
+            # Display CPU Details
+            st.subheader("CPU Details")
+            
+            # CPU usage by core
+            cpu_percent_by_core = psutil.cpu_percent(interval=0.1, percpu=True)
+            
+            # Create a DataFrame for the chart
+            cpu_df = pd.DataFrame(
+                {
+                    "Core": [f"Core {i}" for i in range(len(cpu_percent_by_core))],
+                    "Usage": cpu_percent_by_core,
+                }
+            )
+            
+            # Create chart
+            cpu_chart = (
+                alt.Chart(cpu_df)
+                .mark_bar()
+                .encode(
+                    x=alt.X(
+                        "Usage:Q", title="Usage %", scale=alt.Scale(domain=[0, 100])
+                    ),
+                    y=alt.Y("Core:N", title=None),
+                    color=alt.Color("Usage:Q", scale=alt.Scale(scheme="blues")),
+                )
+            )
+            
+            st.altair_chart(cpu_chart, use_container_width=True)
+            
+            # Process info
+            process = psutil.Process()
+            st.write("##### Process Information")
+            st.write(f"Process CPU: {process.cpu_percent()}%")
+            st.write(f"Thread Count: {process.num_threads()}")
+            
+            # Display GPU Details if available
+            if optimizer.has_gpu:
+                st.subheader("GPU Details")
+                try:
+                    import subprocess
+                    # Try using nvidia-smi
+                    result = subprocess.run(
+                        [
+                            "nvidia-smi",
+                            "--query-gpu=index,name,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu",
+                            "--format=csv,noheader",
+                        ],
+                        stdout=subprocess.PIPE,
+                        check=True,
+                        text=True,
+                    )
+                    gpu_info = []
+                    for line in result.stdout.strip().split("\n"):
+                        parts = [part.strip() for part in line.split(",")]
+                        if len(parts) >= 7:
+                            gpu_info.append(
+                                {
+                                    "index": parts[0],
+                                    "name": parts[1],
+                                    "gpu_util": float(parts[2].rstrip("%")),
+                                    "mem_util": float(parts[3].rstrip("%")),
+                                    "mem_used": float(parts[4].split()[0]),
+                                    "mem_total": float(parts[5].split()[0]),
+                                    "temperature": float(parts[6].rstrip("°C")),
+                                }
+                            )
+                except Exception as e:
+                    # Fallback for non-NVIDIA GPUs using GPUtil if available.
+                    try:
+                        import GPUtil
+                        gpus = GPUtil.getGPUs()
+                        gpu_info = []
+                        for gpu in gpus:
+                            gpu_info.append({
+                                "index": gpu.id,
+                                "name": gpu.name,
+                                "gpu_util": gpu.load * 100,
+                                "mem_util": (gpu.memoryUsed / gpu.memoryTotal * 100) if gpu.memoryTotal else 0,
+                                "mem_used": gpu.memoryUsed,
+                                "mem_total": gpu.memoryTotal,
+                                "temperature": gpu.temperature,
+                            })
+                    except Exception as e2:
+                        st.write("Enhanced GPU details unavailable")
+
+                # Display individual GPU details
+                if gpu_info:
+                    for i, gpu in enumerate(gpu_info):
+                        st.markdown(f"### {gpu['name']} (GPU {gpu['index']})")
+                        c1, c2, c3 = st.columns(3)
+                        with c1:
+                            st.metric("Compute Utilization", f"{gpu['gpu_util']:.1f}%")
+                            st.progress(gpu["gpu_util"] / 100)
+                        with c2:
+                            mem_pct = gpu["mem_used"] / gpu["mem_total"] * 100 if gpu["mem_total"] else 0
+                            st.metric("Memory Usage", f"{gpu['mem_util']:.1f}% ({gpu['mem_used']} / {gpu['mem_total']} MiB)")
+                            st.progress(mem_pct / 100)
+                        with c3:
+                            st.metric("Temperature", f"{gpu['temperature']:.1f}°C")
+                    # Combined chart for GPU metrics
+                    if gpu_info:
+                        df = pd.DataFrame(gpu_info)
+                        df_melt = df.melt(id_vars=["index", "name"], value_vars=["gpu_util", "mem_util"],
+                                          var_name="Metric", value_name="Value")
+                        chart = (
+                            alt.Chart(df_melt)
+                            .mark_bar()
+                            .encode(
+                                x=alt.X("name:N", title="GPU"),
+                                y=alt.Y("Value:Q", title="Utilization (%)", scale=alt.Scale(domain=[0, 100])),
+                                color=alt.Color("Metric:N", scale=alt.Scale(scheme="category10")),
+                                column=alt.Column("Metric:N", header=alt.Header(title="")),
+                            )
+                            .properties(title="GPU Utilization Metrics")
+                        )
+                        st.altair_chart(chart, use_container_width=True)
+                        
+        except Exception as e:
+            st.error(f"Error displaying resource metrics: {e}")
+            
+    # Display model resource usage if data is available
+    st.subheader("Resource Usage By Model")
+    if "model_resource_usage" in st.session_state and st.session_state["model_resource_usage"]:
+        try:
+            model_resources = st.session_state["model_resource_usage"]
+            model_df = pd.DataFrame(model_resources)
+            
+            # Create a bar chart for each resource type
+            resource_types = ["cpu_percent", "memory_mb", "gpu_percent", "gpu_memory_mb"]
+            labels = {"cpu_percent": "CPU %", "memory_mb": "RAM (MB)", 
+                      "gpu_percent": "GPU %", "gpu_memory_mb": "VRAM (MB)"}
+            
+            # Filter only columns that exist in the dataframe
+            resource_types = [r for r in resource_types if r in model_df.columns]
+            
+            # Create selector for resource type
+            resource_type = st.selectbox("Resource Metric", 
+                                         options=resource_types,
+                                         format_func=lambda x: labels.get(x, x))
+            
+            if resource_type in model_df.columns:
+                chart = (
+                    alt.Chart(model_df)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X(f"{resource_type}:Q", title=labels.get(resource_type, resource_type)),
+                        y=alt.Y("model:N", title="Model", sort=f"-{resource_type}"),
+                        color=alt.Color(f"{resource_type}:Q", scale=alt.Scale(scheme="viridis"))
+                    )
+                    .properties(title=f"Model {labels.get(resource_type, resource_type)} Usage")
+                )
+                
+                st.altair_chart(chart, use_container_width=True)
+            else:
+                st.info(f"No data available for {labels.get(resource_type, resource_type)}")
+        except Exception as e:
+            st.error(f"Error displaying model resource usage: {e}")
+    else:
+        st.info("No model resource usage data available. Start training models to see resource usage.")
 
     # Resource allocation summary
     st.subheader("Resource Allocation for Models")
@@ -242,84 +466,7 @@ def render_model_performance_section():
     times = st.session_state["model_training_times"]
 
     if not metrics or not times:
-        st.info(
-            "No training data available yet. Train models to see performance metrics."
-        )
-
-        # Sample data for visualization
-        st.write("#### Sample Visualization (with dummy data)")
-
-        # Create sample data
-        sample_times = {
-            "lstm": 45.2,
-            "rnn": 38.7,
-            "xgboost": 12.3,
-            "random_forest": 8.5,
-            "tabnet": 67.8,
-            "cnn": 52.1,
-            "ltc": 41.3,
-            "tft": 73.9,
-        }
-
-        # Visualize sample training times
-        time_df = pd.DataFrame(
-            [{"model": model, "seconds": time} for model, time in sample_times.items()]
-        )
-
-        # Sort by time
-        time_df = time_df.sort_values("seconds", ascending=False)
-
-        # Create chart
-        chart = (
-            alt.Chart(time_df)
-            .mark_bar()
-            .encode(
-                x=alt.X("seconds:Q", title="Training Time (seconds)"),
-                y=alt.Y("model:N", title="Model Type", sort="-x"),
-                color=alt.Color("model:N", legend=None),
-            )
-            .properties(title="Example: Training Time by Model Type")
-        )
-
-        st.altair_chart(chart, use_container_width=True)
-
-        # Sample metrics
-        sample_metrics = {
-            "lstm": {"rmse": 0.0412, "mape": 3.45},
-            "rnn": {"rmse": 0.0437, "mape": 3.78},
-            "xgboost": {"rmse": 0.0385, "mape": 3.12},
-            "random_forest": {"rmse": 0.0401, "mape": 3.34},
-            "tabnet": {"rmse": 0.0390, "mape": 3.21},
-            "cnn": {"rmse": 0.0424, "mape": 3.56},
-            "ltc": {"rmse": 0.0429, "mape": 3.62},
-            "tft": {"rmse": 0.0378, "mape": 3.05},
-        }
-
-        # Create metric visualization
-        metric_data = []
-        for model, model_metrics in sample_metrics.items():
-            for metric_name, value in model_metrics.items():
-                metric_data.append(
-                    {"model": model, "metric": metric_name, "value": value}
-                )
-
-        metric_df = pd.DataFrame(metric_data)
-
-        # Create faceted chart for metrics
-        metric_chart = (
-            alt.Chart(metric_df)
-            .mark_bar()
-            .encode(
-                x=alt.X("value:Q", title="Value"),
-                y=alt.Y("model:N", title="Model", sort="x"),
-                color="model:N",
-                column="metric:N",
-            )
-            .properties(width=300, title="Example: Model Performance Metrics")
-        )
-
-        st.altair_chart(metric_chart)
-
+        st.info("No training data available yet. Start training models to see performance metrics.")
         return
 
     # Real data visualization
@@ -340,31 +487,41 @@ def render_model_performance_section():
         .encode(
             x=alt.X("seconds:Q", title="Training Time (seconds)"),
             y=alt.Y("model:N", title="Model Type", sort="-x"),
-            color=alt.Color("model:N", legend=None),
+            color=alt.Color(
+                "seconds:Q", 
+                scale=alt.Scale(scheme="redyellowgreen", domain=[time_df["seconds"].min(), time_df["seconds"].max()], reverse=True),
+                legend=alt.Legend(title="Training Time")
+            ),
+            tooltip=["model:N", "seconds:Q"]
         )
         .properties(title="Training Time by Model Type")
     )
 
     st.altair_chart(time_chart, use_container_width=True)
 
-    # Check for imbalances
+    # Check for imbalances and identify bottlenecks
     if len(time_df) > 1:
         max_time = time_df["seconds"].max()
         min_time = time_df["seconds"].min()
+        avg_time = time_df["seconds"].mean()
 
         if max_time > min_time * 3:
             slowest = time_df.iloc[0]["model"]
             fastest = time_df.iloc[-1]["model"]
 
             st.warning(
-                f"⚠️ **Training Imbalance Detected**: {slowest} is {max_time/min_time:.1f}x slower than {fastest}"
+                f"⚠️ **Performance Bottleneck Detected**: {slowest} is {max_time/min_time:.1f}x slower than {fastest}"
             )
 
-            # Resource allocation suggestion
+            # Enhanced resource allocation suggestion
             st.info(
-                """
-            **Suggestion**: Consider adjusting resource allocation in Advanced Settings 
-            to give more resources to slower models.
+                f"""
+            **Optimization Suggestion**: Consider adjusting resource allocation for {slowest}:
+            - Increase GPU memory fraction if it's a neural network model
+            - Increase CPU weight if it's running on CPU
+            - Adjust batch size for better throughput
+            
+            Go to the Resource Allocation tab to make these adjustments.
             """
             )
 
@@ -406,19 +563,43 @@ def render_model_performance_section():
                         # Sort appropriately (lower is better for most metrics)
                         this_metric = this_metric.sort_values("value", ascending=True)
 
-                        # Create chart
+                        # Create enhanced chart with color gradient
                         chart = (
                             alt.Chart(this_metric)
                             .mark_bar()
                             .encode(
                                 x=alt.X("value:Q", title=f"{metric_name.upper()}"),
                                 y=alt.Y("model:N", title="Model Type", sort="x"),
-                                color=alt.Color("model:N", legend=None),
+                                color=alt.Color(
+                                    "value:Q", 
+                                    scale=alt.Scale(scheme="blueorange", domain=[this_metric["value"].min(), this_metric["value"].max()]),
+                                    legend=alt.Legend(title=metric_name.upper())
+                                ),
+                                tooltip=["model:N", "value:Q"]
                             )
                         )
 
                         st.altair_chart(chart, use_container_width=True)
 
+                        # Performance correlation analysis
+                        if "model_training_times" in st.session_state:
+                            times = st.session_state["model_training_times"]
+                            metric_times = []
+                            metric_values = []
+                            
+                            for model in this_metric["model"]:
+                                if model in times:
+                                    model_value = this_metric[this_metric["model"] == model]["value"].values[0]
+                                    metric_times.append(times[model])
+                                    metric_values.append(model_value)
+                            
+                            if len(metric_times) > 1:
+                                import numpy as np
+                                correlation = np.corrcoef(metric_times, metric_values)[0, 1]
+                                if abs(correlation) > 0.5:
+                                    corr_message = "strong positive" if correlation > 0 else "strong negative"
+                                    st.info(f"There is a {corr_message} correlation ({correlation:.2f}) between training time and {metric_name}.")
+                        
                         # Show best model
                         best_model = this_metric.iloc[0]["model"]
                         best_value = this_metric.iloc[0]["value"]
@@ -504,7 +685,10 @@ def render_resource_allocation_section(optimizer: TrainingOptimizer):
                     key=f"{model_type}_ram",
                 )
 
-                # Batch size factor
+                # Batch size factor - Add default value if key doesn't exist
+                if "batch_size_factor" not in resources:
+                    resources["batch_size_factor"] = 1.0  # Default value
+                
                 resources["batch_size_factor"] = st.slider(
                     "Batch Size Factor",
                     min_value=0.2,
@@ -809,3 +993,53 @@ if __name__ == "__main__":
     st.set_page_config(page_title="Training Optimizer Dashboard", layout="wide")
 
     render_training_optimizer_tab()
+
+
+# Function to track model resource usage
+def track_model_resource_usage(model_type, cpu_percent=0, memory_mb=0, gpu_percent=0, gpu_memory_mb=0):
+    """
+    Track resource usage for a model during training.
+    Call this periodically during model training to collect resource usage data.
+    
+    Args:
+        model_type: Type of model being tracked
+        cpu_percent: CPU usage percentage
+        memory_mb: Memory usage in MB
+        gpu_percent: GPU usage percentage (0 if not using GPU)
+        gpu_memory_mb: GPU memory usage in MB (0 if not using GPU)
+    """
+    if "model_resource_usage" not in st.session_state:
+        st.session_state["model_resource_usage"] = []
+        
+    # Find if we already have an entry for this model
+    found = False
+    for i, entry in enumerate(st.session_state["model_resource_usage"]):
+        if entry["model"] == model_type:
+            # Update existing entry
+            st.session_state["model_resource_usage"][i].update({
+                "cpu_percent": cpu_percent,
+                "memory_mb": memory_mb,
+                "gpu_percent": gpu_percent,
+                "gpu_memory_mb": gpu_memory_mb,
+                "last_updated": time.time()
+            })
+            found = True
+            break
+            
+    # Add new entry if not found
+    if not found:
+        st.session_state["model_resource_usage"].append({
+            "model": model_type,
+            "cpu_percent": cpu_percent,
+            "memory_mb": memory_mb, 
+            "gpu_percent": gpu_percent,
+            "gpu_memory_mb": gpu_memory_mb,
+            "last_updated": time.time()
+        })
+        
+    # Remove old entries (older than 5 minutes)
+    current_time = time.time()
+    st.session_state["model_resource_usage"] = [
+        entry for entry in st.session_state["model_resource_usage"] 
+        if current_time - entry.get("last_updated", 0) < 300
+    ]

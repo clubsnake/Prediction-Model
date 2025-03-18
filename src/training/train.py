@@ -1,8 +1,10 @@
-import argparse
 import os
+import argparse
 import sys
 
 import yaml
+import numpy as np  # Added import for RMSE calculation
+from sklearn.metrics import mean_squared_error  # Added import for evaluation
 
 # Fix import path
 try:
@@ -59,6 +61,12 @@ def parse_arguments():
         action="store_true",
         help="Use the model registry for model management",
     )
+    # Add command line argument for drift hyperparameter tuning
+    parser.add_argument(
+        "--tune-drift",
+        action="store_true",
+        help="Tune drift detection hyperparameters"
+    )
 
     return parser.parse_args()
 
@@ -103,6 +111,81 @@ def train_model():
 
         logger.info(f"Data prepared with {len(feature_cols)} features")
 
+        # Handle drift hyperparameter tuning if requested
+        if args.tune_drift:
+            logger.info("Tuning drift detection hyperparameters...")
+            
+            from src.tuning.drift_optimizer import optimize_drift_hyperparameters
+            from src.data.preprocessing import create_sequences
+            
+            # Set up submodel parameters
+            submodel_params_dict = {
+                model_type: params
+                for model_type, params in best_params.items()
+                if model_type in ["lstm", "random_forest", "xgboost", "tabnet"]
+            }
+            
+            # Define training function with drift hyperparameters
+            def train_with_drift_params(drift_hyperparams):
+                # Create drift detector with custom hyperparameters
+                from src.training.concept_drift import MultiDetectorDriftSystem
+                drift_detector = MultiDetectorDriftSystem(hyperparams=drift_hyperparams)
+                
+                # Run walk-forward training with this detector
+                from src.training.walk_forward import unified_walk_forward
+                ensemble_model, _ = unified_walk_forward(
+                    df=df,
+                    feature_cols=feature_cols,
+                    submodel_params_dict=submodel_params_dict,
+                    window_size=args.window_size,
+                    update_dashboard=False,
+                    drift_detector=drift_detector
+                )
+                
+                return ensemble_model
+            
+            # Define evaluation function
+            def evaluate_model(model):
+                # Create test window
+                test_size = min(30, len(df) // 5)
+                test_df = df.iloc[-test_size:].copy()
+                
+                # Prepare test data
+                X_test, y_test = create_sequences(
+                    test_df, feature_cols, "Close", lookback=30, horizon=1
+                )
+                
+                # Make predictions
+                preds = model.predict(X_test)
+                
+                # Calculate metrics
+                mse = mean_squared_error(y_test, preds)
+                rmse = np.sqrt(mse)
+                
+                return {"rmse": rmse}
+            
+            # Run optimization
+            best_hyperparams = optimize_drift_hyperparameters(
+                train_function=train_with_drift_params,
+                eval_function=evaluate_model,
+                n_trials=30,  # Adjust based on available time
+                timeout=7200  # 2 hours timeout
+            )
+            
+            # Save best hyperparameters
+            hyperparams_dir = os.path.join(get_data_dir(), "Hyperparameters")
+            os.makedirs(hyperparams_dir, exist_ok=True)
+            
+            drift_params_file = os.path.join(hyperparams_dir, f"drift_params_{args.ticker}_{args.timeframe}.yaml")
+            with open(drift_params_file, "w") as f:
+                yaml.dump(best_hyperparams, f)
+            
+            logger.info(f"Saved best drift hyperparameters to {drift_params_file}")
+            
+            # Continue with normal training but using the optimized drift parameters
+            logger.info("Proceeding with normal training using optimized drift parameters")
+
+        # Continue with regular model training logic
         if args.use_registry:
             # Use ModelRegistry from incremental_learning.py
             from src.training.incremental_learning import ModelRegistry

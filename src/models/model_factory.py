@@ -1,7 +1,7 @@
-import logging
 import os
 import sys
 from typing import Any, Dict
+import logging
 
 # Add project root to Python path for proper imports
 current_file = os.path.abspath(__file__)
@@ -113,19 +113,12 @@ class ModelFactory:
 
             return model
 
-        except KeyError:
-            error_msg = f"Model type '{model_type}' not supported"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-
-        except ImportError as e:
-            error_msg = f"Required dependencies for model type '{model_type}' not available: {e}"
-            logger.error(error_msg)
-            raise
-
+        except KeyError as ke:
+            raise ValueError(f"Missing required parameter: {ke}")
+        except ImportError as ie:
+            raise ImportError(f"Missing dependency: {ie}")
         except Exception as e:
-            logger.error(f"Failed to create model of type {model_type}: {e}")
-            raise
+            raise Exception(f"Error in creating model: {e}")
 
     @staticmethod
     def _create_linear_model(params: Dict[str, Any]) -> Any:
@@ -147,11 +140,14 @@ class ModelFactory:
         dropout_rate = params.get("dropout_rate", 0.2)
         loss_function = params.get("loss_function", "mean_squared_error")
         lookback = params.get("lookback", 30)
+        
+        # Pass batch_size directly from params without modification
+        # to respect Optuna's choices
+        batch_size = params.get("batch_size", None)
 
         # Architecture parameters can be passed directly
         architecture_params = params.get("architecture_params", {})
-
-        # Create the model
+        
         model = build_model_by_type(
             model_type=model_type,
             num_features=num_features,
@@ -161,6 +157,7 @@ class ModelFactory:
             loss_function=loss_function,
             lookback=lookback,
             architecture_params=architecture_params,
+            batch_size=batch_size
         )
 
         return model
@@ -208,27 +205,55 @@ class ModelFactory:
     def _create_nbeats_model(params: Dict[str, Any]) -> tf.keras.Model:
         """Create an N-BEATS model"""
         try:
-            from src.models.nbeats_model import build_nbeats_model
+            from src.models.nbeats_model import build_nbeats_model, StackType
 
             # Extract parameters with defaults
             lookback = params.get("lookback", 30)
             horizon = params.get("horizon", 1)
             num_features = params.get("num_features", 1)
             learning_rate = params.get("learning_rate", 0.001)
-            stack_types = params.get("stack_types", ["trend", "seasonality"])
+            
+            # Parse stack_types and convert strings to StackType enum
+            stack_types_raw = params.get("stack_types", ["trend", "seasonality"])
+            stack_types = []
+            for stack in stack_types_raw:
+                if isinstance(stack, str):
+                    if stack.lower() == "trend":
+                        stack_types.append(StackType.TREND)
+                    elif stack.lower() == "seasonality":
+                        stack_types.append(StackType.SEASONALITY)
+                    elif stack.lower() == "generic":
+                        stack_types.append(StackType.GENERIC)
+                    elif stack.lower() in ("price_specific", "price"):
+                        stack_types.append(StackType.PRICE_SPECIFIC)
+                    else:
+                        stack_types.append(StackType.GENERIC)
+                else:
+                    stack_types.append(stack)
+                    
             num_blocks = params.get("num_blocks", [3, 3])
             num_layers = params.get("num_layers", [4, 4])
             layer_width = params.get("layer_width", 256)
+            
+            # Additional parameters
+            use_attention = params.get("use_attention", False)
+            include_price_specific = params.get("include_price_specific_stack", True)
+            normalize_input = params.get("normalize_input_windows", True)
 
+            logger.info(f"Creating N-BEATS model with stack types: {stack_types}")
+            
             return build_nbeats_model(
                 lookback=lookback,
                 horizon=horizon,
                 num_features=num_features,
-                learning_rate=learning_rate,
                 stack_types=stack_types,
                 num_blocks=num_blocks,
                 num_layers=num_layers,
                 layer_width=layer_width,
+                learning_rate=learning_rate,
+                use_attention=use_attention,
+                include_price_specific=include_price_specific,
+                normalize_input=normalize_input
             )
         except ImportError:
             logger.error("N-BEATS model module not available")

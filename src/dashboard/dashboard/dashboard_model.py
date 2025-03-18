@@ -1,11 +1,28 @@
 """
 dashboard_model.py
 
-Functions for model creation, training, tuning, loading, and prediction.
+This module provides the core model management functionality for the dashboard interface.
+It handles all model-related operations including:
+
+- Loading and saving trained models
+- Generating predictions and forecasts
+- Managing hyperparameter tuning processes
+- Interfacing with the Optuna optimization framework
+- Processing model training results
+
+The module serves as a bridge between the dashboard UI and the underlying
+prediction model infrastructure, allowing users to interact with models
+through the Streamlit interface.
+
+Dependencies:
+- Requires access to the config module for settings
+- Uses the prediction_service module for forecasting
+- Integrates with the tuning and training modules
+- Depends on Optuna for hyperparameter optimization
 """
 
-import json
 import os
+import json
 import sys
 import time
 from datetime import datetime
@@ -13,7 +30,9 @@ from datetime import datetime
 import optuna
 import yaml
 
-# Add project root to Python path
+# Add project root to Python path to enable relative imports
+# This ensures all project modules are accessible regardless of where
+# the dashboard is launched from
 current_file = os.path.abspath(__file__)
 dashboard_dir = os.path.dirname(current_file)
 dashboard_parent = os.path.dirname(dashboard_dir)
@@ -28,22 +47,26 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-# Import config
+# Import configuration settings - these control global behavior
+# of the model training and prediction processes
 from config.config_loader import (
     DATA_DIR,
     N_STARTUP_TRIALS,
 )
 from config.logger_config import logger
 
-# Import required dashboard modules
+# Import dashboard error handling utilities for more robust operation
 from src.dashboard.dashboard.dashboard_error import robust_error_boundary
 
-# Initialize required paths
+# Initialize paths for storing hyperparameters and best model configurations
+# This creates a centralized location for model parameters that can be 
+# referenced across the application
 HYPERPARAMS_DIR = os.path.join(DATA_DIR, "hyperparams")
 BEST_PARAMS_FILE = os.path.join(HYPERPARAMS_DIR, "best_params.yaml")
 os.makedirs(HYPERPARAMS_DIR, exist_ok=True)
 
-# Initialize training optimizer
+# Initialize training optimizer to efficiently allocate computational resources
+# based on the available hardware (CPUs/GPUs)
 try:
     from src.utils.training_optimizer import get_training_optimizer
 
@@ -55,9 +78,10 @@ except Exception as e:
     logger.warning(f"Could not initialize training optimizer: {e}")
     training_optimizer = None
 
-# Import tuning-related functions
+# Import utilities for hyperparameter tuning and progress tracking
 try:
-    from src.training.callbacks import StopStudyCallback, create_progress_callback
+    from src.tuning.meta_tuning import create_progress_callback
+    from src.training.callbacks import StopStudyCallback
     from src.tuning.progress_helper import (
         is_stop_requested,
         read_progress_from_yaml,
@@ -70,17 +94,31 @@ try:
 except ImportError as e:
     logger.warning(f"Could not import tuning helpers: {e}")
 
-    # Define fallbacks for critical functions
+    # Define fallbacks for critical functions to maintain minimum functionality
+    # even when full tuning capabilities aren't available
     def update_progress_in_yaml(progress_data):
         logger.warning("Using fallback update_progress_in_yaml")
 
     def is_stop_requested():
         return False
-
+    
 
 @robust_error_boundary
 def generate_future_forecast(model, df, feature_cols, lookback=30, horizon=30):
-    """Generate predictions for the next 'horizon' days into the future"""
+    """
+    Generate predictions for the next 'horizon' days into the future.
+    Wrapper around prediction_service.generate_forecast for dashboard compatibility.
+    
+    Args:
+        model: The trained model
+        df: DataFrame with historical data
+        feature_cols: Feature columns to use
+        lookback: Number of past days to use for input
+        horizon: Number of days to forecast
+        
+    Returns:
+        List of forecasted values
+    """
     try:
         if model is None or df is None or df.empty:
             return []
@@ -89,69 +127,11 @@ def generate_future_forecast(model, df, feature_cols, lookback=30, horizon=30):
         lookback = lookback or st.session_state.get("lookback", 30)
         horizon = horizon or st.session_state.get("forecast_window", 30)
 
-        # Get the last 'lookback' days of data for input
-        last_data = df.iloc[-lookback:].copy()
-
-        # Create a scaler for feature normalization
-        from sklearn.preprocessing import StandardScaler
-
-        scaler = StandardScaler()
-        scaler.fit(last_data[feature_cols])
-
-        # Initialize array to store predictions
-        future_prices = []
-        current_data = last_data.copy()
-
-        # Create sequences for prediction
-        try:
-            from src.data.preprocessing import create_sequences
-
-            X_input, _ = create_sequences(
-                current_data, feature_cols, "Close", lookback, 1
-            )
-
-            # Make prediction for full horizon at once if model supports it
-            if hasattr(model, "predict") and callable(model.predict):
-                preds = model.predict(X_input, verbose=0)
-                if isinstance(preds, np.ndarray) and preds.shape[1] >= horizon:
-                    # If model can predict full horizon at once
-                    return preds[0, :horizon].tolist()
-
-                # Otherwise, predict one day at a time
-                next_price = float(preds[0][0])
-                future_prices.append(next_price)
-
-                # Continue with iterative prediction for remaining days
-                for i in range(1, horizon):
-                    # Update data with previous prediction
-                    next_row = current_data.iloc[-1:].copy()
-                    if isinstance(next_row.index[0], pd.Timestamp):
-                        next_row.index = [next_row.index[0] + pd.Timedelta(days=1)]
-                    else:
-                        next_row.index = [next_row.index[0] + 1]
-
-                    next_row["Close"] = next_price
-                    current_data = pd.concat([current_data.iloc[1:], next_row])
-
-                    # Rescale features
-                    current_scaled = current_data.copy()
-                    current_scaled[feature_cols] = scaler.transform(
-                        current_data[feature_cols]
-                    )
-
-                    # Create new sequence and predict
-                    X_input, _ = create_sequences(
-                        current_scaled, feature_cols, "Close", lookback, 1
-                    )
-                    preds = model.predict(X_input, verbose=0)
-                    next_price = float(preds[0][0])
-                    future_prices.append(next_price)
-
-            return future_prices
-        except Exception as e:
-            logger.error(f"Error in sequence prediction: {e}", exc_info=True)
-            return []
-
+        # Use PredictionService for consistency
+        from src.dashboard.prediction_service import PredictionService
+        service = PredictionService(model_instance=model)
+        
+        return service.generate_forecast(df, feature_cols, lookback, horizon)
     except Exception as e:
         logger.error(f"Error generating future forecast: {e}", exc_info=True)
         return []
@@ -160,8 +140,18 @@ def generate_future_forecast(model, df, feature_cols, lookback=30, horizon=30):
 @robust_error_boundary
 def start_tuning(ticker, timeframe, multipliers=None):
     """
-    Start hyperparameter tuning for the specified ticker and timeframe.
+    Initiates the model tuning process for the specified ticker and timeframe.
+    
+    Args:
+        ticker (str): The ticker symbol to tune for (e.g., 'ETH-USD')
+        timeframe (str): The timeframe to use (e.g., '1d', '1h')
+        multipliers (dict, optional): Additional parameters for tuning
+    
+    Returns:
+        bool: True if tuning was started successfully, False otherwise
     """
+    print(f"DEBUG: start_tuning called with ticker={ticker}, timeframe={timeframe}")
+    
     # Force clean any stale lock files first
     try:
         from src.utils.threadsafe import cleanup_stale_locks
@@ -171,16 +161,13 @@ def start_tuning(ticker, timeframe, multipliers=None):
     except ImportError:
         print("Could not import cleanup_stale_locks - continuing anyway")
 
-    # Check if tuning is already in progress - if yes, just return
-    if st.session_state.get("tuning_in_progress", False):
-        st.warning(
-            "Tuning is already in progress. Use the Stop button if you want to restart."
-        )
-        return
-
-    # Reset session state to ensure clean start
+    # Debug: print current tuning flag
+    print("DEBUG: tuning_in_progress =", st.session_state.get("tuning_in_progress", False))
+    
+    # MODIFIED: Always force reset the flag to False first, ignoring previous state
+    # This ensures we start from a clean state each time the user clicks "Start Tuning"
     st.session_state["tuning_in_progress"] = False
-
+    
     # Check and reset tuning status from file
     try:
         # Import directly from progress_helper for consistency
@@ -204,11 +191,23 @@ def start_tuning(ticker, timeframe, multipliers=None):
                     )
                     tuning_status["is_running"] = False
                 else:
-                    st.warning(
-                        "Tuning appears to be running in another process. Please stop that process first."
-                    )
-                    st.session_state["tuning_in_progress"] = True
-                    return
+                    # MODIFIED: Add option to force start anyway
+                    if st.session_state.get("force_start_tuning", False):
+                        print("Force starting tuning despite ongoing process")
+                        write_tuning_status(
+                            {
+                                "is_running": False,
+                                "error": "Reset due to force start",
+                                "timestamp": datetime.now().isoformat(),
+                            }
+                        )
+                        tuning_status["is_running"] = False
+                        # Clear the force flag 
+                        st.session_state["force_start_tuning"] = False
+                    else:
+                        print("Tuning appears to be running in another process. Please stop that process first or use Force Start.")
+                        st.session_state["tuning_in_progress"] = True
+                        return
             except (ValueError, TypeError):
                 # If we can't parse the start_time, assume it's stale
                 print("Could not parse start_time from tuning status - resetting")
@@ -227,12 +226,28 @@ def start_tuning(ticker, timeframe, multipliers=None):
         tuning_status = read_tuning_status()
 
     if tuning_status.get("is_running", False):
-        st.warning(
-            "Tuning is already running in another process. Please stop that process first."
-        )
-        # Update session state for consistency
-        st.session_state["tuning_in_progress"] = True
-        return
+        # MODIFIED: Add option to force start anyway
+        if st.session_state.get("force_start_tuning", False):
+            print("Force starting tuning despite ongoing process")
+            # Reset tuning status in file
+            try:
+                from src.tuning.progress_helper import write_tuning_status
+                write_tuning_status(
+                    {
+                        "is_running": False,
+                        "error": "Reset due to force start",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+            except ImportError:
+                pass
+            # Clear the force flag
+            st.session_state["force_start_tuning"] = False
+        else:
+            print("Tuning is already running in another process. Please stop that process first or use Force Start.")
+            # Update session state for consistency
+            st.session_state["tuning_in_progress"] = True
+            return
 
     # Update session state
     st.session_state["tuning_in_progress"] = True
@@ -301,14 +316,24 @@ def start_tuning(ticker, timeframe, multipliers=None):
         update_progress_in_yaml(initial_progress)
 
         # Start tuning process
-        from src.tuning.meta_tuning import start_tuning_process
-
+        print(f"DEBUG: About to call start_tuning_process for {ticker} {timeframe}")
+        try:
+            # Try importing before calling
+            from src.tuning.meta_tuning import start_tuning_process
+            print("DEBUG: Successfully imported start_tuning_process")
+        except Exception as e:
+            print(f"DEBUG-ERROR: Failed to import start_tuning_process: {e}")
+            
+        # Call the actual tuning process
         start_tuning_process(ticker, timeframe, multipliers)
+        print("DEBUG: Called start_tuning_process successfully")
 
-        st.success(f"Started hyperparameter tuning for {ticker} ({timeframe})")
+        print(f"Started hyperparameter tuning for {ticker} ({timeframe})")
+        # Don't call st.success() here to avoid errors in Streamlit
+        # Instead, we'll rely on the experimental_rerun to update the UI
         st.experimental_rerun()  # Force rerun to update UI
     except Exception as e:
-        st.error(f"Failed to start tuning: {e}")
+        print(f"Failed to start tuning: {e}")
         # Reset status on error
         st.session_state["tuning_in_progress"] = False
 
@@ -546,7 +571,7 @@ def train_model_with_params(model, X_train, y_train, X_val, y_val, params):
 
 # First, let's modify the create_resilient_study to call the one from meta_tuning
 def create_resilient_study(
-    study_name, storage_name, direction="minimize", n_startup_trials=100
+    study_name, storage_name, direction="minimize", n_startup_trials=10000
 ):
     """
     Create an Optuna study with better error handling and fallback to in-memory if needed.
@@ -783,6 +808,14 @@ def update_cycle_metrics(cycle_summary, cycle_num=1):
             json.dump(cycle_summary, f, indent=2)
 
         logger.info(f"Updated cycle metrics for cycle {cycle_num}")
+        
+        # Also update YAML-based metrics for consistency
+        try:
+            from src.tuning.progress_helper import update_cycle_metrics as update_yaml_cycle_metrics
+            update_yaml_cycle_metrics(cycle_summary, cycle_num)
+        except ImportError:
+            logger.warning("Could not update YAML cycle metrics - import failed")
+            
     except Exception as e:
         logger.error(f"Error updating cycle metrics: {e}")
 
@@ -837,3 +870,168 @@ def register_best_model(study, trial, ticker, timeframe):
     except Exception as e:
         logger.error(f"Error registering best model: {e}")
         return None
+
+
+def get_model_insights(ticker=None, timeframe=None):
+    """
+    Get insights about model performance and feature usage.
+    
+    Args:
+        ticker: Ticker symbol to filter insights
+        timeframe: Timeframe to filter insights
+        
+    Returns:
+        dict: Dictionary of model insights
+    """
+    insights = {
+        "feature_usage": {},
+        "performance_metrics": {},
+        "feature_importance": {},
+        "model_weights": {}
+    }
+    
+    # Get active features
+    if "active_features" in st.session_state:
+        insights["feature_usage"]["active_features"] = st.session_state["active_features"]
+    
+    # Get feature importance if available
+    if "feature_importance" in st.session_state:
+        insights["feature_importance"] = st.session_state["feature_importance"]
+    
+    # Get ensemble weights if available
+    if "ensemble_weights" in st.session_state:
+        insights["model_weights"] = st.session_state["ensemble_weights"]
+    
+    # Get performance metrics if available
+    if "best_metrics" in st.session_state:
+        insights["performance_metrics"]["best"] = st.session_state["best_metrics"]
+    
+    # Add drift metrics if available
+    if "drift_visualization" in st.session_state:
+        insights["drift"] = st.session_state["drift_visualization"]
+    
+    return insights
+
+
+@robust_error_boundary
+def display_model_metrics(filter_by_cycle=None):
+    """Display both combined and individual model metrics in the dashboard."""
+    try:
+        # Import functions to get metrics
+        from src.tuning.progress_helper import get_cycle_metrics, get_individual_model_progress, read_progress_from_yaml
+        
+        # Get both cycle metrics and aggregated progress data
+        cycle_metrics = get_cycle_metrics(filter_by_cycle)
+        progress_data = read_progress_from_yaml()
+        
+        if not cycle_metrics and not progress_data:
+            st.info("No cycle metrics or progress data available yet.")
+            return
+            
+        # Display combined metrics first
+        st.subheader("Combined Model Metrics")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            # Use ensemble RMSE if available, otherwise best individual RMSE
+            rmse = cycle_metrics.get("ensemble_rmse", 
+                   cycle_metrics.get("best_rmse", 
+                   progress_data.get("best_rmse", "N/A")))
+            if isinstance(rmse, (int, float)):
+                st.metric("Best RMSE", f"{rmse:.4f}")
+            else:
+                st.metric("Best RMSE", "N/A")
+                
+        with col2:
+            # Use ensemble MAPE if available, otherwise best individual MAPE
+            mape = cycle_metrics.get("ensemble_mape", 
+                   cycle_metrics.get("best_mape", 
+                   progress_data.get("best_mape", "N/A")))
+            if isinstance(mape, (int, float)):
+                st.metric("Best MAPE", f"{mape:.2f}%")
+            else:
+                st.metric("Best MAPE", "N/A")
+                
+        with col3:
+            # Use ensemble DA if available, otherwise best individual DA
+            da = cycle_metrics.get("ensemble_directional_accuracy", 
+                 cycle_metrics.get("directional_accuracy", "N/A"))
+            if isinstance(da, (int, float)):
+                st.metric("Direction Acc.", f"{da:.2f}%")
+            else:
+                st.metric("Direction Acc.", "N/A")
+                
+        with col4:
+            # Get cycle number from either source
+            cycle_num = cycle_metrics.get("cycle", progress_data.get("cycle", 1))
+            st.metric("Cycle", f"{cycle_num}")
+            
+            # Display best model if available
+            best_model = progress_data.get("best_model", cycle_metrics.get("best_model", None))
+            if best_model:
+                st.caption(f"Best: {best_model}")
+        
+        # Show ensemble weights if available
+        if "ensemble_weights" in cycle_metrics or "normalized_weights" in cycle_metrics:
+            st.subheader("Ensemble Weights")
+            weights = cycle_metrics.get("normalized_weights", cycle_metrics.get("ensemble_weights", {}))
+            
+            # Convert to DataFrame for better display
+            weights_data = [{"Model": model, "Weight": f"{weight:.2%}"} 
+                           for model, weight in weights.items()]
+            
+            if weights_data:
+                st.dataframe(pd.DataFrame(weights_data))
+            
+        # Show progress bar for overall completion using aggregated counts
+        current = progress_data.get("aggregated_current_trial", 
+                 progress_data.get("current_trial", 
+                 cycle_metrics.get("current_trial", 0)))
+                 
+        total = progress_data.get("aggregated_total_trials", 
+               progress_data.get("total_trials", 
+               cycle_metrics.get("total_trials", 1)))
+               
+        progress_pct = current / max(1, total)
+        st.progress(progress_pct)
+        st.caption(f"Overall Progress: {current}/{total} trials ({progress_pct*100:.1f}%)")
+            
+        # Now display individual model metrics from both sources
+        st.subheader("Individual Model Metrics")
+        
+        # First try to get model metrics from cycle_metrics
+        model_data = []
+        if "model_metrics" in cycle_metrics and cycle_metrics["model_metrics"]:
+            for model_type, metrics in cycle_metrics["model_metrics"].items():
+                model_data.append({
+                    "Model Type": model_type,
+                    "RMSE": f"{metrics.get('rmse', 'N/A'):.4f}" if isinstance(metrics.get('rmse'), (int, float)) else "N/A",
+                    "MAPE": f"{metrics.get('mape', 'N/A'):.2f}%" if isinstance(metrics.get('mape'), (int, float)) else "N/A",
+                    "Dir. Acc.": f"{metrics.get('directional_accuracy', 'N/A'):.2f}%" 
+                               if isinstance(metrics.get('directional_accuracy'), (int, float)) else "N/A",
+                    "Weight": f"{metrics.get('weight', 0):.2%}" if isinstance(metrics.get('weight'), (int, float)) else "N/A",
+                    "Trials": f"{metrics.get('current_trial', metrics.get('completed_trials', 0))}/{metrics.get('total_trials', 'N/A')}"
+                })
+        
+        # If no model metrics in cycle_metrics or empty, get from model_trials in progress_data
+        if not model_data and "model_trials" in progress_data:
+            model_progress = get_individual_model_progress()
+            for model_type, progress in model_progress.items():
+                # Get best metrics for this model if available
+                is_best_model = model_type == progress_data.get("best_model", "")
+                model_data.append({
+                    "Model Type": f"{model_type} {'★' if is_best_model else ''}",
+                    "Trials": f"{progress.get('current_trial', 0)}/{progress.get('total_trials', 'N/A')}",
+                    "Completion": f"{progress.get('completion_percentage', 0):.1f}%",
+                    "Status": "Running" if progress.get('current_trial', 0) < progress.get('total_trials', 1) else "Complete"
+                })
+        
+        # Display the model data
+        if model_data:
+            df = pd.DataFrame(model_data)
+            st.dataframe(df)
+        else:
+            st.info("No individual model metrics available.")
+    except Exception as e:
+        st.error(f"Error displaying model metrics: {e}")
+        logger.error(f"Error in display_model_metrics: {e}", exc_info=True)

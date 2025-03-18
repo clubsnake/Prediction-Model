@@ -1,5 +1,14 @@
+"""
+Comprehensive model visualization dashboard for ensemble time series models.
+
+This module provides visualization tools to better understand model architectures,
+performance metrics, and ensemble dynamics for various types of time series models
+including traditional machine learning, deep learning, and specialized architectures.
+"""
+
 import os
 from datetime import timedelta
+from typing import Dict, List, Optional, Union, Any
 
 import numpy as np
 import pandas as pd
@@ -9,12 +18,18 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-class ModelVisualizationDashboard:
-    """Comprehensive dashboard for visualizing ensemble model performance and learning"""
 
-    def __init__(self, ensemble_weighter, model_directory="model_weights"):
+class ModelVisualizationDashboard:
+    """
+    Comprehensive dashboard for visualizing ensemble model performance and architecture.
+    
+    Provides interactive visualizations for model weights, performance metrics,
+    regime analysis, architectural details, and learning insights.
+    """
+
+    def __init__(self, ensemble_weighter, model_directory: str = "model_weights"):
         """
-        Initialize visualization dashboard
+        Initialize visualization dashboard.
 
         Args:
             ensemble_weighter: Instance of AdvancedEnsembleWeighter
@@ -28,14 +43,15 @@ class ModelVisualizationDashboard:
 
         # Model type colors for consistent visualization
         self.model_colors = {
-            "lstm": "#1f77b4",  # blue
-            "rnn": "#ff7f0e",  # orange
-            "xgboost": "#2ca02c",  # green
+            "lstm": "#1f77b4",       # blue
+            "rnn": "#ff7f0e",        # orange
+            "xgboost": "#2ca02c",    # green
             "random_forest": "#d62728",  # red
-            "cnn": "#9467bd",  # purple
-            "nbeats": "#8c564b",  # brown
-            "ltc": "#e377c2",  # pink
-            "tft": "#7f7f7f",  # gray
+            "cnn": "#9467bd",        # purple
+            "nbeats": "#8c564b",     # brown
+            "ltc": "#e377c2",        # pink
+            "tabnet": "#bcbd22",     # olive
+            "tft": "#7f7f7f",        # gray
         }
 
         # Collect error metrics if available
@@ -44,7 +60,12 @@ class ModelVisualizationDashboard:
             self.error_metrics = self.weighter.error_history
 
     def render_dashboard(self):
-        """Render the complete model visualization dashboard"""
+        """
+        Render the complete model visualization dashboard with all tabs.
+        
+        Creates and renders tabs for ensemble weights, model performance,
+        regime analysis, model architecture, and learning insights.
+        """
         st.title("Ensemble Model Visualization Dashboard")
 
         # Create tabs for different visualization groups
@@ -79,7 +100,12 @@ class ModelVisualizationDashboard:
             self.render_learning_insights_tab()
 
     def render_ensemble_weights_tab(self):
-        """Render visualizations related to ensemble weights"""
+        """
+        Render visualizations related to ensemble weights.
+        
+        Shows weight evolution over time, current weight distribution,
+        and regime transitions when available.
+        """
         st.header("Ensemble Weight Evolution")
 
         # Weight history plot
@@ -212,7 +238,12 @@ class ModelVisualizationDashboard:
             st.plotly_chart(fig, use_container_width=True)
 
     def render_model_performance_tab(self):
-        """Render visualizations related to model performance"""
+        """
+        Render visualizations related to model performance.
+        
+        Shows error over time, average error by model type, error distribution,
+        and direction accuracy if available.
+        """
         st.header("Model Performance Analysis")
 
         # Create error over time plot
@@ -357,7 +388,12 @@ class ModelVisualizationDashboard:
             st.warning("No error metrics available in the ensemble weighter")
 
     def render_regime_analysis_tab(self):
-        """Render visualizations related to market regime analysis"""
+        """
+        Render visualizations related to market regime analysis.
+        
+        Shows current regime, regime performance if available, and 
+        model-specific regime performance.
+        """
         st.header("Market Regime Analysis")
 
         # Get current regime if available
@@ -529,18 +565,36 @@ class ModelVisualizationDashboard:
                     st.plotly_chart(fig, use_container_width=True)
 
     def render_model_architecture_tab(self):
-        """Render visualizations related to model architecture"""
+        """
+        Render visualizations related to model architecture.
+        
+        Allows users to select and visualize different model architectures
+        including LSTM, RNN, XGBoost, Random Forest, CNN, NBEATS, LTC, 
+        TabNet, and TFT.
+        """
         st.header("Model Architecture Visualization")
 
         # Get model types and filter out 'transformer' if it exists since it's the same as 'tft'
-        model_types = [
-            model
-            for model in self.weighter.base_weights.keys()
-            if model != "transformer"
-        ]
+        try:
+            model_types = [
+                model
+                for model in self.weighter.base_weights.keys()
+                if model != "transformer"
+            ]
+        except (AttributeError, TypeError):
+            # In case weighter doesn't have base_weights
+            model_types = []
+        
+        # ALWAYS include these model types even if they're not in base_weights
+        required_models = ["lstm", "rnn", "xgboost", "random_forest", "cnn", "nbeats", "ltc", "tabnet", "tft"]
+        
+        # Add any missing models to ensure they always appear in the selection
+        for model in required_models:
+            if model not in model_types:
+                model_types.append(model)
 
         # Select model to visualize
-        selected_model = st.selectbox("Select Model to Visualize", model_types)
+        selected_model = st.selectbox("Select Model to Visualize", sorted(model_types))
 
         # Architecture visualization based on model type
         if selected_model:
@@ -560,6 +614,8 @@ class ModelVisualizationDashboard:
                 self._visualize_nbeats_architecture()
             elif selected_model == "ltc":
                 self._visualize_ltc_architecture()
+            elif selected_model == "tabnet":
+                self._visualize_tabnet_architecture()
             elif selected_model == "tft":
                 self._visualize_tft_architecture()
             else:
@@ -568,7 +624,11 @@ class ModelVisualizationDashboard:
                 )
 
     def render_learning_insights_tab(self):
-        """Render visualizations related to model learning process"""
+        """
+        Render visualizations related to model learning process.
+        
+        Shows Optuna feedback, suggested adjustments, and learning trajectories.
+        """
         st.header("Model Learning Insights")
 
         # Optuna feedback and suggestions
@@ -781,12 +841,17 @@ class ModelVisualizationDashboard:
                 st.plotly_chart(fig, use_container_width=True)
 
     def _visualize_lstm_architecture(self):
-        """Visualize LSTM architecture"""
+        """
+        Visualize LSTM architecture with gates and information flow.
+        
+        Shows the LSTM cell structure, key components, and advantages
+        for time series prediction.
+        """
         st.markdown(
             """
         <div style="background-color: #f0f0f0; padding: 20px; border-radius: 10px;">
-            <h3 style="text-align: center;">Long Short-Term Memory (LSTM) Architecture</h3>
-            <p style="text-align: center;">LSTM uses gates to control information flow over time, making it suitable for time series prediction</p>
+            <h3 style="text-align: center; color: #2C3E50;">Long Short-Term Memory (LSTM) Architecture</h3>
+            <p style="text-align: center; color: #34495E;">LSTM uses gates to control information flow over time, making it suitable for time series prediction</p>
         </div>
         """,
             unsafe_allow_html=True,
@@ -835,42 +900,48 @@ class ModelVisualizationDashboard:
         """
 
         try:
-
             st.graphviz_chart(lstm_diagram)
-        except:
+        except Exception as e:
+            st.warning(f"Unable to render graph visualization: {e}")
             st.code(lstm_diagram, language="dot")
 
         st.markdown(
             """
-        ### LSTM Key Components:
+        ### <span style="color:#2C3E50; font-weight:bold;">LSTM Key Components:</span>
         
-        1. **Forget Gate**: Decides what information to discard from cell state
-        2. **Input Gate**: Updates the cell state with new information
-        3. **Cell State**: Long-term memory component 
-        4. **Output Gate**: Controls what information to output
+        1. <span style="color:#154360; font-weight:bold;">Forget Gate:</span> Decides what information to discard from cell state
+        2. <span style="color:#154360; font-weight:bold;">Input Gate:</span> Updates the cell state with new information
+        3. <span style="color:#154360; font-weight:bold;">Cell State:</span> Long-term memory component 
+        4. <span style="color:#154360; font-weight:bold;">Output Gate:</span> Controls what information to output
         
-        ### Advantages for Time Series:
+        ### <span style="color:#2C3E50; font-weight:bold;">Advantages for Time Series:</span>
         
-        - Handles long-term dependencies in data
-        - Avoids vanishing gradient problem
-        - Can remember patterns over many time steps
-        - Effective for cryptocurrency price prediction
+        - <span style="color:#1E8449;">Handles long-term dependencies</span> in data
+        - <span style="color:#1E8449;">Avoids vanishing gradient problem</span>
+        - <span style="color:#1E8449;">Can remember patterns</span> over many time steps
+        - <span style="color:#1E8449;">Effective for price prediction</span>
         
-        ### Typical Architecture:
+        ### <span style="color:#2C3E50; font-weight:bold;">Typical Architecture:</span>
         
         - Input layer → LSTM layer(s) → Dense layer(s) → Output
         - Often includes dropout for regularization
         - Can be stacked for more complex patterns
-        """
+        """,
+            unsafe_allow_html=True
         )
 
     def _visualize_rnn_architecture(self):
-        """Visualize RNN architecture"""
+        """
+        Visualize RNN architecture with recurrent connections.
+        
+        Shows the RNN cell structure, unrolled network, characteristics,
+        and limitations for time series prediction.
+        """
         st.markdown(
             """
         <div style="background-color: #f0f0f0; padding: 20px; border-radius: 10px;">
-            <h3 style="text-align: center;">Recurrent Neural Network (RNN) Architecture</h3>
-            <p style="text-align: center;">Simple but powerful architecture for processing sequential data</p>
+            <h3 style="text-align: center; color: #2C3E50;">Recurrent Neural Network (RNN) Architecture</h3>
+            <p style="text-align: center; color: #34495E;">Simple but powerful architecture for processing sequential data</p>
         </div>
         """,
             unsafe_allow_html=True,
@@ -902,9 +973,9 @@ class ModelVisualizationDashboard:
         """
 
         try:
-
             st.graphviz_chart(rnn_diagram)
-        except:
+        except Exception as e:
+            st.warning(f"Unable to render graph visualization: {e}")
             st.code(rnn_diagram, language="dot")
 
         # Unrolled RNN
@@ -949,42 +1020,51 @@ class ModelVisualizationDashboard:
         """
 
         try:
-
             st.graphviz_chart(unrolled_rnn)
-        except:
+        except Exception as e:
+            st.warning(f"Unable to render graph visualization: {e}")
             st.code(unrolled_rnn, language="dot")
 
         st.markdown(
             """
-        ### RNN Characteristics:
+        ### <span style="color:#2C3E50; font-weight:bold;">RNN Characteristics:</span>
         
-        1. **Recurrent Connection**: Hidden state is fed back into the network
-        2. **Shared Parameters**: Same weights used at each time step
-        3. **Memory**: Limited short-term memory capability
+        1. <span style="color:#154360; font-weight:bold;">Recurrent Connection:</span> Hidden state is fed back into the network
+        2. <span style="color:#154360; font-weight:bold;">Shared Parameters:</span> Same weights used at each time step
+        3. <span style="color:#154360; font-weight:bold;">Memory:</span> Limited short-term memory capability
         
-        ### Limitations:
+        ### <span style="color:#2C3E50; font-weight:bold;">Limitations:</span>
         
-        - Struggles with long-term dependencies due to vanishing gradient
-        - Less powerful than LSTM for complex patterns
-        - Works best for shorter time windows
+        - <span style="color:#922B21;">Struggles with long-term dependencies</span> due to vanishing gradient
+        - <span style="color:#922B21;">Less powerful than LSTM</span> for complex patterns
+        - <span style="color:#922B21;">Works best for shorter time windows</span>
         
-        ### Common Uses:
+        ### <span style="color:#2C3E50; font-weight:bold;">Common Uses:</span>
         
         - Baseline for time series prediction
         - Simpler patterns in market data
         - When computational efficiency is important
-        """
+        """,
+            unsafe_allow_html=True
         )
 
     def _visualize_tree_architecture(self, model_type):
-        """Visualize tree-based model architecture (XGBoost/Random Forest)"""
+        """
+        Visualize tree-based model architecture.
+        
+        Args:
+            model_type: Either "XGBoost" or "Random Forest"
+            
+        Shows the tree structure, ensemble approach, and feature importance
+        for the specified tree-based model.
+        """
         is_xgboost = model_type == "XGBoost"
 
         st.markdown(
             f"""
         <div style="background-color: #f0f0f0; padding: 20px; border-radius: 10px;">
-            <h3 style="text-align: center;">{model_type} Architecture</h3>
-            <p style="text-align: center;">Tree-based ensemble method that excels at capturing non-linear patterns</p>
+            <h3 style="text-align: center; color: #2C3E50;">{model_type} Architecture</h3>
+            <p style="text-align: center; color: #34495E;">Tree-based ensemble method that excels at capturing non-linear patterns</p>
         </div>
         """,
             unsafe_allow_html=True,
@@ -1023,9 +1103,9 @@ class ModelVisualizationDashboard:
             """
 
             try:
-
                 st.graphviz_chart(tree_diagram)
-            except:
+            except Exception as e:
+                st.warning(f"Unable to render graph visualization: {e}")
                 st.code(tree_diagram, language="dot")
 
         with col2:
@@ -1073,11 +1153,11 @@ class ModelVisualizationDashboard:
                     
                     subgraph cluster_trees {
                         label="Parallel Trees";
-                        tree1 [label="Tree 1\nBootstrap Sample", shape=triangle, style=filled, fillcolor=lightblue];
-                        tree2 [label="Tree 2\nBootstrap Sample", shape=triangle, style=filled, fillcolor=lightblue];
-                        tree3 [label="Tree 3\nBootstrap Sample", shape=triangle, style=filled, fillcolor=lightblue];
+                        tree1 [label="Tree 1\\nBootstrap Sample", shape=triangle, style=filled, fillcolor=lightblue];
+                        tree2 [label="Tree 2\\nBootstrap Sample", shape=triangle, style=filled, fillcolor=lightblue];
+                        tree3 [label="Tree 3\\nBootstrap Sample", shape=triangle, style=filled, fillcolor=lightblue];
                         dots [label="...", shape=plaintext];
-                        treeN [label="Tree N\nBootstrap Sample", shape=triangle, style=filled, fillcolor=lightblue];
+                        treeN [label="Tree N\\nBootstrap Sample", shape=triangle, style=filled, fillcolor=lightblue];
                     }
                     
                     avg [label="Average", shape=circle, style=filled, fillcolor=yellow];
@@ -1096,38 +1176,39 @@ class ModelVisualizationDashboard:
                 """
 
             try:
-
                 st.graphviz_chart(ensemble_diagram)
-            except:
+            except Exception as e:
+                st.warning(f"Unable to render graph visualization: {e}")
                 st.code(ensemble_diagram, language="dot")
 
         st.markdown(
             f"""
-        ### {model_type} Key Characteristics:
+        ### <span style="color:#2C3E50; font-weight:bold;">{model_type} Key Characteristics:</span>
         
-        1. **{'Boosting' if is_xgboost else 'Bagging'}**: 
+        1. <span style="color:#154360; font-weight:bold;">{'Boosting' if is_xgboost else 'Bagging'}:</span> 
            {'Each tree corrects errors of previous trees' if is_xgboost else 'Each tree is built independently on different bootstrap samples'}
         
-        2. **Tree Structure**: Decision rules based on feature thresholds
+        2. <span style="color:#154360; font-weight:bold;">Tree Structure:</span> Decision rules based on feature thresholds
         
-        3. **{'Gradient Descent' if is_xgboost else 'Random Feature Selection'}**: 
+        3. <span style="color:#154360; font-weight:bold;">{'Gradient Descent' if is_xgboost else 'Random Feature Selection'}:</span> 
            {'Minimizes loss function using gradient information' if is_xgboost else 'Each tree considers a random subset of features'}
         
-        ### Advantages for Crypto Prediction:
+        ### <span style="color:#2C3E50; font-weight:bold;">Advantages for Price Prediction:</span>
         
-        - Captures non-linear relationships in price data
-        - Robust to outliers and market anomalies
-        - Can identify important features automatically
-        - {'Excellent performance for trend detection' if is_xgboost else 'Less prone to overfitting volatile markets'}
+        - <span style="color:#1E8449;">Captures non-linear relationships</span> in price data
+        - <span style="color:#1E8449;">Robust to outliers</span> and market anomalies
+        - <span style="color:#1E8449;">Identifies important features</span> automatically
+        - <span style="color:#1E8449;">{'Excellent for trend detection' if is_xgboost else 'Less prone to overfitting'}</span>
         
-        ### Feature Importance:
+        ### <span style="color:#2C3E50; font-weight:bold;">Feature Importance:</span>
         
         {model_type} can identify the most important features for prediction, such as:
         - Technical indicators (RSI, MACD, Bollinger Bands)
         - Volume metrics
         - Market sentiment scores
         - Historical price patterns
-        """
+        """,
+            unsafe_allow_html=True
         )
 
         # Add sample feature importance plot
@@ -1162,127 +1243,142 @@ class ModelVisualizationDashboard:
         st.plotly_chart(fig, use_container_width=True)
 
     def _visualize_cnn_architecture(self):
-        """Visualize CNN architecture for time series"""
+        """
+        Visualize CNN architecture for time series.
+        
+        Shows the CNN structure for time series data, key components,
+        advantages, and sample filter activations.
+        """
         st.markdown(
             """
         <div style="background-color: #f0f0f0; padding: 20px; border-radius: 10px;">
-            <h3 style="text-align: center;">Convolutional Neural Network (CNN) for Time Series</h3>
-            <p style="text-align: center;">Using 1D convolutions to detect patterns in sequential financial data</p>
+            <h3 style="text-align: center; color: #2C3E50;">Convolutional Neural Network (CNN) for Time Series</h3>
+            <p style="text-align: center; color: #34495E;">Using 1D convolutions to detect patterns in sequential financial data</p>
         </div>
         """,
             unsafe_allow_html=True,
         )
+        
+        # Add a structured diagram for CNN
+        cnn_diagram = """
+        digraph G {
+            rankdir=LR;
+            
+            // Input
+            subgraph cluster_input {
+                label="Input";
+                style=filled;
+                color=lightgrey;
+                node [style=filled, fillcolor="#AED6F1"];
+                
+                input [label="Time Series\\nInput\\n[batch, seq_len, features]"];
+            }
+            
+            // Conv1D layers
+            subgraph cluster_conv {
+                label="Convolutional Layers";
+                style=filled;
+                color=lightgrey;
+                node [style=filled, fillcolor="#A2D9CE"];
+                
+                conv1 [label="Conv1D\\nKernel Size = 3\\nStride = 1"];
+                conv2 [label="Conv1D\\nKernel Size = 3\\nStride = 1"];
+            }
+            
+            // Pooling
+            subgraph cluster_pooling {
+                label="Pooling";
+                style=filled;
+                color=lightgrey;
+                node [style=filled, fillcolor="#F9E79F"];
+                
+                pool [label="MaxPooling1D\\nPool Size = 2"];
+            }
+            
+            // Flattening
+            subgraph cluster_flatten {
+                label="Reshape";
+                style=filled;
+                color=lightgrey;
+                node [style=filled, fillcolor="#F5B7B1"];
+                
+                flat [label="Flatten"];
+            }
+            
+            // Dense layers
+            subgraph cluster_dense {
+                label="Dense Layers";
+                style=filled;
+                color=lightgrey;
+                node [style=filled, fillcolor="#D7BDE2"];
+                
+                dense1 [label="Dense\\nReLU"];
+                dense2 [label="Dense\\nReLU"];
+            }
+            
+            // Output
+            subgraph cluster_output {
+                label="Output";
+                style=filled;
+                color=lightgrey;
+                node [style=filled, fillcolor="#85C1E9"];
+                
+                output [label="Predictions"];
+            }
+            
+            // Connections
+            input -> conv1;
+            conv1 -> conv2;
+            conv2 -> pool;
+            pool -> flat;
+            flat -> dense1;
+            dense1 -> dense2;
+            dense2 -> output;
+        }
+        """
 
-        # CNN visualization
-        st.markdown("### CNN Architecture for Time Series")
-
-        # Create a simple visual representation
-        col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
-
-        with col1:
-            st.markdown("#### Input Layer")
-            st.markdown(
-                """
-            ```
-            [t-n]
-            [t-n+1]
-            [t-n+2]
-            ...
-            [t-2]
-            [t-1]
-            [t]
-            ```
-            """
-            )
-            st.markdown("Time series data")
-
-        with col2:
-            st.markdown("#### Conv1D Layer")
-            st.markdown(
-                """
-            ```
-            |-----|
-            |-----|
-            |-----|
-            ```
-            """
-            )
-            st.markdown("Extract local patterns")
-
-        with col3:
-            st.markdown("#### Pooling Layer")
-            st.markdown(
-                """
-            ```
-            |---|
-            |---|
-            ```
-            """
-            )
-            st.markdown("Reduce & extract features")
-
-        with col4:
-            st.markdown("#### Dense Layers")
-            st.markdown(
-                """
-            ```
-            [     ]
-            [     ]
-            ```
-            """
-            )
-            st.markdown("Non-linear combinations")
-
-        with col5:
-            st.markdown("#### Output")
-            st.markdown(
-                """
-            ```
-            [t+1]
-            [t+2]
-            ...
-            [t+n]
-            ```
-            """
-            )
-            st.markdown("Future predictions")
+        try:
+            st.graphviz_chart(cnn_diagram)
+        except Exception as e:
+            st.warning(f"Unable to render graph visualization: {e}")
+            st.code(cnn_diagram, language="dot")
 
         st.markdown(
             """
-        ### CNN for Time Series - Key Concepts:
+        ### <span style="color:#2C3E50; font-weight:bold;">CNN Key Components:</span>
         
-        1. **1D Convolutions**: Slides window over time dimension instead of 2D space (unlike image CNNs)
+        1. <span style="color:#154360; font-weight:bold;">Convolutional Layers:</span> Slide filters over time steps to detect patterns
+           - Each filter learns to recognize specific temporal patterns
+           - Shared weights across time reduce parameters
         
-        2. **Kernel/Filter**: Detect specific patterns in time series (e.g., trend reversals, price spikes)
+        2. <span style="color:#154360; font-weight:bold;">Pooling Layers:</span> Downsample outputs to extract the most important features
+           - Reduces dimensionality
+           - Provides some translation invariance
         
-        3. **Pooling**: Reduces dimensionality while retaining important features
+        3. <span style="color:#154360; font-weight:bold;">Dense Layers:</span> Combine extracted features for final prediction
+           - Non-linear combinations of detected patterns
+           - Final decision making
         
-        4. **Multiple Filter Types**: Different filters can detect different price patterns
+        ### <span style="color:#2C3E50; font-weight:bold;">Advantages for Price Prediction:</span>
         
-        ### Advantages for Crypto Price Prediction:
-        
-        - Automatically detects local patterns in price movements
-        - Robust to time shifts (same pattern at different times)
-        - Efficiently handles multivariate inputs (price, volume, indicators)
-        - Can capture both short-term and medium-term dependencies
-        
-        ### Example CNN-LSTM Hybrid Architecture:
-        
-        Many cryptocurrency prediction models combine CNN and LSTM layers:
-        - CNN layers first extract local patterns
-        - LSTM layers then model the temporal dependencies
-        - This combines spatial and temporal feature extraction
-        """
+        - <span style="color:#1E8449;">Automatically detects local patterns</span> in price movements
+        - <span style="color:#1E8449;">Robust to time shifts</span> (same pattern at different times)
+        - <span style="color:#1E8449;">Efficiently handles multivariate inputs</span> (price, volume, indicators)
+        - <span style="color:#1E8449;">Can capture both short-term and medium-term dependencies</span>
+        """,
+            unsafe_allow_html=True,
         )
 
         # Show sample CNN filters visualization
         st.subheader("CNN Filter Visualization")
 
         # Create sample filter activations
+        import numpy as np
+        import pandas as pd
+        import plotly.express as px
+        
         np.random.seed(42)
-        filter_data = []
-        activation_data = []
-
+        
         # Sample time series
         time_steps = 100
         x = np.linspace(0, 10, time_steps)
@@ -1303,24 +1399,55 @@ class ModelVisualizationDashboard:
             }
         )
 
+        # Use more distinct colors for better visibility
+        custom_colors = {
+            'price': '#2C3E50',
+            'filter1': '#E74C3C',
+            'filter2': '#2ECC71',
+            'filter3': '#3498DB'
+        }
+        
         fig = px.line(
             df,
             x="time",
             y=["price", "filter1", "filter2", "filter3"],
             title="CNN Filters Detecting Different Patterns",
             labels={"value": "Activation", "variable": "Signal Type"},
+            color_discrete_map=custom_colors
         )
 
         fig.update_layout(height=500)
         st.plotly_chart(fig, use_container_width=True)
+        
+        # Add explanation of filters with better formatting
+        st.markdown(
+            """
+            <div style="background-color: #EBF5FB; padding: 15px; border-radius: 5px; border-left: 5px solid #3498DB;">
+            <span style="font-weight: bold; color: #2C3E50;">The chart above demonstrates how different CNN filters activate:</span><br><br>
+            
+            - <span style="color: #2C3E50; font-weight: bold;">Original price series</span> (dark blue): The input time series data
+            - <span style="color: #E74C3C; font-weight: bold;">Filter 1</span> (red): Detects upward trends ([0.2, 0.5, 0.3])
+            - <span style="color: #2ECC71; font-weight: bold;">Filter 2</span> (green): Detects local extrema ([-0.3, 0.1, 0.7])
+            - <span style="color: #3498DB; font-weight: bold;">Filter 3</span> (blue): Detects sudden changes ([0, -0.5, 0.5])
+            
+            Each filter responds to different patterns in the price data, allowing the CNN to recognize multiple types of market conditions.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
     def _visualize_nbeats_architecture(self):
-        """Visualize N-BEATS architecture"""
+        """
+        Visualize N-BEATS architecture.
+        
+        Shows the N-BEATS block structure, key components, basis functions,
+        and advantages for time series forecasting.
+        """
         st.markdown(
             """
         <div style="background-color: #f0f0f0; padding: 20px; border-radius: 10px;">
-            <h3 style="text-align: center;">N-BEATS Architecture</h3>
-            <p style="text-align: center;">Neural Basis Expansion Analysis for interpretable Time Series forecasting</p>
+            <h3 style="text-align: center; color: #2C3E50;">N-BEATS Architecture</h3>
+            <p style="text-align: center; color: #34495E;">Neural Basis Expansion Analysis for interpretable Time Series forecasting</p>
         </div>
         """,
             unsafe_allow_html=True,
@@ -1372,39 +1499,40 @@ class ModelVisualizationDashboard:
         """
 
         try:
-
             st.graphviz_chart(nbeats_diagram)
-        except:
+        except Exception as e:
+            st.warning(f"Unable to render graph visualization: {e}")
             st.code(nbeats_diagram, language="dot")
 
         st.markdown(
             """
-        ### N-BEATS Key Components:
+        ### <span style="color:#2C3E50; font-weight:bold;">N-BEATS Key Components:</span>
         
-        1. **Block Structure**: Each block produces both backcast (reconstruction) and forecast outputs
+        1. <span style="color:#154360; font-weight:bold;">Block Structure:</span> Each block produces both backcast (reconstruction) and forecast outputs
         
-        2. **Double Residual Stacking**: Each block processes residuals from previous blocks
+        2. <span style="color:#154360; font-weight:bold;">Double Residual Stacking:</span> Each block processes residuals from previous blocks
         
-        3. **Basis Functions**: 
+        3. <span style="color:#154360; font-weight:bold;">Basis Functions:</span> 
            - Trend block: polynomial basis functions
            - Seasonality block: Fourier basis functions
            - Generic block: learned basis functions
         
-        ### Advantages for Crypto Prediction:
+        ### <span style="color:#2C3E50; font-weight:bold;">Advantages for Price Prediction:</span>
         
-        - Interpretable components (can separate trend and seasonality)
-        - Handles multiple seasonalities (daily, weekly patterns)
-        - Pure deep learning approach (no feature engineering required)
-        - Strong performance for multi-step forecasting
+        - <span style="color:#1E8449;">Interpretable components</span> (can separate trend and seasonality)
+        - <span style="color:#1E8449;">Handles multiple seasonalities</span> (daily, weekly patterns)
+        - <span style="color:#1E8449;">Pure deep learning approach</span> (no feature engineering required)
+        - <span style="color:#1E8449;">Strong performance for multi-step forecasting</span>
         
-        ### Stack Types:
+        ### <span style="color:#2C3E50; font-weight:bold;">Stack Types:</span>
         
-        - **Generic Stack**: Learns patterns directly from data
-        - **Trend Stack**: Specialized for trend components
-        - **Seasonality Stack**: Specialized for cyclical patterns
+        - <span style="color:#8E44AD;">Generic Stack:</span> Learns patterns directly from data
+        - <span style="color:#8E44AD;">Trend Stack:</span> Specialized for trend components
+        - <span style="color:#8E44AD;">Seasonality Stack:</span> Specialized for cyclical patterns
         
         N-BEATS often outperforms traditional models by combining interpretability with deep learning power.
-        """
+        """,
+            unsafe_allow_html=True
         )
 
         # Sample basis visualization
@@ -1436,22 +1564,36 @@ class ModelVisualizationDashboard:
             }
         )
 
-        # Plot trend bases
+        # Plot trend bases with better colors
+        trend_colors = {
+            "Linear Trend": "#E74C3C",
+            "Quadratic Trend": "#3498DB",
+            "Cubic Trend": "#2ECC71"
+        }
+        
         fig1 = px.line(
             basis_df,
             x="x",
             y=["Linear Trend", "Quadratic Trend", "Cubic Trend"],
             title="Trend Basis Functions",
             labels={"value": "Amplitude", "variable": "Basis Type"},
+            color_discrete_map=trend_colors
         )
 
-        # Plot seasonal bases
+        # Plot seasonal bases with better colors
+        seasonal_colors = {
+            "Daily Seasonality": "#9B59B6",
+            "Half-day Seasonality": "#F39C12",
+            "6-hour Seasonality": "#1ABC9C"
+        }
+        
         fig2 = px.line(
             basis_df,
             x="x",
             y=["Daily Seasonality", "Half-day Seasonality", "6-hour Seasonality"],
             title="Seasonality Basis Functions",
             labels={"value": "Amplitude", "variable": "Basis Type"},
+            color_discrete_map=seasonal_colors
         )
 
         col1, col2 = st.columns(2)
@@ -1462,12 +1604,17 @@ class ModelVisualizationDashboard:
             st.plotly_chart(fig2, use_container_width=True)
 
     def _visualize_ltc_architecture(self):
-        """Visualize Liquid Time-Constant Networks architecture"""
+        """
+        Visualize Liquid Time-Constant (LTC) Networks architecture.
+        
+        Shows the LTC network structure, time constants, and dynamics
+        for financial time series prediction.
+        """
         st.markdown(
             """
         <div style="background-color: #f0f0f0; padding: 20px; border-radius: 10px;">
-            <h3 style="text-align: center;">Liquid Time-Constant (LTC) Networks</h3>
-            <p style="text-align: center;">Biologically-inspired recurrent neural networks for continuous-time dynamics</p>
+            <h3 style="text-align: center; color: #2C3E50;">Liquid Time-Constant (LTC) Networks</h3>
+            <p style="text-align: center; color: #34495E;">Advanced specialized neural network with learnable timescales, distinct from standard RNNs</p>
         </div>
         """,
             unsafe_allow_html=True,
@@ -1478,7 +1625,7 @@ class ModelVisualizationDashboard:
         digraph G {
             rankdir=LR;
             
-            node [shape=circle, style=filled, color=black, fillcolor=lightblue];
+            node [shape=circle, style=filled, color=black, fillcolor="#AED6F1"];
             
             input [label="Input", shape=plaintext];
             
@@ -1487,11 +1634,11 @@ class ModelVisualizationDashboard:
                 style=filled;
                 color=lightgrey;
                 
-                neuron1 [label="τ₁"];
-                neuron2 [label="τ₂"];
-                neuron3 [label="τ₃"];
-                neuron4 [label="..."];
-                neuron5 [label="τₙ"];
+                neuron1 [label="τ₁", fontcolor=black];
+                neuron2 [label="τ₂", fontcolor=black];
+                neuron3 [label="τ₃", fontcolor=black];
+                neuron4 [label="...", fontcolor=black];
+                neuron5 [label="τₙ", fontcolor=black];
                 
                 neuron1 -> neuron2 [dir=both, style=dashed];
                 neuron1 -> neuron3 [dir=both, style=dashed];
@@ -1513,52 +1660,66 @@ class ModelVisualizationDashboard:
             neuron5 -> output;
             
             // Self-loops
-            neuron1 -> neuron1 [label="τ₁"];
-            neuron3 -> neuron3 [label="τ₃"];
-            neuron5 -> neuron5 [label="τₙ"];
+            neuron1 -> neuron1 [label="τ₁", fontcolor=black];
+            neuron3 -> neuron3 [label="τ₃", fontcolor=black];
+            neuron5 -> neuron5 [label="τₙ", fontcolor=black];
         }
         """
 
         try:
-
             st.graphviz_chart(ltc_diagram)
-        except:
+        except Exception as e:
+            st.warning(f"Unable to render graph visualization: {e}")
             st.code(ltc_diagram, language="dot")
 
         st.markdown(
             """
-        ### LTC Network Key Concepts:
+        ### <span style="color:#2C3E50; font-weight:bold;">LTC Network Key Concepts:</span>
         
-        1. **Time Constants (τ)**: Each neuron has its own learnable time constant
+        1. <span style="color:#154360; font-weight:bold;">Time Constants (τ):</span> Each neuron has its own learnable time constant
            - Controls how fast/slow the neuron responds to inputs
            - Different time scales capture different market dynamics
         
-        2. **Continuous-Time Dynamics**: Uses differential equations instead of discrete updates
+        2. <span style="color:#154360; font-weight:bold;">Continuous-Time Dynamics:</span> Uses differential equations instead of discrete updates
            - More natural for modeling market time series with variable sample rates
         
-        3. **Liquid State Machines**: Inspired by biological neural networks
+        3. <span style="color:#154360; font-weight:bold;">Liquid State Machines:</span> Inspired by biological neural networks
            - Better at handling complex non-linear dynamics
         
-        ### Advantages for Crypto Prediction:
+        ### <span style="color:#2C3E50; font-weight:bold;">Advantages for Financial Prediction:</span>
         
-        - Can model multiple timescales simultaneously (minutes, hours, days)
-        - Handles irregular sampling and missing data gracefully
-        - Captures both fast (volatility) and slow (trend) market dynamics
-        - More biologically plausible learning dynamics
+        - <span style="color:#1E8449;">Multiple timescales</span> simultaneously (minutes, hours, days)
+        - <span style="color:#1E8449;">Handles irregular sampling</span> and missing data gracefully
+        - <span style="color:#1E8449;">Captures both fast</span> (volatility) and <span style="color:#1E8449;">slow</span> (trend) market dynamics
+        - <span style="color:#1E8449;">More biologically plausible</span> learning dynamics
+        """,
+            unsafe_allow_html=True
+        )
         
-        ### LTC vs Traditional RNNs:
-        
-        - LSTM/GRU: Uses gates to control information flow
-        - LTC: Uses continuous-time dynamics with learnable time constants
-        - Better theoretical properties for capturing complex dynamical systems
-        - Often more parameter-efficient than traditional RNNs
-        """
+        st.markdown(
+            """
+        <div style="background-color: #FADBD8; padding: 15px; border-radius: 5px; border-left: 5px solid #E74C3C;">
+        <span style="font-weight: bold; color: #2C3E50;">Important clarification:</span> Although LTC networks belong to the recurrent neural network family, they are a distinct architecture with significant differences:
+        <ul style="margin-top: 10px; color: #2C3E50;">
+          <li><span style="font-weight: bold;">Traditional RNNs/LSTM/GRU:</span> Use discrete update steps and gates to control information flow</li>
+          <li><span style="font-weight: bold;">LTC Networks:</span> Use continuous-time dynamics with learnable time constants for each neuron</li>
+          <li>LTC models have better theoretical properties for capturing complex dynamical systems</li>
+          <li>Often more parameter-efficient than traditional RNNs</li>
+          <li>Specifically designed for multi-scale temporal patterns in financial data</li>
+        </ul>
+        </div>
+        """,
+            unsafe_allow_html=True
         )
 
         # Time constant visualization
         st.subheader("LTC Time Constants Visualization")
 
         # Sample data for time constants
+        import numpy as np
+        import pandas as pd
+        import plotly.express as px
+        
         x = np.linspace(0, 10, 1000)
 
         # Different time constants
@@ -1593,6 +1754,14 @@ class ModelVisualizationDashboard:
             }
         )
 
+        # Custom colors for better visibility
+        colors = {
+            "Input": "#000000",
+            f"τ = {tau1} (Fast)": "#E74C3C",
+            f"τ = {tau2} (Medium)": "#3498DB",
+            f"τ = {tau3} (Slow)": "#2ECC71",
+        }
+
         fig = px.line(
             tau_df,
             x="Time",
@@ -1604,6 +1773,7 @@ class ModelVisualizationDashboard:
             ],
             title="Effect of Different Time Constants on Neuron Response",
             labels={"value": "Response", "variable": "Signal Type"},
+            color_discrete_map=colors,
         )
 
         fig.update_layout(height=500)
@@ -1611,23 +1781,272 @@ class ModelVisualizationDashboard:
 
         st.markdown(
             """
-        The chart above demonstrates how different time constants affect neuron responses:
+        <div style="background-color: #EBF5FB; padding: 15px; border-radius: 5px; border-left: 5px solid #3498DB;">
+        <span style="font-weight: bold; color: #2C3E50;">The chart above demonstrates how different time constants affect neuron responses:</span><br><br>
         
-        - **Fast neurons** (small τ): Respond quickly to market changes but are sensitive to noise
-        - **Medium neurons**: Balance between responsiveness and stability
-        - **Slow neurons** (large τ): Filter out noise but may miss sudden market movements
+        - <span style="color: #E74C3C; font-weight: bold;">Fast neurons</span> (small τ): Respond quickly to market changes but are sensitive to noise
+        - <span style="color: #3498DB; font-weight: bold;">Medium neurons</span>: Balance between responsiveness and stability
+        - <span style="color: #2ECC71; font-weight: bold;">Slow neurons</span> (large τ): Filter out noise but may miss sudden market movements
         
         LTC Networks learn the optimal time constants for each neuron automatically during training.
-        """
+        </div>
+        """,
+            unsafe_allow_html=True
         )
-
-    def _visualize_tft_architecture(self):
-        """Visualize Temporal Fusion Transformer architecture"""
+        
+        # Add timescale distribution visualization
+        st.subheader("Learned Timescale Distribution")
+        
+        # Generate sample timescale distribution
+        np.random.seed(42)
+        
+        # Create different distributions for different neuron groups
+        fast_neurons = np.random.lognormal(mean=-1.5, sigma=0.4, size=30)
+        medium_neurons = np.random.lognormal(mean=0, sigma=0.3, size=40)
+        slow_neurons = np.random.lognormal(mean=1.0, sigma=0.5, size=20)
+        
+        # Combine distributions
+        all_timescales = np.concatenate([fast_neurons, medium_neurons, slow_neurons])
+        
+        # Create histogram with more discernible colors
+        timescale_df = pd.DataFrame({"Timescale": all_timescales})
+        
+        fig = px.histogram(
+            timescale_df,
+            x="Timescale",
+            nbins=30,
+            title="Distribution of Learned Time Constants (τ)",
+            color_discrete_sequence=["#1ABC9C"],
+        )
+        
+        fig.update_layout(
+            xaxis_title="Time Constant (τ)",
+            yaxis_title="Count",
+            height=400,
+        )
+        
+        # Add vertical lines for typical timescales with better colors
+        fig.add_vline(x=0.5, line_dash="dash", line_color="#E74C3C", 
+                     annotation_text="Fast", annotation_position="top right")
+        fig.add_vline(x=2.0, line_dash="dash", line_color="#3498DB", 
+                     annotation_text="Medium", annotation_position="top right")
+        fig.add_vline(x=5.0, line_dash="dash", line_color="#2ECC71", 
+                     annotation_text="Slow", annotation_position="top right")
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+    def _visualize_tabnet_architecture(self):
+        """
+        Visualize TabNet architecture for tabular data.
+        
+        Shows the TabNet structure, feature selection mechanism, decision steps,
+        and advantages for price prediction with tabular data.
+        """
         st.markdown(
             """
         <div style="background-color: #f0f0f0; padding: 20px; border-radius: 10px;">
-            <h3 style="text-align: center;">Temporal Fusion Transformer (TFT)</h3>
-            <p style="text-align: center;">State-of-the-art architecture combining attention mechanisms with specialized components for time series</p>
+            <h3 style="text-align: center; color: #2C3E50;">TabNet Architecture</h3>
+            <p style="text-align: center; color: #34495E;">Deep learning for tabular data with feature selection and interpretability</p>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+        # TabNet diagram
+        tabnet_diagram = """
+        digraph G {
+            rankdir=LR;
+            
+            subgraph cluster_input {
+                label="Input";
+                node [style=filled, fillcolor="#AED6F1"];
+                features [label="Tabular Features", fontcolor=black];
+            }
+            
+            subgraph cluster_feature_transformer {
+                label="Feature Transformer";
+                node [style=filled, fillcolor="#A2D9CE"];
+                ft [label="Feature Transformer Network", fontcolor=black];
+            }
+            
+            subgraph cluster_attentive_transformer {
+                label="Attentive Transformer";
+                node [style=filled, fillcolor="#F9E79F"];
+                at [label="Attentive Transformer", fontcolor=black];
+                masks [label="Feature Masks", fontcolor=black];
+            }
+            
+            subgraph cluster_decision_steps {
+                label="Decision Steps";
+                node [style=filled, fillcolor="#F5B7B1"];
+                step1 [label="Step 1", fontcolor=black];
+                step2 [label="Step 2", fontcolor=black];
+                stepN [label="Step N", fontcolor=black];
+                decision_agg [label="Aggregated Decisions", fontcolor=black];
+            }
+            
+            subgraph cluster_output {
+                label="Output";
+                node [style=filled, fillcolor="#D7BDE2"];
+                output [label="Predictions", fontcolor=black];
+            }
+            
+            // Connections
+            features -> ft;
+            ft -> at;
+            at -> masks;
+            masks -> ft [label="Masked Features"];
+            
+            masks -> step1;
+            step1 -> step2;
+            step2 -> stepN [style=dotted];
+            stepN -> decision_agg;
+            decision_agg -> output;
+        }
+        """
+
+        # Display diagram using graphviz
+        try:
+            st.graphviz_chart(tabnet_diagram)
+        except Exception as e:
+            st.warning(f"Unable to render graph visualization: {e}")
+            st.code(tabnet_diagram, language="dot")
+
+        # Explanation
+        st.markdown(
+            """
+        ### <span style="color:#2C3E50; font-weight:bold;">TabNet Key Components:</span>
+        
+        1. <span style="color:#154360; font-weight:bold;">Feature Transformer:</span> Processes input features using shared blocks and specific blocks.
+        
+        2. <span style="color:#154360; font-weight:bold;">Attentive Transformer:</span> Creates sparse feature selection masks at each decision step, 
+           controlling which features are used and how much attention they receive.
+        
+        3. <span style="color:#154360; font-weight:bold;">Decision Steps:</span> Sequential processing steps that build upon previous steps' results,
+           with each step focusing on different aspects of the data.
+        
+        4. <span style="color:#154360; font-weight:bold;">Feature Selection:</span> Learns which features are important for each decision step, providing
+           interpretability and reducing noise.
+        
+        ### <span style="color:#2C3E50; font-weight:bold;">Advantages for Price Prediction:</span>
+        
+        - <span style="color:#1E8449;">Interpretability:</span> Shows which features are important at each decision step
+        - <span style="color:#1E8449;">Learning Efficiency:</span> Uses fewer parameters than fully-connected networks
+        - <span style="color:#1E8449;">Feature Selection:</span> Automatically focuses on relevant features
+        - <span style="color:#1E8449;">Regularization:</span> Sparse feature selection provides implicit regularization
+        - <span style="color:#1E8449;">Local Feature Interactions:</span> Captures complex interactions within tabular data
+        
+        ### <span style="color:#2C3E50; font-weight:bold;">Unique Properties:</span>
+        
+        - <span style="color:#8E44AD;">Instance-wise Feature Selection:</span> Different samples can use different features
+        - <span style="color:#8E44AD;">Self-supervised Pretraining:</span> Can be pretrained on unlabeled data
+        - <span style="color:#8E44AD;">Dual Optimization:</span> Simultaneously optimizes prediction quality and sparsity
+        """,
+            unsafe_allow_html=True
+        )
+
+        # Create feature importance visualization
+        st.subheader("TabNet Feature Selection Visualization")
+
+        # Sample data for feature importance over steps
+        import numpy as np
+        import pandas as pd
+        import plotly.express as px
+        
+        # Generate sample feature importances for 10 features across 4 decision steps
+        np.random.seed(42)
+        feature_names = [f"Feature {i+1}" for i in range(10)]
+        steps = ["Step 1", "Step 2", "Step 3", "Step 4"]
+        
+        # Create sample importance data with some features being important in different steps
+        importances = np.zeros((len(feature_names), len(steps)))
+        for i in range(len(steps)):
+            # Make some features more important than others in each step
+            step_importances = np.random.dirichlet(np.ones(len(feature_names)) * 0.5)
+            importances[:, i] = step_importances
+        
+        # Create DataFrame for visualization
+        importance_data = []
+        for i, feature in enumerate(feature_names):
+            for j, step in enumerate(steps):
+                importance_data.append({
+                    "Feature": feature,
+                    "Decision Step": step,
+                    "Importance": importances[i, j]
+                })
+        
+        df = pd.DataFrame(importance_data)
+        
+        # Create heatmap
+        fig = px.imshow(
+            importances,
+            x=steps,
+            y=feature_names,
+            color_continuous_scale="Blues",
+            title="Feature Importance by Decision Step",
+            labels=dict(x="Decision Step", y="Feature", color="Importance")
+        )
+        
+        fig.update_layout(height=500)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Decision flow visualization
+        st.subheader("TabNet Decision Flow")
+        
+        # Create sample decision flow data
+        sample_data = pd.DataFrame({
+            "Decision Step": ["Initial"] + steps,
+            "Cumulative Accuracy": [0.5, 0.7, 0.8, 0.85, 0.89],
+            "Step Contribution": [0.5, 0.2, 0.1, 0.05, 0.04]
+        })
+        
+        # Create bar chart
+        fig = px.bar(
+            sample_data,
+            x="Decision Step",
+            y="Step Contribution",
+            title="Contribution of Each Decision Step to Overall Accuracy",
+            text_auto='.2f',
+            color="Step Contribution",
+            color_continuous_scale="Teal",
+        )
+        
+        # Add line for cumulative accuracy
+        fig.add_scatter(
+            x=sample_data["Decision Step"],
+            y=sample_data["Cumulative Accuracy"],
+            mode="lines+markers",
+            name="Cumulative Accuracy",
+            line=dict(color="red", width=2),
+            yaxis="y2"
+        )
+        
+        # Update layout with secondary y-axis
+        fig.update_layout(
+            yaxis=dict(title="Step Contribution"),
+            yaxis2=dict(
+                title="Cumulative Accuracy",
+                overlaying="y",
+                side="right",
+                range=[0, 1]
+            ),
+            height=500
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+
+    def _visualize_tft_architecture(self):
+        """
+        Visualize Temporal Fusion Transformer architecture.
+        
+        Shows the TFT structure, attention mechanism, gating, and
+        interpretability features for time series prediction.
+        """
+        st.markdown(
+            """
+        <div style="background-color: #f0f0f0; padding: 20px; border-radius: 10px;">
+            <h3 style="text-align: center; color: #2C3E50;">Temporal Fusion Transformer (TFT)</h3>
+            <p style="text-align: center; color: #34495E;">State-of-the-art architecture combining attention mechanisms with specialized components for time series</p>
         </div>
         """,
             unsafe_allow_html=True,
@@ -1644,22 +2063,22 @@ class ModelVisualizationDashboard:
                 rankdir=TB;
                 
                 // Inputs
-                past [label="Past Inputs", shape=box, style=filled, fillcolor=lightblue];
-                known [label="Known Future Inputs", shape=box, style=filled, fillcolor=lightgreen];
+                past [label="Past Inputs", shape=box, style=filled, fillcolor=lightblue, fontcolor=black];
+                known [label="Known Future Inputs", shape=box, style=filled, fillcolor=lightgreen, fontcolor=black];
                 
                 // Processing layers
-                gating [label="Variable Selection Networks", shape=box, style=filled, fillcolor=lightyellow];
-                static [label="Static Covariate Encoders", shape=box, style=filled, fillcolor=lightyellow];
-                lstm_encoder [label="LSTM Encoder", shape=box, style=filled, fillcolor=pink];
-                lstm_decoder [label="LSTM Decoder", shape=box, style=filled, fillcolor=pink];
+                gating [label="Variable Selection Networks", shape=box, style=filled, fillcolor=lightyellow, fontcolor=black];
+                static [label="Static Covariate Encoders", shape=box, style=filled, fillcolor=lightyellow, fontcolor=black];
+                lstm_encoder [label="LSTM Encoder", shape=box, style=filled, fillcolor=pink, fontcolor=black];
+                lstm_decoder [label="LSTM Decoder", shape=box, style=filled, fillcolor=pink, fontcolor=black];
                 
                 // Attention mechanism
-                attention [label="Multi-head Attention", shape=box, style=filled, fillcolor=lightcoral];
+                attention [label="Multi-head Attention", shape=box, style=filled, fillcolor=lightcoral, fontcolor=black];
                 
                 // Output
-                temporal_fusion [label="Temporal Fusion Layer", shape=box, style=filled, fillcolor=lightgrey];
-                position_wise [label="Position-wise Feed-forward", shape=box, style=filled, fillcolor=lightgrey];
-                quantile [label="Quantile Outputs", shape=box, style=filled, fillcolor=lightblue];
+                temporal_fusion [label="Temporal Fusion Layer", shape=box, style=filled, fillcolor=lightgrey, fontcolor=black];
+                position_wise [label="Position-wise Feed-forward", shape=box, style=filled, fillcolor=lightgrey, fontcolor=black];
+                quantile [label="Quantile Outputs", shape=box, style=filled, fillcolor=lightblue, fontcolor=black];
                 
                 // Connections
                 past -> gating;
@@ -1678,58 +2097,64 @@ class ModelVisualizationDashboard:
             """
 
             try:
-
                 st.graphviz_chart(tft_diagram)
-            except:
+            except Exception as e:
+                st.warning(f"Unable to render graph visualization: {e}")
                 st.code(tft_diagram, language="dot")
 
         with col2:
             st.markdown(
                 """
-            **Key Components:**
+            ### <span style="color:#2C3E50; font-weight:bold;">Key Components:</span>
             
-            1. Variable Selection Networks
-            2. LSTM Encoding/Decoding
-            3. Multi-head Attention
-            4. Temporal Fusion
-            5. Quantile Forecasts
-            """
+            1. <span style="color:#154360; font-weight:bold;">Variable Selection Networks</span>
+            
+            2. <span style="color:#154360; font-weight:bold;">LSTM Encoding/Decoding</span>
+            
+            3. <span style="color:#154360; font-weight:bold;">Multi-head Attention</span>
+            
+            4. <span style="color:#154360; font-weight:bold;">Temporal Fusion</span>
+            
+            5. <span style="color:#154360; font-weight:bold;">Quantile Forecasts</span>
+            """,
+                unsafe_allow_html=True
             )
 
         st.markdown(
             """
-        ### TFT Advanced Components:
+        ### <span style="color:#2C3E50; font-weight:bold;">TFT Advanced Components:</span>
         
-        1. **Variable Selection Networks**:
+        1. <span style="color:#154360; font-weight:bold;">Variable Selection Networks:</span>
            - Dynamically selects most relevant features at each timestep
            - Learns importance of different indicators
         
-        2. **Multi-head Attention**:
+        2. <span style="color:#154360; font-weight:bold;">Multi-head Attention:</span>
            - Identifies dependencies between different time points
            - Can model relationships between distant time points
         
-        3. **Gating Mechanisms**:
+        3. <span style="color:#154360; font-weight:bold;">Gating Mechanisms:</span>
            - Controls information flow between components
            - Helps manage multiple input types
         
-        4. **Quantile Forecasts**:
+        4. <span style="color:#154360; font-weight:bold;">Quantile Forecasts:</span>
            - Provides prediction intervals, not just point estimates
-           - Critical for risk management in crypto trading
+           - Critical for risk management in trading
         
-        ### Advantages for Crypto Prediction:
+        ### <span style="color:#2C3E50; font-weight:bold;">Advantages for Price Prediction:</span>
         
-        - State-of-the-art performance on complex time series
-        - Built-in uncertainty estimation through quantiles
-        - Handles static (e.g., coin fundamentals) and temporal features
-        - Excellent interpretation capabilities
-        - Robust to noisy data common in crypto markets
+        - <span style="color:#1E8449;">State-of-the-art performance</span> on complex time series
+        - <span style="color:#1E8449;">Built-in uncertainty estimation</span> through quantiles
+        - <span style="color:#1E8449;">Handles static and temporal features</span>
+        - <span style="color:#1E8449;">Excellent interpretation capabilities</span>
+        - <span style="color:#1E8449;">Robust to noisy data</span> common in markets
         
-        ### Interpretability Features:
+        ### <span style="color:#2C3E50; font-weight:bold;">Interpretability Features:</span>
         
         - Variable importance scores at each timestep
         - Attention weights show which past periods influence predictions
         - Uncertainty quantification through prediction intervals
-        """
+        """,
+            unsafe_allow_html=True
         )
 
         # Sample interpretability plots
@@ -1798,7 +2223,7 @@ class ModelVisualizationDashboard:
         fig2.update_layout(height=600)
         st.plotly_chart(fig2, use_container_width=True)
 
-        # Quantile predictions
+        # Quantile predictions with distinct colors
         x = np.arange(num_days)
         y_median = 100 + 0.1 * x + 5 * np.sin(x / 5) + np.random.randn(num_days)
         y_low = y_median - 5 - 0.2 * x
@@ -1809,7 +2234,7 @@ class ModelVisualizationDashboard:
             {"Date": dates, "P10": y_low, "P50": y_median, "P90": y_high}
         )
 
-        # Plot quantile forecasts
+        # Plot quantile forecasts with better colors
         fig3 = go.Figure()
 
         # Add quantile range
@@ -1819,7 +2244,7 @@ class ModelVisualizationDashboard:
                 y=forecast_df["P90"],
                 fill=None,
                 mode="lines",
-                line_color="rgba(0,100,80,0.2)",
+                line_color="rgba(41, 128, 185, 0.3)",
                 name="P90",
             )
         )
@@ -1830,7 +2255,7 @@ class ModelVisualizationDashboard:
                 y=forecast_df["P10"],
                 fill="tonexty",
                 mode="lines",
-                line_color="rgba(0,100,80,0.2)",
+                line_color="rgba(41, 128, 185, 0.3)",
                 name="P10",
             )
         )
@@ -1841,7 +2266,7 @@ class ModelVisualizationDashboard:
                 x=forecast_df["Date"],
                 y=forecast_df["P50"],
                 mode="lines",
-                line=dict(color="rgb(0,100,80)", width=2),
+                line=dict(color="#2980B9", width=2),
                 name="P50 (Median)",
             )
         )
@@ -1855,6 +2280,7 @@ class ModelVisualizationDashboard:
 
         st.plotly_chart(fig3, use_container_width=True)
 
+
 def plot_feature_importance(model, feature_names, max_features=20, model_type=None):
     """
     Plot feature importance for the given model.
@@ -1864,6 +2290,9 @@ def plot_feature_importance(model, feature_names, max_features=20, model_type=No
         feature_names: List of feature names
         max_features: Maximum number of features to display
         model_type: Optional model type to help determine how to extract importances
+        
+    Returns:
+        Matplotlib figure or None if importances cannot be determined
     """
     try:
         importances = None
@@ -1897,22 +2326,26 @@ def plot_feature_importance(model, feature_names, max_features=20, model_type=No
         feature_importance_df = feature_importance_df.sort_values(
             'Importance', ascending=False
         ).reset_index(drop=True).head(max_features)
-        
-        # Create plot
+# Create plot with improved styling
         fig, ax = plt.subplots(figsize=(10, max(6, len(feature_importance_df) * 0.3)))
         
+        color_palette = sns.color_palette("viridis", n_colors=len(feature_importance_df))
         sns.barplot(
             x='Importance',
             y='Feature',
             data=feature_importance_df,
             ax=ax,
-            palette='viridis'
+            palette=color_palette
         )
         
-        ax.set_title('Feature Importance')
-        ax.set_xlabel('Importance')
-        ax.set_ylabel('Feature')
-        ax.tick_params(axis='y', labelsize=10)
+        ax.set_title('Feature Importance', fontsize=14, color='#2C3E50')
+        ax.set_xlabel('Importance', fontsize=12, color='#2C3E50')
+        ax.set_ylabel('Feature', fontsize=12, color='#2C3E50')
+        ax.tick_params(axis='y', labelsize=10, colors='#2C3E50')
+        ax.tick_params(axis='x', colors='#2C3E50')
+        
+        # Add grid for easier reading
+        ax.grid(axis='x', linestyle='--', alpha=0.6)
         
         plt.tight_layout()
         

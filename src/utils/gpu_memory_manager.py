@@ -12,7 +12,13 @@ from src.utils.gpu_memory_management import (
     clean_gpu_memory,
     configure_gpu_memory,
     get_memory_info,
+    set_performance_mode,  # Import performance mode setter
+    get_gpu_utilization,    # Import utilization checker
+    stress_test_gpu,        # Import stress test function
 )
+
+# Import adaptive_memory_clean from memory_utils instead of duplicating it
+from src.utils.memory_utils import adaptive_memory_clean
 
 
 class GPUMemoryManager:
@@ -26,6 +32,7 @@ class GPUMemoryManager:
     5. Periodic memory cleanup and garbage collection
     6. Memory usage tracking and reporting
     7. Training checkpointing to recover from OOM errors
+    8. Performance mode to maximize GPU utilization and get fans spinning
     """
 
     def __init__(
@@ -54,6 +61,8 @@ class GPUMemoryManager:
         self.initialized = False
         self.memory_usage_log = []
         self.batch_size_log = []
+        self.performance_mode = False  # Default to standard mode
+        self.gpu_utilization_history = []  # Track GPU utilization
 
         # Check for DirectML environment
         self.is_directml = (
@@ -78,6 +87,16 @@ class GPUMemoryManager:
             "directml_enabled": self.is_directml,  # Pass DirectML flag to configuration
         }
 
+        # New: Check if performance mode is requested
+        self.performance_mode = os.environ.get("TF_GPU_PERFORMANCE_MODE", "0") == "1"
+        if self.performance_mode:
+            set_performance_mode(True)
+            self.logger.info("🔥 GPU PERFORMANCE MODE ENABLED - Maximum utilization")
+            # Override allow_growth in performance mode
+            self.allow_growth = False
+            config["allow_growth"] = False
+            config["performance_mode"] = True
+            
         configure_gpu_memory(config)
         self.initialized = True
 
@@ -96,28 +115,199 @@ class GPUMemoryManager:
             self.logger.error(f"Error getting GPU list: {e}")
 
         return self.logical_gpus
+    
+    def enable_performance_mode(self):
+        """Enable maximum performance mode for GPU utilization (will get fans spinning!)"""
+        if not self.performance_mode:
+            # Import here to avoid circular imports
+            self.performance_mode = True
+            set_performance_mode(True)
+            self.logger.info("🔥 GPU Performance Mode ENABLED - Maximum utilization")
+            self.clean_memory(True)
+            
+            # Apply aggressive optimizations
+            try:
+                import tensorflow as tf
+                
+                # Max performance settings
+                self.logger.info("Applying aggressive GPU optimization settings...")
+                
+                # Set options for maximum GPU utilization
+                options = {
+                    "layout_optimizer": True,
+                    "constant_folding": True,
+                    "shape_optimization": True,
+                    "remapping": True,
+                    "arithmetic_optimization": True,
+                    "dependency_optimization": True,
+                    "loop_optimization": True,
+                    "function_optimization": True,
+                    "debug_stripper": True,
+                    "auto_mixed_precision": True,  # Enable only if using mixed precision
+                    "disable_meta_optimizer": False,
+                    "scoped_allocator_optimization": True, # Scope allocations for better performance
+                }
+                tf.config.optimizer.set_experimental_options(options)
+                
+                # Always use JIT (XLA) for maximum performance
+                tf.config.optimizer.set_jit(True)
+                
+                # Set high-performance thread settings
+                if hasattr(tf.config.threading, "get_inter_op_parallelism_threads"):
+                    # Use aggressive thread count settings
+                    cores = os.cpu_count() or 4
+                    tf.config.threading.set_inter_op_parallelism_threads(cores // 2)
+                    tf.config.threading.set_intra_op_parallelism_threads(cores)
+                
+                # Set GPU memory options
+                if hasattr(tf, "GPUOptions"):
+                    # For older TensorFlow versions
+                    gpu_options = tf.GPUOptions(
+                        allow_growth=False,
+                        per_process_gpu_memory_fraction=0.95, # Take 95% of GPU memory
+                        force_gpu_compatible=True
+                    )
+                    config = tf.ConfigProto(gpu_options=gpu_options)
+                    tf.keras.backend.set_session(tf.Session(config=config))
+                
+                # Environment variables for high performance
+                os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"
+                os.environ["TF_GPU_THREAD_COUNT"] = str(cores)
+                os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
+                os.environ["TF_CUDNN_USE_AUTOTUNE"] = "1"
+                
+                self.logger.info("Aggressive GPU optimizations applied!")
+                
+            except Exception as e:
+                self.logger.error(f"Error applying performance settings: {e}")
+                
+            return True
+        return False
+    
+    def disable_performance_mode(self):
+        """Disable performance mode and return to normal operation"""
+        if self.performance_mode:
+            self.performance_mode = False
+            set_performance_mode(False)
+            self.logger.info("GPU Performance Mode DISABLED - Returning to normal operation")
+            self.clean_memory(True)
+            return True
+        return False
 
-    def _configure_directml_compatibility(self):
-        """Configure TensorFlow for DirectML compatibility, especially for RNN layers"""
+    def run_gpu_stress_test(self, duration=10, intensity=0.9):
+        """Run a GPU stress test to check performance and get those fans spinning!"""
+        self.logger.info("Running GPU stress test to get fans spinning...")
+        results = stress_test_gpu(duration_seconds=duration, intensity=intensity)
+        
+        if "error" in results:
+            self.logger.error(f"GPU stress test failed: {results['error']}")
+            return False
+            
+        self.logger.info(f"GPU stress test results:")
+        self.logger.info(f"- Max utilization: {results['max_utilization']}%")
+        self.logger.info(f"- Average utilization: {results['avg_utilization']:.1f}%")
+        
+        if "initial_temp" in results and "final_temp" in results:
+            self.logger.info(f"- Temperature increased: {results['initial_temp']}°C → {results['final_temp']}°C")
+            
+        self.logger.info(f"- Fans spinning: {'YES!' if results['fans_spinning'] else 'No'}")
+        
+        return results
+
+    # New method for rapid warmup to get GPU going
+    def warmup_gpu(self, intensity=0.7):
+        """
+        Quickly warm up the GPU to get it ready for compute-intensive operations.
+        This helps "get those fans spinning" by raising GPU temperature to operating levels.
+        
+        Args:
+            intensity: How hard to push the GPU during warmup (0.1 to 1.0)
+        
+        Returns:
+            Peak GPU utilization achieved
+        """
         try:
             import tensorflow as tf
-
-            # Force TensorFlow to use standard implementation instead of CudnnRNN
-            os.environ["TF_DIRECTML_KERNEL_FALLBACK"] = "1"
-
-            # Configure LSTM implementation preference
-            tf.keras.layers.LSTM._supports_ragged_inputs = False
-
-            if hasattr(tf.keras, "mixed_precision"):
-                # Ensure using float32 with DirectML as mixed precision might cause issues
-                tf.keras.mixed_precision.set_global_policy("float32")
-                self.logger.info(
-                    "Set precision policy to float32 for DirectML compatibility"
-                )
-
-            self.logger.info("Applied DirectML compatibility configurations")
+            import time
+            
+            self.logger.info(f"Warming up GPU with {intensity:.0%} intensity...")
+            
+            # Create a compute-intensive model using a large convolution
+            input_shape = (256, 256, 3)
+            input_tensor = tf.keras.layers.Input(shape=input_shape)
+            x = input_tensor
+            
+            # Add compute-intensive layers
+            for i in range(5):  # Multiple layers increase compute intensity
+                x = tf.keras.layers.Conv2D(
+                    filters=64 * (i+1), 
+                    kernel_size=(3, 3),
+                    activation='relu',
+                    padding='same'
+                )(x)
+                if i % 2 == 0:
+                    x = tf.keras.layers.MaxPooling2D()(x)
+            
+            # Add a final dense layer
+            x = tf.keras.layers.GlobalAveragePooling2D()(x)
+            x = tf.keras.layers.Dense(1000, activation='relu')(x)
+            output = tf.keras.layers.Dense(10, activation='softmax')(x)
+            
+            model = tf.keras.Model(inputs=input_tensor, outputs=output)
+            
+            # Enable XLA compilation for maximum efficiency
+            @tf.function(jit_compile=True)
+            def training_step(x):
+                with tf.GradientTape() as tape:
+                    pred = model(x, training=True)
+                    loss = tf.reduce_mean(pred)
+                gradients = tape.gradient(loss, model.trainable_variables)
+                return gradients
+            
+            # Create random input data
+            batch_size = max(1, int(32 * intensity))
+            input_data = tf.random.normal([batch_size, *input_shape])
+            
+            # Track utilization
+            peak_util = 0
+            start_util = get_gpu_utilization(0)
+            
+            self.logger.info(f"Starting GPU warmup (initial utilization: {start_util}%)...")
+            
+            # Run the warmup
+            start_time = time.time()
+            iterations = int(10 * intensity)  # Scale iterations by intensity
+            
+            for i in range(iterations):
+                _ = training_step(input_data)
+                
+                # Check utilization every other iteration
+                if i % 2 == 0:
+                    current_util = get_gpu_utilization(0)
+                    peak_util = max(peak_util, current_util)
+                    self.logger.info(f"Iteration {i+1}/{iterations}: GPU at {current_util}%")
+                    
+                    # Store in history
+                    self.gpu_utilization_history.append({
+                        "timestamp": time.time(),
+                        "utilization": current_util,
+                        "operation": "warmup",
+                        "iteration": i
+                    })
+            
+            duration = time.time() - start_time
+            
+            self.logger.info(f"GPU warmup complete! Reached {peak_util}% utilization")
+            self.logger.info(f"Took {duration:.1f} seconds, fans should be spinning now!")
+            
+            # Clean up
+            self.clean_memory()
+            
+            return peak_util
+            
         except Exception as e:
-            self.logger.error(f"Error configuring DirectML compatibility: {e}")
+            self.logger.error(f"Error warming up GPU: {e}")
+            return 0
 
     def get_available_memory(self, device_idx=0) -> float:
         """
@@ -169,6 +359,7 @@ class GPUMemoryManager:
         max_batch=8192,
         device_idx=0,
         safety_factor=0.8,
+        respect_optuna=True,
     ):
         """
         Estimate the optimal batch size for a model based on available GPU memory.
@@ -181,7 +372,6 @@ class GPUMemoryManager:
             max_batch: Maximum batch size to consider
             device_idx: Index of the GPU to use
             safety_factor: Factor to apply to the final batch size (0-1)
-
         Returns:
             Optimal batch size
         """
@@ -278,21 +468,6 @@ class GPUMemoryManager:
             steps += 1
 
         return steps
-
-
-def train_with_dynamic_batch_size(model, X, y, initial_batch_size=32, min_batch_size=8):
-    batch_size = initial_batch_size
-    while batch_size >= min_batch_size:
-        try:
-            history = model.fit(X, y, batch_size=batch_size, epochs=1)
-            return history, batch_size  # Return successful batch size for future use
-        except tf.errors.ResourceExhaustedError:
-            # Reduce batch size and try again
-            batch_size = max(batch_size // 2, min_batch_size)
-            clean_gpu_memory(force_gc=True)
-            logger.info(f"Reduced batch size to {batch_size} after OOM error")
-
-    raise RuntimeError(f"Training failed even with minimum batch size {min_batch_size}")
 
     def clean_memory(self, force_gc=True):
         """
@@ -536,7 +711,35 @@ def train_with_dynamic_batch_size(model, X, y, initial_batch_size=32, min_batch_
             # Clean up
             self.clean_memory()
 
-            return profile
+            # Get GPU utilization monitoring
+            try:
+                # Get initial GPU utilization
+                initial_util = get_gpu_utilization(0)
+                
+                # Run a forward and backward pass for more realistic utilization
+                if hasattr(model, 'train_on_batch'):
+                    with tf.GradientTape() as tape:
+                        predictions = model(dummy_inputs)
+                        loss = tf.reduce_mean(predictions)  # Dummy loss
+                        
+                        # Calculate gradients
+                        if hasattr(model, 'trainable_variables'):
+                            gradients = tape.gradient(loss, model.trainable_variables)
+                    
+                    # Get peak GPU utilization
+                    peak_util = get_gpu_utilization(0)
+                    
+                    # Add to profile
+                    profile["initial_gpu_utilization"] = initial_util
+                    profile["peak_gpu_utilization"] = peak_util
+                    
+                    self.logger.info(f"  GPU Utilization: {initial_util}% → {peak_util}%")
+                
+                return profile
+            
+            except Exception as e:
+                self.logger.error(f"Error in model memory profile: {e}")
+                return {}
 
         except Exception as e:
             self.logger.error(f"Error in model memory profile: {e}")

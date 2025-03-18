@@ -38,6 +38,13 @@ except ImportError:
     DATA_DIR = os.path.join(project_root, "data")
     logger.warning("Could not import config, using default DATA_DIR")
 
+# Import thread-safe file operations from utils
+from src.utils.threadsafe import (
+    safe_read_yaml, 
+    safe_write_yaml, 
+    AtomicFileWriter
+)
+
 
 def robust_error_boundary(func: Callable) -> Callable:
     """
@@ -84,28 +91,6 @@ def robust_error_boundary(func: Callable) -> Callable:
     return wrapper
 
 
-def validate_file_path(file_path: str) -> bool:
-    """
-    Validate that a file path exists and is accessible.
-    Creates any necessary parent directories.
-    
-    Args:
-        file_path: Path to validate
-        
-    Returns:
-        True if valid, False otherwise
-    """
-    try:
-        # Create parent directory if it doesn't exist
-        dir_path = os.path.dirname(file_path)
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path, exist_ok=True)
-        return True
-    except Exception as e:
-        logger.error(f"Error validating path {file_path}: {e}")
-        return False
-
-
 @robust_error_boundary
 def read_tuning_status() -> Dict[str, Any]:
     """
@@ -114,41 +99,27 @@ def read_tuning_status() -> Dict[str, Any]:
     Returns:
         Dictionary with status information
     """
-    # Import inside function to avoid circular imports
-    import yaml
-    
     status_file = os.path.join(DATA_DIR, "tuning_status.txt")
     
-    if not os.path.exists(status_file):
-        # Return default status if file doesn't exist
-        return {
-            "status": "idle",
-            "is_running": False,
-            "ticker": None,
-            "timeframe": None,
-            "last_updated": datetime.now().isoformat()
-        }
+    default_status = {
+        "status": "idle",
+        "is_running": False,
+        "ticker": None,
+        "timeframe": None,
+        "last_updated": datetime.now().isoformat()
+    }
     
-    try:
-        with open(status_file, "r") as f:
-            status_data = yaml.safe_load(f)
-            
-        # Ensure is_running is a boolean
-        if "is_running" in status_data:
-            if isinstance(status_data["is_running"], str):
-                status_data["is_running"] = (status_data["is_running"].lower() == "true")
-        else:
-            status_data["is_running"] = False
-            
-        return status_data
+    # Use safe_read_yaml from threadsafe module
+    status_data = safe_read_yaml(status_file, default=default_status)
+    
+    # Ensure is_running is a boolean
+    if "is_running" in status_data:
+        if isinstance(status_data["is_running"], str):
+            status_data["is_running"] = (status_data["is_running"].lower() == "true")
+    else:
+        status_data["is_running"] = False
         
-    except Exception as e:
-        logger.error(f"Error reading tuning status: {e}")
-        return {
-            "status": "unknown",
-            "is_running": False,
-            "error": str(e)
-        }
+    return status_data
 
 
 @robust_error_boundary
@@ -164,14 +135,7 @@ def write_tuning_status(ticker: str, timeframe: str, is_running: bool = False) -
     Returns:
         True if successful, False otherwise
     """
-    # Import inside function to avoid circular imports
-    import yaml
-    from src.utils.threadsafe import safe_file_write
-    
     status_file = os.path.join(DATA_DIR, "tuning_status.txt")
-    
-    # Create data directory if it doesn't exist
-    validate_file_path(status_file)
     
     status_data = {
         "status": "running" if is_running else "idle",
@@ -182,25 +146,20 @@ def write_tuning_status(ticker: str, timeframe: str, is_running: bool = False) -
         "last_updated": datetime.now().isoformat()
     }
     
-    # Use thread-safe file writing
+    # Use thread-safe YAML writing
+    success = safe_write_yaml(status_file, status_data)
+    
+    # Also update streamlit session state if available
     try:
-        yaml_content = yaml.dump(status_data)
-        safe_file_write(status_file, yaml_content)
+        import streamlit as st
+        st.session_state["tuning_in_progress"] = is_running
+        st.session_state["tuning_ticker"] = ticker
+        st.session_state["tuning_timeframe"] = timeframe
+    except Exception:
+        # If not in a streamlit context, just ignore
+        pass
         
-        # Also update streamlit session state if available
-        try:
-            import streamlit as st
-            st.session_state["tuning_in_progress"] = is_running
-            st.session_state["tuning_ticker"] = ticker
-            st.session_state["tuning_timeframe"] = timeframe
-        except Exception:
-            # If not in a streamlit context, just ignore
-            pass
-            
-        return True
-    except Exception as e:
-        logger.error(f"Error writing tuning status: {e}")
-        return False
+    return success
 
 
 @robust_error_boundary
@@ -218,65 +177,49 @@ def load_latest_progress(
     Returns:
         Dictionary with progress information
     """
-    # Import inside function to avoid circular imports
-    import yaml
-    
     progress_file = os.path.join(DATA_DIR, "progress.yaml")
     
-    if not os.path.exists(progress_file):
-        # Return default progress if file doesn't exist
-        return {
-            "current_trial": 0,
-            "total_trials": 1,
-            "current_rmse": None,
-            "current_mape": None,
-            "best_rmse": None,
-            "best_mape": None,
-            "cycle": 1,
-        }
+    # Default progress if file doesn't exist
+    default_progress = {
+        "current_trial": 0,
+        "total_trials": 1,
+        "current_rmse": None,
+        "current_mape": None,
+        "best_rmse": None,
+        "best_mape": None,
+        "cycle": 1,
+    }
     
-    try:
-        with open(progress_file, "r") as f:
-            progress_data = yaml.safe_load(f) or {}
+    # Use safe_read_yaml from threadsafe module
+    progress_data = safe_read_yaml(progress_file, default=default_progress)
+    
+    # If ticker and timeframe specified, check if they match
+    if ticker and timeframe:
+        file_ticker = progress_data.get("ticker")
+        file_timeframe = progress_data.get("timeframe")
         
-        # If ticker and timeframe specified, check if they match
-        if ticker and timeframe:
-            file_ticker = progress_data.get("ticker")
-            file_timeframe = progress_data.get("timeframe")
+        if (file_ticker != ticker or file_timeframe != timeframe) and "cycle" in progress_data:
+            logger.info(
+                f"Progress file contains different ticker/timeframe: "
+                f"{file_ticker}/{file_timeframe} vs requested {ticker}/{timeframe}"
+            )
             
-            if (file_ticker != ticker or file_timeframe != timeframe) and "cycle" in progress_data:
-                logger.info(
-                    f"Progress file contains different ticker/timeframe: "
-                    f"{file_ticker}/{file_timeframe} vs requested {ticker}/{timeframe}"
-                )
-                
-        # Ensure numeric values are proper numbers
-        for key in ["current_trial", "total_trials", "cycle"]:
-            if key in progress_data and not isinstance(progress_data[key], (int, float)):
-                try:
-                    progress_data[key] = int(progress_data[key])
-                except (TypeError, ValueError):
-                    progress_data[key] = 0
-        
-        for key in ["current_rmse", "current_mape", "best_rmse", "best_mape"]:
-            if key in progress_data and progress_data[key] is not None:
-                try:
-                    progress_data[key] = float(progress_data[key])
-                except (TypeError, ValueError):
-                    progress_data[key] = None
-        
-        return progress_data
-        
-    except Exception as e:
-        logger.error(f"Error loading progress: {e}")
-        return {
-            "current_trial": 0,
-            "total_trials": 1,
-            "current_rmse": None,
-            "current_mape": None,
-            "cycle": 1,
-            "error": str(e)
-        }
+    # Ensure numeric values are proper numbers
+    for key in ["current_trial", "total_trials", "cycle"]:
+        if key in progress_data and not isinstance(progress_data[key], (int, float)):
+            try:
+                progress_data[key] = int(progress_data[key])
+            except (TypeError, ValueError):
+                progress_data[key] = 0
+    
+    for key in ["current_rmse", "current_mape", "best_rmse", "best_mape"]:
+        if key in progress_data and progress_data[key] is not None:
+            try:
+                progress_data[key] = float(progress_data[key])
+            except (TypeError, ValueError):
+                progress_data[key] = None
+    
+    return progress_data
 
 
 @robust_error_boundary
@@ -290,43 +233,31 @@ def write_progress(progress_data: Dict[str, Any]) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    # Import inside function to avoid circular imports
-    import yaml
-    from src.utils.threadsafe import safe_file_write
-    
     progress_file = os.path.join(DATA_DIR, "progress.yaml")
-    
-    # Create data directory if it doesn't exist
-    validate_file_path(progress_file)
     
     # Add timestamp
     progress_data["timestamp"] = datetime.now().isoformat()
     
-    # Use thread-safe file writing
+    # Use thread-safe YAML writing from threadsafe module
+    success = safe_write_yaml(progress_file, progress_data)
+    
+    # Also update streamlit session state if available
     try:
-        yaml_content = yaml.dump(progress_data)
-        safe_file_write(progress_file, yaml_content)
-        
-        # Also update streamlit session state if available
-        try:
-            import streamlit as st
-            if "best_rmse" in progress_data and progress_data["best_rmse"] is not None:
-                if "best_metrics" not in st.session_state:
-                    st.session_state["best_metrics"] = {}
-                st.session_state["best_metrics"]["rmse"] = progress_data["best_rmse"]
-                
-            if "best_mape" in progress_data and progress_data["best_mape"] is not None:
-                if "best_metrics" not in st.session_state:
-                    st.session_state["best_metrics"] = {}
-                st.session_state["best_metrics"]["mape"] = progress_data["best_mape"]
-        except Exception:
-            # If not in a streamlit context, just ignore
-            pass
+        import streamlit as st
+        if "best_rmse" in progress_data and progress_data["best_rmse"] is not None:
+            if "best_metrics" not in st.session_state:
+                st.session_state["best_metrics"] = {}
+            st.session_state["best_metrics"]["rmse"] = progress_data["best_rmse"]
             
-        return True
-    except Exception as e:
-        logger.error(f"Error writing progress: {e}")
-        return False
+        if "best_mape" in progress_data and progress_data["best_mape"] is not None:
+            if "best_metrics" not in st.session_state:
+                st.session_state["best_metrics"] = {}
+            st.session_state["best_metrics"]["mape"] = progress_data["best_mape"]
+    except Exception:
+        # If not in a streamlit context, just ignore
+        pass
+        
+    return success
 
 
 @robust_error_boundary
