@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime
 from typing import Dict, List, Optional, Union, Tuple
 
 import joblib
@@ -283,39 +284,34 @@ class PredictionService:
         feature_names: List[str] = None,
         horizon: int = 1,
     ) -> np.ndarray:
-        """
-        Make predictions and log them to the monitor if available.
-
-        Args:
-            data: Input data for prediction
-            actual: Actual values for comparison (optional)
-            feature_names: Optional feature names
-            horizon: Prediction horizon (days ahead)
-
-        Returns:
-            Numpy array of predictions
-        """
+        """Make a prediction and log it if a monitor is available."""
+        
+        # Get predictions
         predictions = self.predict(data, feature_names)
-
-        # Log prediction if monitor is available and actual values provided
-        if self.monitor is not None and actual is not None:
+        
+        # Log prediction if we have a monitor
+        if self.monitor is not None and HAS_MONITORING:
             try:
-                # Extract first prediction value for single-value logging
-                pred_value = (
-                    predictions[0]
-                    if isinstance(predictions, np.ndarray) and len(predictions) > 0
-                    else predictions
-                )
-
+                # Get timestamp (current time by default)
+                timestamp = datetime.now()
+                
+                # Extract prediction value (first value of the first prediction)
+                pred_value = float(predictions[0][0]) if predictions.size > 0 else None
+                
+                # Extract actual value if provided
+                actual_value = float(actual[0][0]) if actual is not None and hasattr(actual, 'size') and actual.size > 0 else actual
+                
+                # Log the prediction
                 self.monitor.log_prediction(
-                    ticker=self.current_ticker,
-                    timeframe=self.current_timeframe,
-                    actual=actual,
+                    ticker=self.ticker,
+                    timeframe=self.timeframe,
                     predicted=pred_value,
+                    actual=actual_value,
                     horizon=horizon,
                 )
+                logger.debug("Logged prediction - ticker: %s, value: %.4f", self.ticker, pred_value)
             except Exception as e:
-                logger.error(f"Error logging prediction: {e}")
+                logger.error("Error logging prediction: %s", e)
 
         return predictions
 

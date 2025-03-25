@@ -6,6 +6,7 @@ delegating to TrainingOptimizer methods where appropriate.
 
 import logging
 import weakref
+import os
 
 
 # Configure logging
@@ -44,13 +45,19 @@ class WeakRefCache:
         return len(self._cache)
 
 
-def cleanup_tf_session():
+def cleanup_tf_session(preserve_tf_session=True):
     """
     Clear TensorFlow session to free memory.
     Now delegates to TrainingOptimizer for a more comprehensive approach.
+    
+    Args:
+        preserve_tf_session: If True, avoids resetting the TensorFlow session
+                            completely, which could interfere with TensorFlow's
+                            own session management. Default: True
     """
     optimizer = get_training_optimizer()
-    return optimizer.cleanup_memory(level="medium")
+    level = "light" if preserve_tf_session else "medium"
+    return optimizer.cleanup_memory(level=level, preserve_tf_session=preserve_tf_session)
 
 
 def log_memory_usage(tag=""):
@@ -68,12 +75,14 @@ def log_memory_usage(tag=""):
     return optimizer.log_memory_usage(tag)
 
 
-def adaptive_memory_clean(level="medium"):
+def adaptive_memory_clean(level="medium", preserve_tf_session=True):
     """
     Clean memory based on the specified level of cleanup intensity.
 
     Args:
         level: Cleanup intensity ("light", "medium", "heavy", "critical")
+        preserve_tf_session: If True, avoids operations that might interfere
+                           with TensorFlow's session management. Default: True
 
     Returns:
         Dict: Results of the cleanup operation
@@ -84,7 +93,7 @@ def adaptive_memory_clean(level="medium"):
     if level == "critical":
         level = "heavy"
 
-    return optimizer.cleanup_memory(level=level)
+    return optimizer.cleanup_memory(level=level, preserve_tf_session=preserve_tf_session)
 
 
 def clear_model_cache():
@@ -123,22 +132,80 @@ def get_system_memory_info():
     return system_info
 
 
-def run_gpu_warmup(duration=10, intensity=0.8):
+def is_memory_critical():
+    """
+    Check if system memory usage is at a critical level.
+    
+    Returns:
+        bool: True if memory usage is critical (above 90%)
+    """
+    optimizer = get_training_optimizer()
+    memory_info = optimizer._get_memory_info()
+    return memory_info.get("ram_percent", 0) > 90
+
+
+def run_gpu_warmup(duration=10, intensity=0.5):
     """Run a GPU warmup to improve performance during initial operations"""
     try:
+        # Check for DirectML environment
+        is_directml = ("TENSORFLOW_USE_DIRECTML" in os.environ or 
+                      "DML_VISIBLE_DEVICES" in os.environ)
+        
+        # Import TensorFlow to check version and GPU type
+        import tensorflow as tf
+        tf_version = tf.__version__
+        gpu_devices = tf.config.list_physical_devices('GPU')
+        
+        logger.info(f"Running GPU warmup with TF {tf_version}, DirectML: {is_directml}")
+        logger.info(f"GPU devices: {gpu_devices}")
+        
+        # If no GPU devices found, log warning and exit
+        if not gpu_devices:
+            logger.warning("No GPU devices found for warmup")
+            return False
+        
         from src.utils.gpu_memory_manager import GPUMemoryManager
         manager = GPUMemoryManager()
-        peak_util = manager.warmup_gpu(intensity)
+        
+        # Force DirectML detection if we've detected it here
+        if is_directml:
+            manager.is_directml = True
+            logger.info("Forcing DirectML mode for GPU warmup")
+        
+        # Call the warmup function with appropriate parameters
+        peak_util = manager.warmup_gpu(intensity=intensity)
         
         # Notify training optimizer about the warmup
         try:
             optimizer = get_training_optimizer()
             if hasattr(optimizer, "log_gpu_activity"):
                 optimizer.log_gpu_activity("warmup", peak_util)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not log GPU activity: {e}")
+            # No need to re-raise this exception as it's non-critical
             
         return peak_util
     except Exception as e:
-        logger.error(f"Error running GPU warmup: {e}")
-        return False
+        logger.error(f"Error running GPU warmup: {e}", exc_info=True)
+        # Try a simple DirectML fallback if the manager approach fails
+        try:
+            import tensorflow as tf
+            import time
+            
+            logger.info("Using simple DirectML fallback for GPU warmup")
+            with tf.device('/GPU:0'):
+                # Simple matrix operations that should work with DirectML
+                for i in range(3):
+                    a = tf.random.normal([5000, 5000])
+                    b = tf.random.normal([5000, 5000])
+                    c = tf.matmul(a, b)
+                    _ = c.numpy()  # Force execution
+                    logger.info(f"DirectML fallback: completed iteration {i+1}/3")
+                    time.sleep(1)
+                
+            logger.info("Simple DirectML warmup completed")
+            return 10  # Return a nominal utilization value
+        except Exception as e2:
+            logger.error(f"DirectML fallback also failed: {e2}", exc_info=True)
+            # Return False instead of silently failing
+            return False

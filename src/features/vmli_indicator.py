@@ -213,7 +213,13 @@ class VMILIndicator:
             )
 
             # Convert OBI to same index as volume data
-            obi = obi.reindex(volume_data.index, method="ffill")
+            self._debug_before_reindex(obi, "order_book_obi")
+            
+            # Fix: Check if obi is a scalar before trying to reindex
+            if isinstance(obi, (float, int, np.number)):
+                obi = pd.Series(obi, index=volume_data.index)
+            else:
+                obi = obi.reindex(volume_data.index, method="ffill")
 
             # Combine volume factor with OBI (scale OBI to be centered around 1)
             liquidity = vol_factor * (1 + obi)
@@ -466,6 +472,20 @@ class VMILIndicator:
         }
 
         return results, performance
+
+    # Add debug method for reindexing operations
+    def _debug_before_reindex(self, df, name="dataframe"):
+        """Print debug information before reindexing operations"""
+        print(f"DEBUG {name} type: {type(df)}")
+        if hasattr(df, 'shape'):
+            print(f"DEBUG {name} shape: {df.shape}")
+        if hasattr(df, 'index'):
+            print(f"DEBUG {name} index type: {type(df.index)}")
+            print(f"DEBUG {name} index: {df.index}")
+            print(f"DEBUG {name} index dtype: {df.index.dtype}")
+        if hasattr(df, 'columns'):
+            print(f"DEBUG {name} columns: {df.columns.tolist()}")
+        print(f"DEBUG {name} head: {df.head(2) if hasattr(df, 'head') else df}")
 
 
 def load_example_data() -> pd.DataFrame:

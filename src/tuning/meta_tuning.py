@@ -28,7 +28,7 @@ if not logger.hasHandlers():
 current_file = os.path.abspath(__file__)
 src_dir = os.path.dirname(os.path.dirname(current_file))
 project_root = os.path.dirname(src_dir)
-if project_root not in sys.path:
+if (project_root not in sys.path):
     sys.path.insert(0, project_root)
 
 # Import from config
@@ -38,15 +38,36 @@ from config import DATA_DIR, MODELS_DIR
 LOG_DIR = os.path.join(DATA_DIR, "Models", "Tuning_Logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
-# Use the same paths as in progress_helper.py for consistency
-PROGRESS_FILE = os.path.join(DATA_DIR, "progress.yaml")
-TUNING_STATUS_FILE = os.path.join(DATA_DIR, "tuning_status.txt")
-TESTED_MODELS_FILE = os.path.join(DATA_DIR, "tested_models.yaml")
-CYCLE_METRICS_FILE = os.path.join(DATA_DIR, "cycle_metrics.yaml")
-BEST_PARAMS_FILE = os.path.join(
-    DATA_DIR, "Models", "Hyperparameters", "best_params.yaml"
-)
+# Get paths from progress_helper if available, otherwise define directly
+try:
+    from src.tuning.progress_helper import (
+        PROGRESS_FILE, 
+        TUNING_STATUS_FILE, 
+        CYCLE_METRICS_FILE, 
+        BEST_PARAMS_FILE,
+        TESTED_MODELS_FILE,  # Import from progress_helper
+        MODEL_PROGRESS_DIR,
+        DATA_DIR
+    )
+except ImportError:
+    # Fallback to direct definitions if import fails
+    PROGRESS_FILE = os.path.join(DATA_DIR, "progress.yaml")
+    TUNING_STATUS_FILE = os.path.join(DATA_DIR, "tuning_status.txt")
+    TESTED_MODELS_FILE = os.path.join(DATA_DIR, "tested_models.yaml")
+    CYCLE_METRICS_FILE = os.path.join(DATA_DIR, "cycle_metrics.yaml")
+    BEST_PARAMS_FILE = os.path.join(
+        DATA_DIR, "Models", "Hyperparameters", "best_params.yaml"
+    )
+    MODEL_PROGRESS_DIR = os.path.join(DATA_DIR, "model_progress")
+    logger.warning("Could not import paths from progress_helper. Using fallback definitions.")
+
+# Ensure directories exist
 os.makedirs(os.path.dirname(BEST_PARAMS_FILE), exist_ok=True)  # Ensure directory exists
+os.makedirs(MODEL_PROGRESS_DIR, exist_ok=True)
+
+# Model progress directory for individual model files
+MODEL_PROGRESS_DIR = os.path.join(DATA_DIR, "model_progress")
+os.makedirs(MODEL_PROGRESS_DIR, exist_ok=True)
 
 # Data directories and file paths
 DB_DIR = os.path.join(DATA_DIR, "DB")
@@ -64,7 +85,7 @@ from src.utils.env_setup import setup_tf_environment
 
 # Import GPU memory management tools
 from src.utils.gpu_memory_manager import GPUMemoryManager
-from src.utils.gpu_memory_management import set_performance_mode, get_memory_info, get_gpu_utilization
+from src.utils.gpu_memory_management import get_memory_info, get_gpu_utilization
 
 # Get mixed precision setting from config first
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -150,8 +171,8 @@ def initialize_gpu_for_tuning():
         
         return True
     except Exception as e:
-        logger.error(f"Error initializing GPU: {e}")
-        return False
+        logger.error(f"Error initializing GPU: {e}", exc_info=True)
+        raise RuntimeError(f"GPU initialization failed: {e}") # Re-raise with context
 
 def convert_to_builtin_type(obj):
     """Convert numpy types to Python built-in types for serialization."""
@@ -785,6 +806,327 @@ def check_sqlite_availability():
     """Verify SQLite is available and working properly"""
     try:
         import sqlite3
+        logger.info("Checking SQLite availability...")
+
+        # Test create an in-memory database
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE test (id INTEGER)")
+        conn.execute("INSERT INTO test (id) VALUES (1)")
+        result = conn.execute("SELECT id FROM test").fetchone()
+        conn.close()
+        
+        if result and result[0] == 1:
+            logger.info("✅ SQLite is available and working properly")
+            return True
+        else:
+            logger.error("SQLite is installed but not functioning correctly")
+            return False
+            
+    except ImportError:
+        logger.error("ERROR: SQLite (sqlite3) module not available! Install with 'pip install pysqlite3'")
+        return False
+    except Exception as e:
+        logger.error(f"ERROR: SQLite test failed: {e}")
+        logger.error(traceback.format_exc())
+        return False
+
+
+def verify_directories():
+    """Verify all required directories exist and are writable"""
+    required_dirs = {
+        "DATA_DIR": DATA_DIR,
+        "DB_DIR": DB_DIR,
+        "MODELS_DIR": MODELS_DIR,
+        "HYPERPARAMS_DIR": os.path.join(MODELS_DIR, "Hyperparameters"),
+    }
+
+    all_ok = True
+    logger.info("Verifying directories...")
+    
+    for name, directory in required_dirs.items():
+        # Check directory exists
+        if not os.path.exists(directory):
+            try:
+                os.makedirs(directory, exist_ok=True)
+                logger.info(f"Created directory: {directory}")
+            except Exception as e:
+                logger.error(f"ERROR: Failed to create {name} directory ({directory}): {e}")
+                all_ok = False
+                continue
+
+        # Check directory is writable
+        try:
+            test_file = os.path.join(directory, ".write_test")
+            with open(test_file, "w") as f:
+                f.write("test")
+            os.remove(test_file)
+            logger.info(f"✓ {name} directory is writable: {directory}")
+        except Exception as e:
+            logger.error(f"ERROR: {name} directory is not writable ({directory}): {e}")
+            all_ok = False
+    
+    return all_ok
+
+
+def initialize_tuning_environment():
+    """Initialize the environment for tuning with proper checks"""
+    logger.info("Initializing tuning environment...")
+    
+    # Check SQLite availability
+    sqlite_ok = check_sqlite_availability()
+    if not sqlite_ok:
+        logger.error("SQLite database verification failed. Tuning may not work properly.")
+    
+    # Verify directories
+    dirs_ok = verify_directories()
+    if not dirs_ok:
+        logger.error("Directory verification failed. Tuning may not work properly.")
+    
+    # Test creating an actual database file
+    test_db_path = os.path.join(DB_DIR, "test_tuning.db")
+    try:
+        import sqlite3
+        conn = sqlite3.connect(test_db_path)
+        c = conn.cursor()
+        c.execute("CREATE TABLE IF NOT EXISTS test_tuning (id INTEGER PRIMARY KEY, value TEXT)")
+        c.execute("INSERT INTO test_tuning (value) VALUES (?)", ("test",))
+        conn.commit()
+        
+        # Verify we can read the data
+        c.execute("SELECT value FROM test_tuning")
+        result = c.fetchone()
+        conn.close()
+        
+        # Check if the file was created with expected content
+        if os.path.exists(test_db_path):
+            file_size = os.path.getsize(test_db_path)
+            logger.info(f"✅ Successfully created test database: {test_db_path} (size: {file_size} bytes)")
+            
+            # Clean up the test file
+            try:
+                os.remove(test_db_path)
+                logger.info(f"Removed test database file")
+            except Exception as e:
+                logger.warning(f"Could not remove test database: {e}")
+        else:
+            logger.error(f"❌ Failed to create test database file: {test_db_path}")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Failed to create test database: {e}")
+        logger.error(traceback.format_exc())
+        return False
+    
+    # Return true only if all tests passed
+    return sqlite_ok and dirs_ok
+
+
+def tune_for_combo(
+    ticker,
+    timeframe,
+    range_cat="all",
+    n_trials=None,
+    cycle=1,
+    tuning_multipliers=None,
+    metric_weights=None,
+):
+    """
+    Run hyperparameter optimization for all models in parallel with proper resource sharing.
+
+    Args:
+        ticker: Ticker symbol
+        timeframe: Timeframe
+        range_cat: Range category ("all" or specific range)
+        n_trials: Number of trials per model (or None for auto)
+        cycle: Tuning cycle number
+        tuning_multipliers: Dict with tuning multipliers
+        metric_weights: Dict with metric weights
+
+    Returns:
+        Dict with tuning results for all models
+    """
+    # Reset stop request flag
+    set_stop_requested(False)
+
+    # Verify ticker and timeframe are valid
+    if not ticker or not timeframe:
+        logger.error(f"Invalid ticker or timeframe: {ticker}/{timeframe}")
+        return False
+
+    # Verify tuning environment before starting
+    logger.info("Verifying tuning environment before starting optimization...")
+    env_ok = initialize_tuning_environment()
+    if not env_ok:
+        logger.error("Tuning environment verification failed - will try to continue but may encounter errors")
+    
+    # Verify the DB directory specifically
+    if not os.path.exists(DB_DIR):
+        logger.warning(f"Database directory does not exist: {DB_DIR}")
+        try:
+            os.makedirs(DB_DIR, exist_ok=True)
+            logger.info(f"Created database directory: {DB_DIR}")
+        except Exception as e:
+            logger.error(f"Failed to create database directory: {e}")
+            logger.error("Tuning process may fail due to missing database directory")
+
+    # Clean memory before starting
+    adaptive_memory_clean("large")
+    
+    # Initialize GPU for optimal performance
+    initialize_gpu_for_tuning()
+
+    # Get tuning multipliers
+    if tuning_multipliers is None:
+        tuning_multipliers = st.session_state.get(
+            "tuning_multipliers",
+            {
+                "trials_multiplier": 1.0,
+                "epochs_multiplier": 1.0,
+                "timeout_multiplier": 1.0,
+                "complexity_multiplier": 1.0,
+            },
+        )
+
+    # Determine trials dynamically
+    if n_trials is None:
+        trials_multiplier = tuning_multipliers.get("trials_multiplier", 1.0)
+        adjusted_min = max(5, int(TUNING_TRIALS_PER_CYCLE_min * trials_multiplier))
+        adjusted_max = max(
+            adjusted_min + 5, int(TUNING_TRIALS_PER_CYCLE_max * trials_multiplier)
+        )
+
+        n_trials = random.randint(adjusted_min, adjusted_max)
+        logger.info(
+            f"Auto-selecting {n_trials} trials per model (between {adjusted_min} and {adjusted_max})"
+        )
+
+    # IMPROVED: Calculate total trials more accurately
+    total_trials = n_trials * len(ACTIVE_MODEL_TYPES)
+    logger.info(f"Total trials for all models: {total_trials}")
+
+    # Initial progress information - ALWAYS include ticker and timeframe
+    initial_progress = {
+        "ticker": ticker,
+        "timeframe": timeframe,
+        "cycle": cycle,
+        "total_trials": total_trials,
+        "aggregated_total_trials": total_trials,  # Make sure both are set
+        "completed_trials": 0,
+        "current_trial": 0,
+        "aggregated_current_trial": 0,
+        "current_progress": 0.0,
+        "timestamp": time.time(),
+    }
+    
+    # ADDED: Write to both main progress file and individual model files
+    update_progress_in_yaml(initial_progress)
+    
+    # Create initial progress files for each model type
+    for model_type in ACTIVE_MODEL_TYPES:
+        model_progress = initial_progress.copy()
+        model_progress["model_type"] = model_type
+        model_progress["total_trials"] = n_trials  # Individual model gets its share
+        update_progress_in_yaml(model_progress, model_type=model_type)
+
+    # Create callback for progress reporting
+    progress_callback = create_progress_callback(
+        cycle=cycle, ticker=ticker, timeframe=timeframe, range_cat=range_cat
+    )
+    callbacks = [progress_callback]
+
+    # Add stop callback
+    stop_callback = StopStudyCallback()
+    callbacks.append(stop_callback)
+
+    # Prepare study configurations
+    studies_config = []
+
+    # Log active model types before creating studies
+    logger.info(f"Creating studies for model types: {ACTIVE_MODEL_TYPES}")
+
+    for model_type in ACTIVE_MODEL_TYPES:
+        # Create study for this model type
+        study = study_manager.create_study(
+            model_type, ticker, timeframe, range_cat, cycle, n_trials, metric_weights
+        )
+
+        # Create objective function
+        objective = create_model_objective(
+            model_type, ticker, timeframe, range_cat, metric_weights
+        )
+
+        # Add to configuration
+        studies_config.append(
+            {
+                "component_type": model_type,
+                "n_trials": n_trials,
+                "objective_func": objective,
+                "callbacks": callbacks.copy(),  # Use copy to avoid shared state
+            }
+        )
+
+    # Run all studies with proper resource allocation
+    logger.info(f"Starting optimization with {len(studies_config)} study configurations")
+    results = study_manager.run_all_studies(studies_config)
+    logger.info(f"Completed optimization with results for {len(results)} models")
+
+    # Update cycle metrics with summary
+    try:
+        # Calculate combined metrics from all model results
+        combined_metrics = calculate_combined_metrics(results)
+        
+        # Add cycle and identification info
+        combined_metrics.update({
+            "cycle": cycle,
+            "ticker": ticker,
+            "timeframe": timeframe
+        })
+        
+        # Find best model across all studies
+        best_model_type, best_params, best_value = study_manager.get_best_model()
+        
+        # Add best model info
+        if best_model_type:
+            combined_metrics["best_model_type"] = best_model_type
+            combined_metrics["best_model_value"] = best_value
+            combined_metrics["best_model_params"] = best_params
+        
+        # Save cycle metrics
+        update_cycle_metrics(combined_metrics, cycle_num=cycle)
+        
+        # Update final progress to indicate completion
+        final_progress = {
+            "current_trial": combined_metrics.get("completed_trials", 0),
+            "aggregated_current_trial": combined_metrics.get("completed_trials", 0),
+            "total_trials": total_trials,
+            "aggregated_total_trials": total_trials,
+            "current_rmse": combined_metrics.get("rmse"),
+            "current_mape": combined_metrics.get("mape"),
+            "best_rmse": combined_metrics.get("best_rmse"),
+            "best_mape": combined_metrics.get("best_mape"),
+            "best_model": combined_metrics.get("best_model"),
+            "cycle": cycle,
+            "trial_progress": 1.0,  # Set to 100% complete
+            "timestamp": time.time(),
+            "ticker": ticker,
+            "timeframe": timeframe,
+            "status": "completed",
+        }
+        update_progress_in_yaml(final_progress)
+
+    except Exception as e:
+        logger.error(f"Error updating cycle metrics: {e}")
+        traceback.print_exc()
+
+    # Clean memory after optimization
+    adaptive_memory_clean("large")
+
+    return results
+
+
+def check_sqlite_availability():
+    """Verify SQLite is available and working properly"""
+    try:
+        import sqlite3
 
         # Test create an in-memory database
         conn = sqlite3.connect(":memory:")
@@ -843,7 +1185,15 @@ class StopStudyCallback:
     """Callback that stops an Optuna study when stop is requested."""
     def __call__(self, study, trial):
         if is_stop_requested():
+            logger.info(f"Stop requested during trial {trial.number} - stopping study")
             study.stop()
+            # Add more aggressive resource cleanup
+            try:
+                adaptive_memory_clean("light")
+            except Exception:
+                pass
+            return True
+        return False
 
 
 def get_model_registry():
@@ -999,111 +1349,140 @@ def robust_objective_wrapper(objective_fn):
     return wrapped_objective
 
 
-def create_progress_callback(cycle=1, ticker="unknown", timeframe="unknown", range_cat="all"):
+def create_progress_callback(cycle=1, model_type=None, ticker=None, timeframe=None, range_cat=None):
     """
-    Create a callback that updates progress file with thread-safety.
+    Create a callback that updates progress information in a YAML file.
     
     Args:
-        cycle: Current tuning cycle
-        ticker: Ticker symbol
-        timeframe: Timeframe
-        range_cat: Range category
-        
-    Returns:
-        function: Callback function for Optuna
+        cycle: Current tuning cycle number
+        model_type: Type of model being tuned (optional)
+        ticker: Ticker symbol being used for tuning (optional)
+        timeframe: Timeframe being used for tuning (optional)
+        range_cat: Range category being used (optional)
     """
+    from src.tuning.progress_helper import update_progress_in_yaml, update_model_progress
+
     def progress_callback(study, trial):
-        """Update progress when a trial completes."""
-        # Only process when trial completes
-        if trial.state != optuna.trial.TrialState.COMPLETE:
-            return
-
-        # Get metrics from trial
-        rmse = trial.user_attrs.get("rmse", float("inf"))
-        mape = trial.user_attrs.get("mape", float("inf"))
-
-        # Get best metrics if available
-        try:
-            if study.best_trial:
-                best_rmse = study.best_trial.user_attrs.get("rmse", float("inf"))
-                best_mape = study.best_trial.user_attrs.get("mape", float("inf"))
-                best_model = study.best_trial.params.get("model_type", "unknown")
-            else:
-                best_rmse = rmse
-                best_mape = mape
-                best_model = trial.params.get("model_type", "unknown")
-        except (ValueError, AttributeError, RuntimeError):
-            best_rmse = rmse
-            best_mape = mape
-            best_model = trial.params.get("model_type", "unknown")
-
-        # Prepare progress data
-        progress_data = {
-            "ticker": ticker,
-            "timeframe": timeframe,
-            "current_trial": trial.number,
-            "total_trials": study.user_attrs.get(
-                "n_trials", TUNING_TRIALS_PER_CYCLE_max
-            ),
-            "current_rmse": float(rmse),
-            "current_mape": float(mape),
-            "best_rmse": float(best_rmse),
-            "best_mape": float(best_mape),
-            "best_model": best_model,
-            "cycle": cycle,
-            "trial_progress": trial.number
-            / study.user_attrs.get("n_trials", TUNING_TRIALS_PER_CYCLE_max),
-            "timestamp": time.time(),
-        }
-
-        # Also record the detailed trial information separately
-        trial_info = {
-            "number": trial.number,
-            "value": trial.value,
-            "params": trial.params,
-            "state": str(trial.state),
-            "model_type": trial.params.get("model_type", "unknown"),
-            "rmse": rmse,
-            "mape": mape,
-            "timestamp": datetime.now().isoformat(),
-        }
-
-        # Update progress and trial info using thread-safe operations
-        update_progress_in_yaml(progress_data)
-        update_trial_info_in_yaml(TESTED_MODELS_FILE, trial_info)
-
-        # Save to session state if available - using more robust error handling
-        try:
-            import streamlit as st
-            if "st" in globals() and hasattr(st, "session_state"):
-                # First check if trial_logs exists, create if not
-                if "trial_logs" not in st.session_state:
-                    st.session_state["trial_logs"] = []
-                    
-                # Now it's safe to append
-                st.session_state["trial_logs"].append(trial_info)
-                
-                # Keep only the most recent 100 trials in memory
-                if len(st.session_state["trial_logs"]) > 100:
-                    st.session_state["trial_logs"] = st.session_state["trial_logs"][-100:]
-        except Exception as e:
-            # Just log the error but continue - don't let UI issues break tuning
-            logger.warning(f"Error updating session state: {e}")
-
-        # Clean memory periodically
-        if trial.number % 5 == 0:
-            # Use training optimizer for more efficient cleanup
-            training_optimizer.cleanup_memory(level="light") 
+        """Update progress in YAML file."""
+        # Extract model_type from study if not provided
+        nonlocal model_type, ticker, timeframe
+        local_model_type = model_type
+        local_ticker = ticker
+        local_timeframe = timeframe
+        
+        # Try to extract model type from study or trial
+        if not local_model_type:
+            # Try from study name first
+            if study.study_name:
+                for mt in ACTIVE_MODEL_TYPES:
+                    if mt in study.study_name:
+                        local_model_type = mt
+                        break
             
-        if trial.number % 20 == 0:
-            # More thorough cleanup every 20 trials
-            gpu_memory_manager.clean_memory(True)
-            # Check GPU utilization
-            gpu_util = get_gpu_utilization(0)
-            logger.info(f"GPU utilization at trial {trial.number}: {gpu_util}%")
+            # If still not found, try from trial params
+            if not local_model_type and hasattr(trial, "params"):
+                local_model_type = trial.params.get("model_type")
+                
+            # Final fallback - study user attributes
+            if not local_model_type and hasattr(study, "user_attrs"):
+                local_model_type = study.user_attrs.get("model_type")
+        
+        # Try to extract ticker and timeframe from study if not provided
+        if not local_ticker and hasattr(study, "user_attrs"):
+            local_ticker = study.user_attrs.get("ticker", ticker)
+        
+        if not local_timeframe and hasattr(study, "user_attrs"):
+            local_timeframe = study.user_attrs.get("timeframe", timeframe)
+                
+        # Log if we found the model type but it's different from provided
+        if local_model_type and local_model_type != model_type:
+            print(f"Extracted model type: {local_model_type} (was: {model_type})")
+        
+        # Get current number of trials
+        try:
+            current_trial = len(study.trials)
+            total_trials = study.user_attrs.get("n_trials", 10000)  # Default to 10000
+            remaining_trials = max(0, total_trials - current_trial)
+            
+            # Create progress data
+            progress_data = {
+                "current_trial": current_trial,
+                "total_trials": total_trials,
+                "remaining_trials": remaining_trials,
+                "cycle": cycle,
+                "trial_progress": current_trial / max(1, total_trials),
+                "timestamp": time.time(),
+                "is_running": True,  # Add explicit running flag
+            }
 
-        print(f"TUNING-DEBUG: Completed trial {trial.number}")
-
+            # Always add ticker and timeframe if available
+            if local_ticker:
+                progress_data["ticker"] = local_ticker
+            if local_timeframe:
+                progress_data["timeframe"] = local_timeframe
+            if range_cat:
+                progress_data["range_cat"] = range_cat
+                
+            # Add the model type if available
+            if local_model_type:
+                progress_data["model_type"] = local_model_type
+                
+            # Add best metrics if available
+            try:
+                if study.trials:
+                    best_trial = study.best_trial
+                    progress_data["best_rmse"] = best_trial.user_attrs.get("rmse")
+                    progress_data["best_mape"] = best_trial.user_attrs.get("mape")
+                    progress_data["best_model"] = best_trial.params.get("model_type", local_model_type)
+            except (ValueError, AttributeError, RuntimeError) as e:
+                logger.debug(f"Could not get best trial: {e}")
+            
+            # Add current trial info
+            if hasattr(trial, "user_attrs") and trial.user_attrs:
+                progress_data["current_rmse"] = trial.user_attrs.get("rmse")
+                progress_data["current_mape"] = trial.user_attrs.get("mape")
+            
+            if hasattr(trial, "value"):
+                progress_data["current_trial_value"] = trial.value
+            
+            # Also update tuning status file to ensure it's marked as running
+            try:
+                # Include ticker and timeframe in tuning status
+                from src.tuning.progress_helper import write_tuning_status
+                status_update = {
+                    "is_running": True,
+                    "status": "running",
+                    "current_trial": current_trial,
+                    "total_trials": total_trials,
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                # Always include ticker and timeframe if available
+                if local_ticker:
+                    status_update["ticker"] = local_ticker
+                if local_timeframe:
+                    status_update["timeframe"] = local_timeframe
+                    
+                write_tuning_status(status_update)
+            except Exception as e:
+                logger.warning(f"Error updating tuning status in callback: {e}")
+            
+            # Update progress with model_type if available
+            update_progress_in_yaml(progress_data)
+            
+            # If model type is available, also update model-specific progress
+            if local_model_type:
+                try:
+                    # Update individual model progress
+                    update_model_progress(local_model_type, progress_data)
+                except Exception as e:
+                    logger.warning(f"Error updating model progress for {local_model_type}: {e}")
+            
+        except Exception as e:
+            logger.warning(f"Error in progress callback: {e}")
+            import traceback
+            traceback.print_exc()
+    
     return progress_callback
 
 
@@ -1174,52 +1553,59 @@ def calculate_combined_metrics(results):
             logger.warning(f"No trials for {model_type}, skipping")
             continue
             
-        # Count trials
-        combined_metrics["total_trials"] += study.user_attrs.get("n_trials", 0)
-        combined_metrics["completed_trials"] += len(study.trials)
+        # Count trials more accurately
+        n_trials = study.user_attrs.get("n_trials", 0)
+        completed_trials = len(study.trials)
+        
+        combined_metrics["total_trials"] += n_trials
+        combined_metrics["completed_trials"] += completed_trials
+        
+        # Add model-specific metrics
+        if model_type not in combined_metrics["model_metrics"]:
+            combined_metrics["model_metrics"][model_type] = {}
+            
+        # Add trial information to model metrics
+        combined_metrics["model_metrics"][model_type].update({
+            "total_trials": n_trials,
+            "completed_trials": completed_trials,
+            "completion_percentage": (completed_trials / max(1, n_trials)) * 100
+        })
         
         # Extract best metrics from this model's best trial
         try:
             if best_trial:
-                model_rmse = best_trial.user_attrs.get("rmse", float('inf'))
-                model_mape = best_trial.user_attrs.get("mape", float('inf'))
-                model_da = best_trial.user_attrs.get("directional_accuracy", 0.0)
-                model_score = best_trial.value if hasattr(best_trial, 'value') else float('inf')
-                
-                # Track the best model's weight (from trial params or default to 1.0)
-                weight = best_trial.params.get("ensemble_weight", 1.0)
-                combined_metrics["ensemble_weights"][model_type] = weight
-                
-                # Update best overall metrics
-                if model_rmse < combined_metrics["rmse"]:
-                    combined_metrics["rmse"] = model_rmse
-                    combined_metrics["best_rmse"] = model_rmse
-                    combined_metrics["best_model_rmse"] = model_type
+                # Add metrics from best trial
+                if hasattr(best_trial, "user_attrs"):
+                    rmse = best_trial.user_attrs.get("rmse")
+                    mape = best_trial.user_attrs.get("mape")
+                    directional_accuracy = best_trial.user_attrs.get("directional_accuracy", 0.0)
                     
-                if model_mape < combined_metrics["mape"]:
-                    combined_metrics["mape"] = model_mape
-                    combined_metrics["best_mape"] = model_mape
-                    combined_metrics["best_model_mape"] = model_type
-                    
-                if model_da > combined_metrics["directional_accuracy"]:
-                    combined_metrics["directional_accuracy"] = model_da
-                    combined_metrics["best_directional_accuracy"] = model_da
-                    combined_metrics["best_model_da"] = model_type
-                    
-                if model_score < combined_metrics["combined_score"]:
-                    combined_metrics["combined_score"] = model_score
-                    combined_metrics["best_model"] = model_type
+                    if rmse is not None:
+                        combined_metrics["model_metrics"][model_type]["rmse"] = rmse
+                        # Track best overall RMSE
+                        if rmse < combined_metrics["rmse"]:
+                            combined_metrics["rmse"] = rmse
+                            combined_metrics["best_rmse"] = rmse
+                            combined_metrics["best_model"] = model_type
+                            
+                    if mape is not None:
+                        combined_metrics["model_metrics"][model_type]["mape"] = mape
+                        # Track best overall MAPE
+                        if mape < combined_metrics["mape"]:
+                            combined_metrics["mape"] = mape
+                            combined_metrics["best_mape"] = mape
+                            
+                    if directional_accuracy is not None:
+                        combined_metrics["model_metrics"][model_type]["directional_accuracy"] = directional_accuracy
+                        # For directional accuracy, higher is better
+                        if directional_accuracy > combined_metrics["directional_accuracy"]:
+                            combined_metrics["directional_accuracy"] = directional_accuracy
                 
-                # Store individual model metrics
-                combined_metrics["model_metrics"][model_type] = {
-                    "rmse": model_rmse,
-                    "mape": model_mape,
-                    "directional_accuracy": model_da,
-                    "combined_score": model_score,
-                    "completed_trials": len(study.trials),
-                    "total_trials": study.user_attrs.get("n_trials", 0),
-                    "weight": weight  # Store the model's weight for ensemble calculation
-                }
+                # Calculate a weight for this model based on performance
+                # (inverse of objective value - lower value means higher weight)
+                if best_trial.value and best_trial.value > 0:
+                    weight = 1.0 / max(0.0001, best_trial.value)
+                    combined_metrics["ensemble_weights"][model_type] = weight
         except Exception as e:
             logger.error(f"Error processing metrics for {model_type}: {e}")
     
@@ -1229,50 +1615,47 @@ def calculate_combined_metrics(results):
             # Normalize weights
             total_weight = sum(combined_metrics["ensemble_weights"].values())
             if total_weight > 0:
-                normalized_weights = {
-                    model: weight/total_weight 
-                    for model, weight in combined_metrics["ensemble_weights"].items()
+                normalized_weights = {}
+                weighted_metrics = {
+                    "rmse": 0.0,
+                    "mape": 0.0,
+                    "directional_accuracy": 0.0
                 }
                 
-                # Calculate weighted metrics
-                weighted_rmse = sum(
-                    normalized_weights.get(model, 0) * metrics.get("rmse", float('inf'))
-                    for model, metrics in combined_metrics["model_metrics"].items()
-                )
+                for model_type, weight in combined_metrics["ensemble_weights"].items():
+                    # Normalize this model's weight
+                    norm_weight = weight / total_weight
+                    normalized_weights[model_type] = norm_weight
+                    
+                    # Add to weighted metrics
+                    model_metrics = combined_metrics["model_metrics"].get(model_type, {})
+                    if "rmse" in model_metrics:
+                        weighted_metrics["rmse"] += model_metrics["rmse"] * norm_weight
+                    if "mape" in model_metrics:
+                        weighted_metrics["mape"] += model_metrics["mape"] * norm_weight
+                    if "directional_accuracy" in model_metrics:
+                        weighted_metrics["directional_accuracy"] += model_metrics["directional_accuracy"] * norm_weight
                 
-                weighted_mape = sum(
-                    normalized_weights.get(model, 0) * metrics.get("mape", float('inf'))
-                    for model, metrics in combined_metrics["model_metrics"].items()
-                )
-                
-                weighted_da = sum(
-                    normalized_weights.get(model, 0) * metrics.get("directional_accuracy", 0)
-                    for model, metrics in combined_metrics["model_metrics"].items()
-                )
-                
-                # Store weighted ensemble metrics
-                combined_metrics["ensemble_rmse"] = weighted_rmse
-                combined_metrics["ensemble_mape"] = weighted_mape
-                combined_metrics["ensemble_directional_accuracy"] = weighted_da
+                # Add normalized weights and ensemble metrics
                 combined_metrics["normalized_weights"] = normalized_weights
+                combined_metrics["weighted_metrics"] = weighted_metrics
+                
+                # Add ensemble metrics at top level for easy access
+                combined_metrics["ensemble_rmse"] = weighted_metrics["rmse"]
+                combined_metrics["ensemble_mape"] = weighted_metrics["mape"]
+                combined_metrics["ensemble_directional_accuracy"] = weighted_metrics["directional_accuracy"]
         except Exception as e:
             logger.error(f"Error calculating ensemble metrics: {e}")
     
     return combined_metrics
 
 
-def tune_for_combo(
-    ticker,
-    timeframe,
-    range_cat="all",
-    n_trials=None,
-    cycle=1,
-    tuning_multipliers=None,
-    metric_weights=None,
-):
+def start_tuning_process(ticker, timeframe, range_cat="all", n_trials=None, cycle=1, 
+                         tuning_multipliers=None, metric_weights=None, multipliers=None,
+                         force_start=False, stop_after=None, skip_checks=False, **kwargs):
     """
-    Run hyperparameter optimization for all models in parallel with proper resource sharing.
-
+    Start the hyperparameter tuning process for the given ticker and timeframe.
+    
     Args:
         ticker: Ticker symbol
         timeframe: Timeframe
@@ -1280,309 +1663,121 @@ def tune_for_combo(
         n_trials: Number of trials per model (or None for auto)
         cycle: Tuning cycle number
         tuning_multipliers: Dict with tuning multipliers
+        multipliers: Alternative name for tuning_multipliers (for backward compatibility)
         metric_weights: Dict with metric weights
-
+        force_start: Force start even if another tuning process is running
+        stop_after: Stop after specified number of trials (optional)
+        skip_checks: Skip environment verification checks
+        **kwargs: Additional keyword arguments for future compatibility
+        
     Returns:
-        Dict with tuning results for all models
+        Dict with tuning results
     """
-    # Reset stop request flag
-    set_stop_requested(False)
-
-    # Clean memory before starting
-    adaptive_memory_clean("large")
+    logger.info(f"Starting tuning process for {ticker}/{timeframe} (cycle {cycle})")
     
-    # Initialize GPU for optimal performance
-    initialize_gpu_for_tuning()
+    # Use multipliers parameter if tuning_multipliers is None
+    if tuning_multipliers is None and multipliers is not None:
+        tuning_multipliers = multipliers
     
-    # Enable performance mode for intensive operations
-    logger.info("Enabling GPU performance mode for tuning...")
-    set_performance_mode(True)
-
-    # Get tuning multipliers
-    if tuning_multipliers is None:
-        tuning_multipliers = st.session_state.get(
-            "tuning_multipliers",
-            {
-                "trials_multiplier": 1.0,
-                "epochs_multiplier": 1.0,
-                "timeout_multiplier": 1.0,
-                "complexity_multiplier": 1.0,
-            },
-        )
-
-    # Determine trials dynamically
-    if n_trials is None:
-        trials_multiplier = tuning_multipliers.get("trials_multiplier", 1.0)
-        adjusted_min = max(5, int(TUNING_TRIALS_PER_CYCLE_min * trials_multiplier))
-        adjusted_max = max(
-            adjusted_min + 5, int(TUNING_TRIALS_PER_CYCLE_max * trials_multiplier)
-        )
-
-        n_trials = random.randint(adjusted_min, adjusted_max)
-        logger.info(
-            f"Auto-selecting {n_trials} trials per model (between {adjusted_min} and {adjusted_max})"
-        )
-
-    # Initial progress information
-    initial_progress = {
-        "ticker": ticker,
-        "timeframe": timeframe,
-        "cycle": cycle,
-        "total_trials": n_trials * len(ACTIVE_MODEL_TYPES),
-        "completed_trials": 0,
-        "current_progress": 0.0,
-        "timestamp": time.time(),
-    }
-    update_progress_in_yaml(initial_progress)
-
-    # Create callback for progress reporting
-    progress_callback = create_progress_callback(
-        cycle=cycle, ticker=ticker, timeframe=timeframe, range_cat=range_cat
-    )
-    callbacks = [progress_callback]
-
-    # Add stop callback
-    stop_callback = StopStudyCallback()
-    callbacks.append(stop_callback)
-
-    # Prepare study configurations
-    studies_config = []
-
-    for model_type in ACTIVE_MODEL_TYPES:
-        # Create study for this model type
-        study = study_manager.create_study(
-            model_type, ticker, timeframe, range_cat, cycle, n_trials, metric_weights
-        )
-
-        # Create objective function
-        objective = create_model_objective(
-            model_type, ticker, timeframe, range_cat, metric_weights
-        )
-
-        # Add to configuration
-        studies_config.append(
-            {
-                "component_type": model_type,
-                "n_trials": n_trials,
-                "objective_func": objective,
-                "callbacks": callbacks.copy(),  # Use copy to avoid shared state
-            }
-        )
-
-    # Run all studies with proper resource allocation
-    results = study_manager.run_all_studies(studies_config)
-
-    # Update cycle metrics with summary
+    # Check if another tuning process is running unless force_start is True
+    if not force_start:
+        try:
+            status = read_tuning_status() or {}
+            if status.get("is_running", False) and status.get("status") != "stopped":
+                logger.warning(f"Another tuning process seems to be running: {status}")
+                logger.warning("Use force_start=True to override.")
+                return {"error": "Another tuning process is running", "status": status}
+        except Exception as e:
+            logger.warning(f"Error checking tuning status: {e}")
+    
+    # Update tuning status
     try:
-        # Calculate combined metrics from all model results
-        combined_metrics = calculate_combined_metrics(results)
-        
-        # Add cycle and identification info
-        combined_metrics.update({
-            "cycle": cycle,
-            "ticker": ticker,
-            "timeframe": timeframe
-        })
-        
-        # Find best model across all studies (keep original logic)
-        best_model_type, best_params, best_value = study_manager.get_best_model()
-        
-        # Add best model info
-        if best_model_type:
-            combined_metrics["best_model_type"] = best_model_type
-            combined_metrics["best_model_value"] = best_value
-            combined_metrics["best_model_params"] = best_params
-        
-        # Save cycle metrics
-        update_cycle_metrics(combined_metrics, cycle_num=cycle)
-        
-        # Update final progress to indicate completion
-        final_progress = {
-            "current_trial": combined_metrics["completed_trials"],
-            "total_trials": combined_metrics["total_trials"],
-            "current_rmse": combined_metrics.get("rmse"),
-            "current_mape": combined_metrics.get("mape"),
-            "best_rmse": combined_metrics.get("best_rmse"),
-            "best_mape": combined_metrics.get("best_mape"),
-            "best_model": combined_metrics.get("best_model"),
-            "cycle": cycle,
-            "trial_progress": 1.0,  # Set to 100% complete
-            "timestamp": time.time(),
+        write_tuning_status({
+            "status": "starting",
             "ticker": ticker,
             "timeframe": timeframe,
-            "status": "completed",
-        }
-        update_progress_in_yaml(final_progress)
-
+            "cycle": cycle,
+            "is_running": True,
+            "timestamp": datetime.now().isoformat()
+        })
     except Exception as e:
-        logger.error(f"Error updating cycle metrics: {e}")
-        traceback.print_exc()
-
-    # Disable performance mode to save energy
-    set_performance_mode(False)
+        logger.warning(f"Error updating tuning status: {e}")
     
-    # Clean memory after optimization
-    adaptive_memory_clean("large")
-
-    return results
-
-
-def start_tuning_process(ticker, timeframe, multipliers=None, force_start=False):
-    """
-    Start the tuning process by calling tune_for_combo.
-    Sets session state to indicate tuning is in progress.
-
-    Args:
-        ticker (str): The ticker symbol
-        timeframe (str): The timeframe (e.g. "1d")
-        multipliers (dict, optional): Dictionary of tuning multipliers
-        force_start (bool, optional): Whether to force start even if already running
-        
-    Returns:
-        dict: Results from tuning, or None if error
-    """
-    print(f"TUNING-DEBUG: Starting tuning process for {ticker} {timeframe}")
+    # Initialize GPU for optimal performance (skip if requested)
+    if not skip_checks:
+        try:
+            initialize_gpu_for_tuning()
+        except Exception as e:
+            logger.warning(f"Error initializing GPU: {e}")
     
-    # Check if tuning is already running
-    current_status = read_tuning_status()
-    if current_status.get("is_running", False) and not force_start:
-        logger.warning("Tuning process is already running")
-        return None
-
-    # Reset the stop event to make sure we're not in a stopped state
-    set_stop_requested(False)
+    # Run the actual tuning process
+    results = tune_for_combo(
+        ticker=ticker, 
+        timeframe=timeframe, 
+        range_cat=range_cat,
+        n_trials=n_trials,
+        cycle=cycle,
+        tuning_multipliers=tuning_multipliers,
+        metric_weights=metric_weights
+    )
     
-    #Start all studies
-    from src.tuning.study_manager import run_all_studies
-    run_all_studies(ticker, timeframe)
-
-    # Set session state to indicate tuning is in progress
-    st.session_state["tuning_in_progress"] = True
-    st.session_state["tuning_start_time"] = time.time()
-
-    # Store multipliers in session state if provided
-    if multipliers is not None:
-        st.session_state["tuning_multipliers"] = multipliers
-    else:
-        multipliers = st.session_state.get("tuning_multipliers", None)
-
-    # Calculate adjusted trials based on mode multipliers
-    adjusted_trials = TUNING_TRIALS_PER_CYCLE_min
-    if multipliers:
-        # Get mode from multipliers or use default
-        trials_multiplier = multipliers.get("trials", 1.0)
-        adjusted_trials = max(
-            TUNING_TRIALS_PER_CYCLE_min,
-            min(TUNING_TRIALS_PER_CYCLE_max, int(TUNING_TRIALS_PER_CYCLE_min * trials_multiplier)),
-        )
-
-    # Update tuning status
-    write_tuning_status({
-        "is_running": True,
-        "ticker": ticker,
-        "timeframe": timeframe,
-        "total_trials": adjusted_trials * len(ACTIVE_MODEL_TYPES),
-        "start_time": time.time(),
-        "cycle": 1
-    })
-
-    # Initialize GPU for optimal performance
-    initialize_gpu_for_tuning()
-
+    # Update tuning status to completed
     try:
-        # Run tuning for combination
-        results = tune_for_combo(
-            ticker,
-            timeframe,
-            range_cat="all",
-            n_trials=adjusted_trials,
-            cycle=1,
-            tuning_multipliers=multipliers,
-        )
-        
-        # Update tuning status on completion
         write_tuning_status({
-            "is_running": False,
             "status": "completed",
-            "end_time": time.time()
-        })
-        
-        # Update session state
-        st.session_state["tuning_in_progress"] = False
-        
-        return results
-    except Exception as e:
-        logger.error(f"Error in tuning process: {e}")
-        # Always disable performance mode on error
-        set_performance_mode(False)
-        
-        # Update status file
-        write_tuning_status({
+            "ticker": ticker,
+            "timeframe": timeframe,
+            "cycle": cycle,
             "is_running": False,
-            "error": str(e),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now().isoformat()
         })
-        
-        return None
-
+    except Exception as e:
+        logger.warning(f"Error updating final tuning status: {e}")
+    
+    logger.info(f"Tuning process completed for {ticker}/{timeframe}")
+    return results
 
 def stop_tuning_process():
     """
-    Stop the tuning process by signaling the stop event.
-    Updates session state to indicate tuning has stopped.
+    Stop the current tuning process.
     
-    Returns:
-        bool: True if stop was signaled
+    Sets a flag that will be checked by the StopStudyCallback,
+    which will then stop all running studies.
     """
-    # Signal the stop event
+    logger.info("Stopping tuning process...")
+    
+    # Set the stop flag
     set_stop_requested(True)
-
-    # Update session state
-    st.session_state["tuning_in_progress"] = False
-
+    
     # Update tuning status
-    write_tuning_status(
-        {"is_running": False, "stopped_manually": True, "stop_time": time.time()}
-    )
-
-    # Clear stored multipliers to use defaults next time
-    if "tuning_multipliers" in st.session_state:
-        del st.session_state["tuning_multipliers"]
-
-    logger.info("Tuning process stop requested")
+    try:
+        status = read_tuning_status() or {}
+        status.update({
+            "status": "stopped",
+            "is_running": False,
+            "timestamp": datetime.now().isoformat(),
+            "message": "Manually stopped by user"
+        })
+        write_tuning_status(status)
+    except Exception as e:
+        logger.warning(f"Error updating tuning status during stop: {e}")
+    
+    # Clean memory
+    try:
+        adaptive_memory_clean("heavy")
+    except Exception as e:
+        logger.warning(f"Error cleaning memory during stop: {e}")
+    
+    # Also clean any lock files that might be preventing status updates
+    try:
+        import os
+        from config.config_loader import DATA_DIR
+        status_lock = os.path.join(DATA_DIR, "tuning_status.txt.lock")
+        if os.path.exists(status_lock):
+            os.remove(status_lock)
+            logger.info("Removed tuning_status lock file")
+    except Exception as e:
+        logger.warning(f"Error removing lock file: {e}")
+        
+    logger.info("Stop request for tuning process has been set")
     return True
-
-
-def main():
-    """Main entry point for tuning."""
-    # Clean memory at start
-    adaptive_memory_clean("large")
-    
-    # Initialize GPU for optimal performance
-    initialize_gpu_for_tuning()
-
-    # Loop through tuning cycles
-    for cycle in range(1, TUNING_LOOP + 1):
-        # Clean memory between cycles
-        adaptive_memory_clean("large")
-
-    # Final memory cleanup
-    adaptive_memory_clean("large")
-    
-    # Disable performance mode when done to save energy
-    set_performance_mode(False)
-
-
-# Call the initialize function when imported
-if __name__ != "__main__":
-    # Only run initialization when imported as a module (not when run directly)
-    initialize_tuning_environment()
-
-# Exports
-__all__ = [
-    "start_tuning_process",
-    "stop_tuning_process",
-    "tune_for_combo",
-    "register_best_model",
-    "get_model_registry",
-]

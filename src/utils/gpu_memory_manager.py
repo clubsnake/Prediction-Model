@@ -12,9 +12,8 @@ from src.utils.gpu_memory_management import (
     clean_gpu_memory,
     configure_gpu_memory,
     get_memory_info,
-    set_performance_mode,  # Import performance mode setter
-    get_gpu_utilization,    # Import utilization checker
-    stress_test_gpu,        # Import stress test function
+    get_gpu_utilization,   
+    stress_test_gpu,       
 )
 
 # Import adaptive_memory_clean from memory_utils instead of duplicating it
@@ -22,39 +21,21 @@ from src.utils.memory_utils import adaptive_memory_clean
 
 
 class GPUMemoryManager:
-    """
-    Advanced GPU memory manager for TensorFlow that provides:
-
-    1. Dynamic memory growth and limits per GPU
-    2. Automatic batch size adjustment based on available memory
-    3. Efficient gradient accumulation for training with large models
-    4. Model partitioning across multiple GPUs
-    5. Periodic memory cleanup and garbage collection
-    6. Memory usage tracking and reporting
-    7. Training checkpointing to recover from OOM errors
-    8. Performance mode to maximize GPU utilization and get fans spinning
-    """
 
     def __init__(
         self,
-        memory_limit_mb=None,
         allow_growth=True,
         visible_devices=None,
-        reserve_memory=0.1,
     ):
         """
         Initialize the GPU memory manager.
 
         Args:
-            memory_limit_mb: Memory limit per GPU in MB or None for no limit
             allow_growth: Whether to allow GPU memory growth
             visible_devices: List of GPU indices to use or None for all
-            reserve_memory: Fraction of GPU memory to reserve for TensorFlow operations
         """
-        self.memory_limit_mb = memory_limit_mb
         self.allow_growth = allow_growth
         self.visible_devices = visible_devices
-        self.reserve_memory = reserve_memory
         self.logger = logging.getLogger("GPUMemoryManager")
         self.original_gpus = []
         self.logical_gpus = []
@@ -64,11 +45,30 @@ class GPUMemoryManager:
         self.performance_mode = False  # Default to standard mode
         self.gpu_utilization_history = []  # Track GPU utilization
 
-        # Check for DirectML environment
+        # Enhanced DirectML detection
         self.is_directml = (
             "TENSORFLOW_USE_DIRECTML" in os.environ
             or "DML_VISIBLE_DEVICES" in os.environ
         )
+        
+        # Additional check for DirectML
+        try:
+            import tensorflow as tf
+            if hasattr(tf, 'experimental') and hasattr(tf.experimental, 'get_device_policy'):
+                self.is_directml = self.is_directml or 'DirectML' in str(tf.config.list_physical_devices())
+            
+            # Check if DirectML dll is loaded
+            if hasattr(tf, 'version'):
+                self.is_directml = self.is_directml or 'directml.dll' in str(tf.sysconfig.get_build_info()).lower()
+            
+            # NEW: Check if any GPU device name contains "DML"
+            gpu_devices = tf.config.list_physical_devices('GPU')
+            if any("DML" in str(device) for device in gpu_devices):
+                self.is_directml = True
+                self.logger.info("Detected DirectML GPU device based on device name")
+        except Exception:
+            pass
+            
         if self.is_directml:
             self.logger.info("DirectML environment detected in GPUMemoryManager")
 
@@ -79,24 +79,11 @@ class GPUMemoryManager:
         Returns:
             List of logical devices available after configuration
         """
-        # Use centralized configuration
         config = {
             "allow_growth": self.allow_growth,
-            "memory_limit_mb": self.memory_limit_mb,
             "visible_gpus": self.visible_devices,
             "directml_enabled": self.is_directml,  # Pass DirectML flag to configuration
         }
-
-        # New: Check if performance mode is requested
-        self.performance_mode = os.environ.get("TF_GPU_PERFORMANCE_MODE", "0") == "1"
-        if self.performance_mode:
-            set_performance_mode(True)
-            self.logger.info("🔥 GPU PERFORMANCE MODE ENABLED - Maximum utilization")
-            # Override allow_growth in performance mode
-            self.allow_growth = False
-            config["allow_growth"] = False
-            config["performance_mode"] = True
-            
         configure_gpu_memory(config)
         self.initialized = True
 
@@ -115,84 +102,6 @@ class GPUMemoryManager:
             self.logger.error(f"Error getting GPU list: {e}")
 
         return self.logical_gpus
-    
-    def enable_performance_mode(self):
-        """Enable maximum performance mode for GPU utilization (will get fans spinning!)"""
-        if not self.performance_mode:
-            # Import here to avoid circular imports
-            self.performance_mode = True
-            set_performance_mode(True)
-            self.logger.info("🔥 GPU Performance Mode ENABLED - Maximum utilization")
-            self.clean_memory(True)
-            
-            # Apply aggressive optimizations
-            try:
-                import tensorflow as tf
-                
-                # Max performance settings
-                self.logger.info("Applying aggressive GPU optimization settings...")
-                
-                # Set options for maximum GPU utilization
-                options = {
-                    "layout_optimizer": True,
-                    "constant_folding": True,
-                    "shape_optimization": True,
-                    "remapping": True,
-                    "arithmetic_optimization": True,
-                    "dependency_optimization": True,
-                    "loop_optimization": True,
-                    "function_optimization": True,
-                    "debug_stripper": True,
-                    "auto_mixed_precision": True,  # Enable only if using mixed precision
-                    "disable_meta_optimizer": False,
-                    "scoped_allocator_optimization": True, # Scope allocations for better performance
-                }
-                tf.config.optimizer.set_experimental_options(options)
-                
-                # Always use JIT (XLA) for maximum performance
-                tf.config.optimizer.set_jit(True)
-                
-                # Set high-performance thread settings
-                if hasattr(tf.config.threading, "get_inter_op_parallelism_threads"):
-                    # Use aggressive thread count settings
-                    cores = os.cpu_count() or 4
-                    tf.config.threading.set_inter_op_parallelism_threads(cores // 2)
-                    tf.config.threading.set_intra_op_parallelism_threads(cores)
-                
-                # Set GPU memory options
-                if hasattr(tf, "GPUOptions"):
-                    # For older TensorFlow versions
-                    gpu_options = tf.GPUOptions(
-                        allow_growth=False,
-                        per_process_gpu_memory_fraction=0.95, # Take 95% of GPU memory
-                        force_gpu_compatible=True
-                    )
-                    config = tf.ConfigProto(gpu_options=gpu_options)
-                    tf.keras.backend.set_session(tf.Session(config=config))
-                
-                # Environment variables for high performance
-                os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"
-                os.environ["TF_GPU_THREAD_COUNT"] = str(cores)
-                os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
-                os.environ["TF_CUDNN_USE_AUTOTUNE"] = "1"
-                
-                self.logger.info("Aggressive GPU optimizations applied!")
-                
-            except Exception as e:
-                self.logger.error(f"Error applying performance settings: {e}")
-                
-            return True
-        return False
-    
-    def disable_performance_mode(self):
-        """Disable performance mode and return to normal operation"""
-        if self.performance_mode:
-            self.performance_mode = False
-            set_performance_mode(False)
-            self.logger.info("GPU Performance Mode DISABLED - Returning to normal operation")
-            self.clean_memory(True)
-            return True
-        return False
 
     def run_gpu_stress_test(self, duration=10, intensity=0.9):
         """Run a GPU stress test to check performance and get those fans spinning!"""
@@ -203,7 +112,7 @@ class GPUMemoryManager:
             self.logger.error(f"GPU stress test failed: {results['error']}")
             return False
             
-        self.logger.info(f"GPU stress test results:")
+        self.logger.info("GPU stress test results:")
         self.logger.info(f"- Max utilization: {results['max_utilization']}%")
         self.logger.info(f"- Average utilization: {results['avg_utilization']:.1f}%")
         
@@ -232,6 +141,11 @@ class GPUMemoryManager:
             
             self.logger.info(f"Warming up GPU with {intensity:.0%} intensity...")
             
+            # Check if we're using DirectML
+            if self.is_directml:
+                self.logger.info("Using DirectML-compatible GPU warmup method")
+                return self._directml_warmup(intensity)
+                
             # Create a compute-intensive model using a large convolution
             input_shape = (256, 256, 3)
             input_tensor = tf.keras.layers.Input(shape=input_shape)
@@ -255,13 +169,18 @@ class GPUMemoryManager:
             
             model = tf.keras.Model(inputs=input_tensor, outputs=output)
             
-            # Enable XLA compilation for maximum efficiency
-            @tf.function(jit_compile=True)
+            # IMPORTANT: DO NOT use jit_compile=True with DirectML
+            # Even though we're in the non-DirectML path, remove it to be safe
+            # since DirectML detection might be incorrect in some environments
+            @tf.function
             def training_step(x):
                 with tf.GradientTape() as tape:
                     pred = model(x, training=True)
                     loss = tf.reduce_mean(pred)
                 gradients = tape.gradient(loss, model.trainable_variables)
+                # Apply or store gradients to prevent unused variable warning
+                if any(g is not None for g in gradients):
+                    logger.debug(f"Computed gradients for {len(gradients)} variables")
                 return gradients
             
             # Create random input data
@@ -307,6 +226,98 @@ class GPUMemoryManager:
             
         except Exception as e:
             self.logger.error(f"Error warming up GPU: {e}")
+            return 0
+            
+    def _directml_warmup(self, intensity=0.7):
+        """
+        DirectML-compatible GPU warmup that uses simpler operations.
+        
+        Args:
+            intensity: Warmup intensity (0.1 to 1.0)
+            
+        Returns:
+            Peak GPU utilization achieved
+        """
+        try:
+            import tensorflow as tf
+            import time
+            import numpy as np
+            
+            self.logger.info("Running DirectML-compatible GPU warmup...")
+            
+            # Get initial utilization
+            try:
+                start_util = get_gpu_utilization(0)
+                self.logger.info(f"Initial GPU utilization: {start_util}%")
+                peak_util = start_util
+            except Exception as e:
+                self.logger.warning(f"Could not get initial GPU utilization: {e}")
+                start_util = 0
+                peak_util = 0
+            
+            # Scale matrix size based on intensity (smaller for DirectML)
+            matrix_size = min(4096, int(1000 * intensity))  # Reduced size for DirectML
+            iterations = max(10, int(5 * intensity))
+            
+            # Simple matrix operations that should work on DirectML
+            for i in range(iterations):
+                try:
+                    self.logger.info(f"Warmup iteration {i+1}/{iterations}")
+                    
+                    # Create tensors directly on the GPU
+                    with tf.device('/GPU:0'):
+                        # Simple matrix multiplication
+                        a = tf.random.normal([matrix_size, matrix_size])
+                        b = tf.random.normal([matrix_size, matrix_size])
+                        
+                        # Execute operations that should be compatible with DirectML
+                        c = tf.matmul(a, b)
+                        
+                        # Force execution
+                        result = c.numpy()
+                        
+                        # Add some basic math operations that should work
+                        d = tf.reduce_mean(c)
+                        e = tf.square(d)
+                        
+                        # Force execution again
+                        _ = e.numpy()
+                    
+                    # Check utilization if available
+                    try:
+                        current_util = get_gpu_utilization(0)
+                        peak_util = max(peak_util, current_util)
+                        self.logger.info(f"Current GPU utilization: {current_util}%")
+                        
+                        # Store in history
+                        self.gpu_utilization_history.append({
+                            "timestamp": time.time(),
+                            "utilization": current_util,
+                            "operation": "directml_warmup",
+                            "iteration": i
+                        })
+                    except Exception:
+                        pass
+                    
+                    # Short delay
+                    time.sleep(0.5)
+                
+                except Exception as e:
+                    self.logger.warning(f"Error in warmup iteration {i+1}: {e}")
+                    # Continue with next iteration
+            
+            self.logger.info(f"DirectML warmup complete! Peak utilization: {peak_util}%")
+            
+            # Attempt to clean memory
+            try:
+                self.clean_memory()
+            except Exception:
+                pass
+                
+            return peak_util
+            
+        except Exception as e:
+            self.logger.error(f"Error in DirectML warmup: {e}")
             return 0
 
     def get_available_memory(self, device_idx=0) -> float:
@@ -1070,9 +1081,7 @@ def train_with_gradient_accumulation(
 def example_usage():
     # Initialize the GPU memory manager
     memory_manager = GPUMemoryManager(
-        memory_limit_mb=None,  # No specific limit
         allow_growth=True,  # Allow memory growth
-        reserve_memory=0.1,  # Reserve 10% of memory
     )
 
     # Configure GPUs
@@ -1157,3 +1166,22 @@ def example_usage():
 
 if __name__ == "__main__":
     example_usage()
+
+def _configure_directml_compatibility(self):
+    """Handle LSTM implementation for DirectML to avoid CudnnRNN errors."""
+    try:
+        import tensorflow as tf
+        # Configure TensorFlow for DirectML compatibility
+        os.environ["TF_DIRECTML_KERNEL_FALLBACK"] = "1"
+        os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
+        
+        # Force TensorFlow to use compatible implementations
+        if hasattr(tf.keras.layers, 'LSTM'):
+            logger.info("Configuring LSTM layer for DirectML compatibility")
+            # Use non-Cudnn implementation for LSTM
+            tf.keras.layers.LSTM._supports_cudnn = False
+            
+        logger.info("DirectML compatibility configuration complete")
+    except Exception as e:
+        logger.error(f"Failed to configure DirectML compatibility: {e}", exc_info=True)
+        raise  # Re-raise to ensure caller knows configuration failed

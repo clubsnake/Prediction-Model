@@ -52,17 +52,15 @@ import streamlit as st
 from config.config_loader import (
     DATA_DIR,
     N_STARTUP_TRIALS,
+    HYPERPARAMS_DIR,  # Import correct path from config_loader
+    BEST_PARAMS_FILE, # Import correct path from config_loader
 )
 from config.logger_config import logger
 
 # Import dashboard error handling utilities for more robust operation
 from src.dashboard.dashboard.dashboard_error import robust_error_boundary
 
-# Initialize paths for storing hyperparameters and best model configurations
-# This creates a centralized location for model parameters that can be 
-# referenced across the application
-HYPERPARAMS_DIR = os.path.join(DATA_DIR, "hyperparams")
-BEST_PARAMS_FILE = os.path.join(HYPERPARAMS_DIR, "best_params.yaml")
+# Ensure directories exist
 os.makedirs(HYPERPARAMS_DIR, exist_ok=True)
 
 # Initialize training optimizer to efficiently allocate computational resources
@@ -89,6 +87,7 @@ try:
         set_stop_requested,
         update_progress_in_yaml,
         write_tuning_status,
+        get_progress_file_path,  # Import the new function
     )
     from src.utils.gpu_memory_manager import adaptive_memory_clean
 except ImportError as e:
@@ -102,6 +101,12 @@ except ImportError as e:
     def is_stop_requested():
         return False
     
+    def get_progress_file_path(file_type, model_type=None):
+        return os.path.join(DATA_DIR, f"{file_type}.yaml")
+
+# Set the logger level to DEBUG to capture more detailed messages
+import logging
+logger.setLevel(logging.DEBUG)
 
 @robust_error_boundary
 def generate_future_forecast(model, df, feature_cols, lookback=30, horizon=30):
@@ -139,251 +144,342 @@ def generate_future_forecast(model, df, feature_cols, lookback=30, horizon=30):
 
 @robust_error_boundary
 def start_tuning(ticker, timeframe, multipliers=None):
-    """
-    Initiates the model tuning process for the specified ticker and timeframe.
+    """Start the tuning process"""
+    logger.info(f"start_tuning called with ticker={ticker} timeframe={timeframe}")
+    print(f"Starting tuning for {ticker} {timeframe}")
     
-    Args:
-        ticker (str): The ticker symbol to tune for (e.g., 'ETH-USD')
-        timeframe (str): The timeframe to use (e.g., '1d', '1h')
-        multipliers (dict, optional): Additional parameters for tuning
+    # Validate inputs
+    if not ticker or not timeframe:
+        logger.error("Ticker or timeframe not provided")
+        st.error("Ticker and timeframe must be provided")
+        return False
     
-    Returns:
-        bool: True if tuning was started successfully, False otherwise
-    """
-    print(f"DEBUG: start_tuning called with ticker={ticker}, timeframe={timeframe}")
+    logger.info("Reading existing tuning status")
+    tuning_status = read_tuning_status()
+    logger.debug(f"Current tuning status: {tuning_status}")
     
-    # Force clean any stale lock files first
-    try:
-        from src.utils.threadsafe import cleanup_stale_locks
-
-        cleanup_stale_locks(force=True)
-        print("Cleaned up stale lock files before starting tuning")
-    except ImportError:
-        print("Could not import cleanup_stale_locks - continuing anyway")
-
-    # Debug: print current tuning flag
-    print("DEBUG: tuning_in_progress =", st.session_state.get("tuning_in_progress", False))
-    
-    # MODIFIED: Always force reset the flag to False first, ignoring previous state
-    # This ensures we start from a clean state each time the user clicks "Start Tuning"
-    st.session_state["tuning_in_progress"] = False
-    
-    # Check and reset tuning status from file
-    try:
-        # Import directly from progress_helper for consistency
-        from src.tuning.progress_helper import read_tuning_status, write_tuning_status
-
-        tuning_status = read_tuning_status()
-
-        # Force reset if stale
-        if tuning_status.get("is_running", False):
-            # Check if the status is stale (older than 30 minutes)
-            try:
-                start_time = float(tuning_status.get("start_time", 0))
-                if time.time() - start_time > 1800:  # 30 minutes
-                    print("Found stale tuning status - resetting")
-                    write_tuning_status(
-                        {
-                            "is_running": False,
-                            "error": "Reset due to stale status",
-                            "timestamp": datetime.now().isoformat(),
-                        }
-                    )
-                    tuning_status["is_running"] = False
-                else:
-                    # MODIFIED: Add option to force start anyway
-                    if st.session_state.get("force_start_tuning", False):
-                        print("Force starting tuning despite ongoing process")
-                        write_tuning_status(
-                            {
-                                "is_running": False,
-                                "error": "Reset due to force start",
-                                "timestamp": datetime.now().isoformat(),
-                            }
-                        )
-                        tuning_status["is_running"] = False
-                        # Clear the force flag 
-                        st.session_state["force_start_tuning"] = False
-                    else:
-                        print("Tuning appears to be running in another process. Please stop that process first or use Force Start.")
-                        st.session_state["tuning_in_progress"] = True
-                        return
-            except (ValueError, TypeError):
-                # If we can't parse the start_time, assume it's stale
-                print("Could not parse start_time from tuning status - resetting")
-                write_tuning_status(
-                    {
-                        "is_running": False,
-                        "error": "Reset due to unparseable status",
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                )
-                tuning_status["is_running"] = False
-    except ImportError:
-        # Fall back to local version if import fails
-        from src.dashboard.dashboard.dashboard_error import read_tuning_status
-
-        tuning_status = read_tuning_status()
-
     if tuning_status.get("is_running", False):
-        # MODIFIED: Add option to force start anyway
-        if st.session_state.get("force_start_tuning", False):
-            print("Force starting tuning despite ongoing process")
-            # Reset tuning status in file
-            try:
-                from src.tuning.progress_helper import write_tuning_status
-                write_tuning_status(
-                    {
-                        "is_running": False,
-                        "error": "Reset due to force start",
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                )
-            except ImportError:
-                pass
-            # Clear the force flag
-            st.session_state["force_start_tuning"] = False
-        else:
-            print("Tuning is already running in another process. Please stop that process first or use Force Start.")
-            # Update session state for consistency
-            st.session_state["tuning_in_progress"] = True
-            return
-
-    # Update session state
-    st.session_state["tuning_in_progress"] = True
-    st.session_state["tuning_start_time"] = time.time()
-
-    # Write status file to indicate tuning is in progress
-    try:
-        # Import from progress_helper for consistency
-        from src.tuning.progress_helper import (
-            read_progress_from_yaml,
-            write_tuning_status,
-        )
-
-        # Get startup trials from config, defaulting to 5000 if not available
+        logger.info("Tuning already in progress, checking if status is stale")
         try:
-            from config.config_loader import N_STARTUP_TRIALS
-
-            startup_trials = int(N_STARTUP_TRIALS)
-        except (ImportError, ValueError):
-            startup_trials = 5000
-
-        # If we have multipliers, adjust the number of trials
-        if multipliers and "trials_multiplier" in multipliers:
-            total_trials = max(
-                100, int(startup_trials * multipliers["trials_multiplier"])
-            )
-        else:
-            total_trials = startup_trials
-
-        tuning_status_data = {
-            "ticker": ticker,
-            "timeframe": timeframe,
-            "is_running": True,
-            "start_time": time.time(),
-            "timestamp": datetime.now().isoformat(),
-        }
-
-        write_tuning_status(tuning_status_data)
-
-        # Read existing progress to preserve cycle value if available
-        current_progress = read_progress_from_yaml()
-
-        # Initialize progress file while preserving cycle if it exists for this ticker/timeframe
-        current_cycle = 1  # Default to 1
-
-        # Only preserve cycle if ticker and timeframe match
-        if (
-            current_progress
-            and current_progress.get("ticker") == ticker
-            and current_progress.get("timeframe") == timeframe
-        ):
-            current_cycle = current_progress.get("cycle", 1)
-            # Log that we're preserving the cycle
-            logger.info(f"Preserving cycle {current_cycle} for {ticker}/{timeframe}")
-
-        from src.tuning.progress_helper import update_progress_in_yaml
-
-        initial_progress = {
-            "ticker": ticker,
-            "timeframe": timeframe,
-            "current_trial": 0,
-            "total_trials": total_trials,
-            "cycle": current_cycle,  # Use preserved cycle value
-            "timestamp": time.time(),
-        }
-        update_progress_in_yaml(initial_progress)
-
-        # Start tuning process
-        print(f"DEBUG: About to call start_tuning_process for {ticker} {timeframe}")
-        try:
-            # Try importing before calling
-            from src.tuning.meta_tuning import start_tuning_process
-            print("DEBUG: Successfully imported start_tuning_process")
+            start_time = float(tuning_status.get("start_time", 0))
+            if time.time() - start_time > 1800:  # stale if >30 minutes
+                logger.warning("Found stale tuning status; resetting status")
+                write_tuning_status({
+                    "is_running": False,
+                    "error": "Reset due to stale status",
+                    "timestamp": datetime.now().isoformat(),
+                })
+            else:
+                current_ticker = tuning_status.get("ticker")
+                current_timeframe = tuning_status.get("timeframe")
+                
+                # If the ticker or timeframe is different and we're running
+                if current_ticker and current_timeframe and (current_ticker != ticker or current_timeframe != timeframe):
+                    logger.warning(f"Tuning in progress for {current_ticker}/{current_timeframe}; requested {ticker}/{timeframe}")
+                    
+                    # Show a warning with options to stop or reset
+                    st.warning(f"Tuning is already in progress for {current_ticker}/{current_timeframe}. Do you want to stop it and start tuning for {ticker}/{timeframe}?")
+                    
+                    # Create three columns for actions
+                    stop_col, reset_col, _ = st.columns(3)
+                    
+                    with stop_col:
+                        if st.button("Stop current tuning"):
+                            if stop_tuning():
+                                st.success("Tuning stopped. Please click 'Start Tuning' again.")
+                            else:
+                                st.error("Failed to stop tuning. Try using Reset.")
+                            return False
+                    
+                    with reset_col:
+                        if st.button("Force Reset Status"):
+                            if reset_tuning_status():
+                                st.success("Tuning status has been reset. You can now start a new tuning process.")
+                                time.sleep(1)  # Short delay before rerun
+                                st.experimental_rerun()
+                            else:
+                                st.error("Failed to reset tuning status.")
+                            return False
+                    
+                    return False
+                else:
+                    logger.info("Tuning already in progress for the same ticker/timeframe")
+                    
+                    # Show an error message with a reset option
+                    st.error(f"Tuning is already in progress for {ticker}/{timeframe}. Please wait for it to complete or stop it first.")
+                    
+                    # Add a reset button for stuck processes
+                    if st.button("Force Reset Tuning Status"):
+                        if reset_tuning_status():
+                            st.success("Tuning status has been reset. You can now start a new tuning process.")
+                            time.sleep(1)  # Short delay before rerun
+                            st.experimental_rerun()
+                        else:
+                            st.error("Failed to reset tuning status.")
+                        
+                    return False
         except Exception as e:
-            print(f"DEBUG-ERROR: Failed to import start_tuning_process: {e}")
-            
-        # Call the actual tuning process
-        start_tuning_process(ticker, timeframe, multipliers)
-        print("DEBUG: Called start_tuning_process successfully")
-
-        print(f"Started hyperparameter tuning for {ticker} ({timeframe})")
-        # Don't call st.success() here to avoid errors in Streamlit
-        # Instead, we'll rely on the experimental_rerun to update the UI
-        st.experimental_rerun()  # Force rerun to update UI
-    except Exception as e:
-        print(f"Failed to start tuning: {e}")
-        # Reset status on error
-        st.session_state["tuning_in_progress"] = False
-
-        # Update status file
-        try:
-            from src.tuning.progress_helper import write_tuning_status
-
-            write_tuning_status(
-                {
+            logger.error(f"Exception while checking tuning status: {e}", exc_info=True)
+            print(f"Error checking tuning status: {e}")
+    
+    if not multipliers:
+        logger.info("No multipliers provided, setting default multipliers")
+        from config.config_loader import N_STARTUP_TRIALS
+        multipliers = {
+            "n_startup_trials": N_STARTUP_TRIALS,
+            "trials_multiplier": 1.0,
+            "epochs_multiplier": 1.0,
+            "patience_multiplier": 1.0,
+            "complexity_multiplier": 1.0,
+        }
+        print(f"Using default n_startup_trials: {N_STARTUP_TRIALS}")
+    
+    # FIXED: Set up a flag to avoid recursive reruns
+    if st.session_state.get("_tuning_starting", False):
+        logger.warning("Tuning startup is already in progress - preventing loop")
+        return True
+        
+    # Mark that we are starting tuning
+    st.session_state["_tuning_starting"] = True
+    st.session_state["tuning_ticker"] = ticker
+    st.session_state["tuning_timeframe"] = timeframe
+    
+    start_timestamp = datetime.now()
+    status_update = {
+        "is_running": True,
+        "start_time": time.time(),
+        "ticker": ticker,
+        "timeframe": timeframe,
+        "timestamp": start_timestamp.isoformat(),
+        "status": "initializing",
+        "reset": True
+    }
+    logger.info(f"Writing initial tuning status: {status_update}")
+    print(f"Writing initial status with ticker={ticker}, timeframe={timeframe}")
+    
+    # Ensure directory exists before writing status
+    status_dir = os.path.dirname(os.path.join(DATA_DIR, "tuning_status.txt"))
+    os.makedirs(status_dir, exist_ok=True)
+    
+    write_tuning_status(status_update)
+    
+    st.session_state["tuning_in_progress"] = True
+    st.session_state["last_progress_update"] = time.time()
+    
+    logger.info(f"Starting tuning for {ticker}/{timeframe} after status update")
+    
+    try:
+        logger.info("Importing start_tuning_process from meta_tuning")
+        from src.tuning.meta_tuning import start_tuning_process
+        logger.debug("Successfully imported start_tuning_process")
+        
+        # Create a progress placeholder
+        progress_ph = st.empty()
+        with progress_ph.container():
+            st.info(f"Starting tuning process for {ticker}/{timeframe}...")
+            progress_bar = st.progress(0)
+        
+        # Update progress while waiting for completion
+        update_progress_in_yaml({
+            "ticker": ticker,
+            "timeframe": timeframe,
+            "status": "initializing",
+            "timestamp": time.time(),
+            "is_running": True,
+            "cycle": 1
+        })
+        
+        # CRITICAL FIX: Use threading to prevent blocking the Streamlit UI
+        import threading
+        
+        def run_tuning_process():
+            try:
+                # FIXED: Clear the starting flag at the beginning of the thread
+                if "_tuning_starting" in st.session_state:
+                    del st.session_state["_tuning_starting"]
+                    
+                logger.info("Starting tuning process via start_tuning_process (threaded)")
+                result = start_tuning_process(ticker=ticker, timeframe=timeframe, multipliers=multipliers, force_start=True)
+                logger.info(f"Tuning process completed with result: {result}")
+                
+                # Update status when complete
+                write_tuning_status({
+                    "is_running": False,
+                    "status": "completed",
                     "ticker": ticker,
                     "timeframe": timeframe,
+                    "timestamp": datetime.now().isoformat(),
+                    "completion_time": time.time()
+                })
+                
+            except Exception as e:
+                logger.error(f"Error in tuning thread: {e}", exc_info=True)
+                # Reset status on error
+                write_tuning_status({
                     "is_running": False,
                     "error": str(e),
-                    "timestamp": datetime.now().isoformat(),
-                }
-            )
-        except Exception:
-            pass  # Just ignore if we can't update the file
+                    "ticker": ticker,
+                    "timeframe": timeframe,
+                    "timestamp": datetime.now().isoformat()
+                })
+                
+                # FIXED: Also clear the starting flag on exception
+                if "_tuning_starting" in st.session_state:
+                    del st.session_state["_tuning_starting"]
+        
+        # Start the tuning in a separate thread
+        tuning_thread = threading.Thread(target=run_tuning_process)
+        tuning_thread.daemon = False  # FIXED: Keep as False for proper cleanup
+        tuning_thread.start()
+        
+        # FIXED: Sleep briefly to allow the thread to initialize
+        # This prevents immediate reruns while the thread is still setting up
+        time.sleep(0.5)
+        
+        # Show success message
+        logger.info(f"Tuning thread started for {ticker}/{timeframe}")
+        st.success(f"Tuning process for {ticker}/{timeframe} has been launched in the background. Check the 'Model Progress' tab for updates.")
+        
+        # Force flush all logger handlers to ensure logs are written
+        for handler in logger.handlers:
+            handler.flush()
+        
+        # FIXED: Clear the starting flag before returning
+        if "_tuning_starting" in st.session_state:
+            del st.session_state["_tuning_starting"]
+            
+        return True
+    except Exception as e:
+        logger.error(f"Exception in start_tuning: {e}", exc_info=True)
+        print(f"DEBUG-ERROR: Failed to run tuning process: {e}")
+        st.session_state["tuning_in_progress"] = False
+        
+        # FIXED: Clear the starting flag on exception
+        if "_tuning_starting" in st.session_state:
+            del st.session_state["_tuning_starting"]
+            
+        write_tuning_status({
+            "is_running": False,
+            "error": str(e),
+            "stopped_at": datetime.now().isoformat(),
+            "timestamp": datetime.now().isoformat(),
+            "ticker": ticker,
+            "timeframe": timeframe
+        })
+        st.error(f"Failed to start tuning: {e}")
+        return False
 
 
 @robust_error_boundary
 def stop_tuning():
     """Stop the currently running hyperparameter tuning process."""
     try:
-        # Import tuning function
-        from src.tuning.meta_tuning import stop_tuning_process
-
-        # Stop tuning process
-        result = stop_tuning_process()
-
-        # Update session state
+        # Set stop flag in session state immediately
         st.session_state["tuning_in_progress"] = False
-
-        # Update status file directly
-        from src.tuning.progress_helper import write_tuning_status
-
-        write_tuning_status(
-            {
-                "is_running": False,
-                "stopped_manually": True,
-                "stop_time": time.time(),
-                "timestamp": datetime.now().isoformat(),
-            }
-        )
-
-        st.success("Stopped hyperparameter tuning")
-        st.experimental_rerun()  # Force rerun to update UI
-        return result
+        st.session_state["stopping_tuning"] = True  # Add a stopping flag to prevent reruns
+        
+        # Try using the progress_helper to set stop flags
+        from src.tuning.progress_helper import set_stop_requested, write_tuning_status
+        from src.tuning.meta_tuning import stop_tuning_process
+        
+        # Use centralized tuning stop function if available
+        try:
+            stop_tuning_process()
+            logger.info("Called stop_tuning_process() from meta_tuning")
+        except Exception as e:
+            logger.warning(f"Could not call stop_tuning_process: {e}")
+            # Set the stop flag as fallback
+            set_stop_requested(True)
+            logger.info("Set stop_requested flag as fallback")
+        
+        # Update the tuning status file using the global datetime import
+        write_tuning_status({
+            "is_running": False,
+            "stopped_manually": True,
+            "stop_time": time.time(),
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # Log the stop
+        logger.info("Tuning process manually stopped")
+        
+        # Add a slight delay to allow messages to propagate
+        time.sleep(0.5)
+        
+        # Show success message but without causing a rerun
+        st.success("Tuning process stopped. You can start a new tuning process now.")
+        
+        return True
     except Exception as e:
-        st.error(f"Failed to stop tuning: {e}")
+        logger.error(f"Error stopping tuning: {e}")
+        # Try direct approach as fallback
+        try:
+            # Write directly to tuning status file
+            import os
+            import json
+            
+            status_file = os.path.join("Data", "tuning_status.txt")
+            with open(status_file, "w") as f:
+                f.write("is_running: False\n")
+                f.write("status: stopped_manually\n")
+                f.write(f"timestamp: {datetime.now().isoformat()}\n")
+                f.write("force_stop: True\n")
+            
+            # Add a slight delay to allow messages to propagate
+            time.sleep(0.5)
+            
+            return True
+        except Exception as e2:
+            logger.error(f"Error with fallback stopping: {e2}")
+            return False
+
+
+@robust_error_boundary
+def reset_tuning_status():
+    """
+    Reset tuning status for when it gets stuck in a "running" state.
+    This is a forceful reset that should be used when the dashboard 
+    incorrectly shows tuning is running when it's not.
+    """
+    try:
+        # Reset session state
+        st.session_state["tuning_in_progress"] = False
+        if "_tuning_starting" in st.session_state:
+            del st.session_state["_tuning_starting"]
+        
+        # Reset the tuning status file
+        from src.tuning.progress_helper import write_tuning_status
+        
+        # Write a clean status
+        write_tuning_status({
+            "is_running": False,
+            "status": "reset_manually",
+            "reset_time": time.time(),
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # Also try to reset stop_requested flag
+        try:
+            from src.tuning.progress_helper import set_stop_requested
+            set_stop_requested(False)
+        except Exception as e:
+            logger.warning(f"Could not reset stop_requested flag: {e}")
+        
+        # Clean any lock files
+        try:
+            status_lock = os.path.join(DATA_DIR, "tuning_status.txt.lock")
+            if os.path.exists(status_lock):
+                os.remove(status_lock)
+                logger.info("Removed tuning_status.txt.lock file")
+        except Exception as e:
+            logger.warning(f"Could not remove lock file: {e}")
+        
+        # Log the reset
+        logger.info("Tuning status manually reset")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error resetting tuning status: {e}")
         return False
 
 
@@ -465,8 +561,8 @@ def model_save_load_controls():
 
     if st.button("Save Current Model"):
         model = st.session_state.get("current_model")
-        if model is None:
-            st.warning("No model in session to save.")
+        if (model is None) or (not hasattr(model, "save")):
+            st.warning("No model in session to save or model does not have a save method.")
         else:
             save_dir = st.session_state["saved_model_dir"]
             try:
@@ -1035,3 +1131,4 @@ def display_model_metrics(filter_by_cycle=None):
     except Exception as e:
         st.error(f"Error displaying model metrics: {e}")
         logger.error(f"Error in display_model_metrics: {e}", exc_info=True)
+

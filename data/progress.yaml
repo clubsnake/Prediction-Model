@@ -1,12 +1,76 @@
 aggregated_current_trial: 0
-aggregated_total_trials: 0
-best_mape: .inf
-best_model: lstm
-best_rmse: .inf
+aggregated_total_trials: 23679
+best_mape: null
+best_model: null
+best_rmse: null
 current_trial: 0
 cycle: 1
-remaining_trials: 10000
+model_trials:
+  cnn:
+    completion_percentage: 0.0
+    current_trial: 0
+    directional_accuracy: 0.0
+    mape: null
+    rmse: null
+    total_trials: 2631
+  lstm:
+    completion_percentage: 0.0
+    current_trial: 0
+    directional_accuracy: 0.0
+    mape: .inf
+    rmse: .inf
+    total_trials: 2631
+  ltc:
+    completion_percentage: 0.0
+    current_trial: 0
+    directional_accuracy: 0.0
+    mape: .inf
+    rmse: .inf
+    total_trials: 2631
+  nbeats:
+    completion_percentage: 0.0
+    current_trial: 0
+    directional_accuracy: 0.0
+    mape: null
+    rmse: null
+    total_trials: 2631
+  random_forest:
+    completion_percentage: 0.0
+    current_trial: 0
+    directional_accuracy: 0.0
+    mape: .inf
+    rmse: .inf
+    total_trials: 2631
+  rnn:
+    completion_percentage: 0.0
+    current_trial: 0
+    directional_accuracy: 0.0
+    mape: .inf
+    rmse: .inf
+    total_trials: 2631
+  tabnet:
+    completion_percentage: 0.0
+    current_trial: 0
+    directional_accuracy: 0.0
+    mape: .inf
+    rmse: .inf
+    total_trials: 2631
+  tft:
+    completion_percentage: 0.0
+    current_trial: 0
+    directional_accuracy: 0.0
+    mape: .inf
+    rmse: .inf
+    total_trials: 2631
+  xgboost:
+    completion_percentage: 0.0
+    current_trial: 0
+    directional_accuracy: 0.0
+    mape: .inf
+    rmse: .inf
+    total_trials: 2631
 ticker: ETH-USD
 timeframe: 1d
-timestamp: 1742262378.705692
-total_trials: 10000
+timestamp: 1742792678.7098162
+total_trials: 23679
+update_id: 1742792678709

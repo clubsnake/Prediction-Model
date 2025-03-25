@@ -18,6 +18,8 @@ Key features:
 - Parallel training with optimal resource distribution
 - Resource usage monitoring and visualization
 - Automatic failover and error handling
+- ALWAYS PRESERVES DYNAMIC MEMORY ALLOCATION: Never interferes with TensorFlow's
+  ability to dynamically grow and shrink memory usage based on model needs
 
 This module is primarily used by the training pipeline and is not intended for direct
 user interaction. It exposes a singleton instance through the get_training_optimizer() function.
@@ -45,9 +47,10 @@ logging.basicConfig(
 )
 
 # Model type-specific resource requirements (ONLY affecting hardware allocation)
+# These are INITIAL allocation guidelines, not hard limits - models can dynamically use more as needed
 MODEL_RESOURCE_PROFILES = {
     "lstm": {
-        "gpu_memory_fraction": 0.24,  # Reduced from 0.3
+        "gpu_memory_fraction": 0.24,  # Initial allocation hint, not a hard limit
         "cpu_weight": 1.0,
         "ram_gb": 2.0,
         "tf_model": True,
@@ -95,7 +98,7 @@ MODEL_RESOURCE_PROFILES = {
         "tf_model": True,
     },
     "nbeats": {
-        "gpu_memory_fraction": 0.3,  
+        "gpu_memory_fraction": 0.3,  # Initial allocation, not a hard limit  
         "cpu_weight": 1.2,
         "ram_gb": 2.5,
         "tf_model": True,
@@ -127,6 +130,10 @@ class TrainingOptimizer:
     RAM allocation) and DOES NOT modify any model parameters that would affect the
     statistical properties or training behavior of the models themselves. All model
     parameters will be controlled entirely by Optuna.
+    
+    The optimizer preserves TensorFlow's ability to dynamically grow and allocate memory
+    as needed. Resource fractions are only used for scheduling and resource tracking, 
+    never as hard limits on what a model can use when it needs more memory.
     """
 
     def __init__(self, config_path=None):
@@ -262,33 +269,51 @@ class TrainingOptimizer:
 
     def _auto_configure(self) -> Dict:
         """Auto-configure based on available hardware for optimal performance."""
-        # Determine max concurrent models for GPU and CPU
+        # Count actual CPU and GPU models from the resource profiles
+        gpu_models = sum(1 for model, profile in MODEL_RESOURCE_PROFILES.items() 
+                         if profile.get("gpu_memory_fraction", 0) > 0)
+        cpu_models = sum(1 for model, profile in MODEL_RESOURCE_PROFILES.items() 
+                         if profile.get("gpu_memory_fraction", 0) == 0)
+        
+        # Verify our counts
+        logger.info(f"Auto-configuring for {gpu_models} GPU models and {cpu_models} CPU-only models")
+        
+        # Determine max concurrent models for GPU
         if self.has_gpu:
-            # With less than 8GB total GPU memory, be more conservative
-            if self.gpu_memory_gb < 8:
-                max_gpu_models = 4  # Increased from 2
-            elif self.gpu_memory_gb < 16:
-                max_gpu_models = 6  # Increased from 4
+            if self.gpu_memory_gb < 7:  # 6GB GPU
+                max_gpu_models = min(3, gpu_models)  # 3 GPU models at once or fewer if we have fewer
+            elif self.gpu_memory_gb < 12:  # 8GB GPU
+                max_gpu_models = min(4, gpu_models)  # 4 GPU models at once or fewer if we have fewer
             else:
-                max_gpu_models = 8  # Maximum of 8 models
+                max_gpu_models = gpu_models  # All GPU models
         else:
             max_gpu_models = 0
 
-        # For CPU models, consider physical cores
-        if self.cpu_count <= 4:
-            max_cpu_models = 4  # Increased from 2
-        elif self.cpu_count <= 8:
-            max_cpu_models = 6  # Increased from 4
-        else:
-            max_cpu_models = 8  # Maximum of 8 models
+        # For CPU models, the max is just the number of CPU models we have
+        # But also account for physical cores
+        try:
+            import psutil
+            logical_cores = psutil.cpu_count(logical=True)
+            has_hyperthreading = logical_cores > self.cpu_count
+        except ImportError:
+            logical_cores = self.cpu_count
+            has_hyperthreading = False
 
-        # Calculate optimal threads per model
-        if self.cpu_count <= 8:
+        # We know we only have 2 CPU models, so this is simpler
+        max_cpu_models = cpu_models  # We only have 2 CPU models
+
+        # Set up threading based on CPU capabilities
+        if self.cpu_count <= 4:
+            # Use hyperthreading for better performance on a 4C/8T system like your i7
+            threads_per_model = 2 if has_hyperthreading and logical_cores >= 8 else 1
+            inter_op = 1
+            intra_op = 1
+        elif self.cpu_count <= 8:
             threads_per_model = 1
             inter_op = 1
             intra_op = 1
         else:
-            threads_per_model = max(1, min(3, self.cpu_count // 8))  # Reduced from 4
+            threads_per_model = max(1, min(3, self.cpu_count // 8))
             inter_op = min(threads_per_model, 2)
             intra_op = max(1, threads_per_model - inter_op)
 
@@ -300,11 +325,12 @@ class TrainingOptimizer:
             "intra_op_threads": intra_op,
             "use_mixed_precision": self.has_gpu,
             "use_xla": self.has_gpu,
-            "memory_growth": True,
-            "max_parallel_models": 8,  # Always try to run all 8 models
+            "memory_growth": True,  # ALWAYS enable memory growth
+            "max_parallel_models": len(MODEL_RESOURCE_PROFILES),  # Total number of models
             "model_resource_profiles": MODEL_RESOURCE_PROFILES,
-            "gpu_memory_headroom_pct": 3,  # Reduced from 5% to allow more models
-            "cpu_headroom_pct": 5,  # Reduced from 10% to allow more models
+            "gpu_memory_headroom_pct": 2,  # Minimal headroom for maximum utilization
+            "cpu_headroom_pct": 5,  # Minimal headroom for maximum CPU utilization
+            "dynamic_allocation": True,  # Flag to indicate we support dynamic allocation
         }
 
 
@@ -508,7 +534,7 @@ class TrainingOptimizer:
             List of task groups for parallel execution
         """
         # If we have 8 or fewer tasks, try to run them all at once
-        if len(tasks) <= self.config["max_parallel_models"]:
+        if (len(tasks) <= self.config["max_parallel_models"]):
             return [tasks]
 
         # If we have more, need to organize based on resource requirements
@@ -778,7 +804,7 @@ class TrainingOptimizer:
         Setup isolated hardware environment for a task thread.
 
         This only configures thread and memory allocation without modifying
-        any model parameters.
+        any model parameters. ALWAYS enables dynamic memory growth for TensorFlow.
         """
         # Nothing to do for non-TensorFlow models
         if not task.config.get("hardware_settings", {}).get("is_tf_model", False):
@@ -791,11 +817,8 @@ class TrainingOptimizer:
             hw_settings = task.config.get("hardware_settings", {})
 
             if task.resources["gpu_fraction"] > 0 and self.has_gpu:
-                # Set up GPU environment
-                # We can't truly isolate GPU memory per thread without Ray
-                # But we can configure TensorFlow to be more efficient
-
-                # Enable memory growth to avoid allocation all GPU memory
+                # Set up GPU environment - ALWAYS enable memory growth for all GPUs
+                # This ensures TensorFlow can dynamically manage memory
                 for gpu in self.gpus:
                     tf.config.experimental.set_memory_growth(gpu, True)
 
@@ -890,14 +913,12 @@ class TrainingOptimizer:
                     pass
 
             logger.info(
-                f"Resource utilization ({label}): "
-                f"CPU: {cpu_percent:.1f}%, "
-                f"Memory: {memory_mb:.1f}MB ({memory_percent:.1f}%), "
-                f"GPU: {gpu_info}"
+                "Resource utilization (%s): CPU: %.1f%%, Memory: %.1fMB (%.1f%%), GPU: %s",
+                label, cpu_percent, memory_mb, memory_percent, gpu_info
             )
 
         except Exception as e:
-            logger.warning(f"Error logging resource utilization: {e}")
+            logger.warning("Error logging resource utilization: %s", e)
 
     def get_status_for_dashboard(self) -> Dict:
         """Get current status information for dashboard display."""
@@ -961,13 +982,14 @@ class TrainingOptimizer:
 
         return config
 
-    def cleanup_memory(self, level="medium"):
+    def cleanup_memory(self, level="medium", preserve_tf_session=False):
         """
         Unified memory cleanup function that handles TensorFlow sessions,
         garbage collection, and GPU memory clearing.
 
         Args:
             level: Cleanup intensity level ("light", "medium", "heavy")
+            preserve_tf_session: If True, avoids completely resetting TensorFlow's session
 
         Returns:
             Dict with cleanup results
@@ -986,8 +1008,8 @@ class TrainingOptimizer:
         collected = gc.collect()
         results["gc_objects_collected"] = collected
 
-        # Clear TensorFlow session if appropriate
-        if level in ["medium", "heavy"]:
+        # Clear TensorFlow session if appropriate and not preserving session
+        if level in ["medium", "heavy"] and not preserve_tf_session:
             try:
                 import tensorflow as tf
 
@@ -1004,8 +1026,8 @@ class TrainingOptimizer:
             self.clear_prediction_cache()
             results["caches_cleared"] = True
 
-            # Try more aggressive GPU memory cleanup if available
-            if self.has_gpu:
+            # Try more aggressive GPU memory cleanup if available and not preserving session
+            if self.has_gpu and not preserve_tf_session:
                 try:
                     self._release_gpu_memory()
                     results["gpu_memory_released"] = True
@@ -1072,7 +1094,10 @@ class TrainingOptimizer:
         return memory_info
 
     def _release_gpu_memory(self):
-        """Attempt to release unused GPU memory back to the system"""
+        """
+        Attempt to release unused GPU memory back to the system.
+        This doesn't interfere with TensorFlow's ability to allocate more memory later.
+        """
         if not self.has_gpu:
             return False
 
@@ -1086,6 +1111,13 @@ class TrainingOptimizer:
             for i, gpu in enumerate(self.gpus):
                 try:
                     tf.config.experimental.reset_memory_stats(f"GPU:{i}")
+                except:
+                    pass
+
+            # Ensure memory growth remains enabled after reset
+            for gpu in self.gpus:
+                try:
+                    tf.config.experimental.set_memory_growth(gpu, True)
                 except:
                     pass
 
@@ -1116,18 +1148,18 @@ class TrainingOptimizer:
         system_percent = memory_info.get("system_percent", 0)
 
         logger.info(
-            f"Memory usage [{tag}]: {ram_gb:.2f} GB RAM, "
-            f"System: {system_percent:.1f}%"
+            "Memory usage [%s]: %.2f GB RAM, System: %.1f%%",
+            tag, ram_gb, system_percent
         )
 
         # Check if GPU info is available and log it
         gpu_info = ""
         for i in range(8):  # Check up to 8 GPUs
             if f"gpu{i}_used_gb" in memory_info:
-                gpu_info += f"GPU{i}: {memory_info[f'gpu{i}_used_gb']:.2f}GB "
+                gpu_info += "GPU%d: %.2f GB " % (i, memory_info[f"gpu{i}_used_gb"])
 
         if gpu_info:
-            logger.info(f"GPU Memory [{tag}]: {gpu_info}")
+            logger.info("GPU Memory [%s]: %s", tag, gpu_info)
 
         # Check if memory usage is high
         is_high = system_percent > (self.high_memory_threshold * 100)
@@ -1142,14 +1174,14 @@ class TrainingOptimizer:
         """Clear the model cache to free memory"""
         count = len(self.model_cache)
         self.model_cache.clear()
-        logger.debug(f"Cleared {count} models from cache")
+        logger.debug("Cleared %d models from cache", count)
         return count
 
     def clear_prediction_cache(self):
         """Clear the prediction cache to free memory"""
         count = len(self.prediction_cache)
         self.prediction_cache.clear()
-        logger.debug(f"Cleared {count} predictions from cache")
+        logger.debug("Cleared %d predictions from cache", count)
         return count
 
     def optimize_trial_count(self, model_results=None, previous_cycle=1, min_trials=5, max_trials=100):
@@ -1289,6 +1321,7 @@ class TrainingOptimizer:
     def prioritize_slower_models(self, finished_models, running_models):
         """
         Reallocate resources from finished models to still-running models.
+        Dynamically adjusts allocation to maximize utilization.
         
         Args:
             finished_models: Set of model types that finished
@@ -1316,7 +1349,21 @@ class TrainingOptimizer:
         gpu_boost_per_model = total_gpu_fraction / remaining_count
         cpu_boost_per_model = total_cpu_weight / remaining_count
         
-        # Apply boosts to running models
+        # Apply more aggressive boosts if only a few models remain
+        if remaining_count <= 3:
+            # Fewer models = more resources available per model
+            gpu_boost_multiplier = min(2.0, 4.0 / remaining_count) 
+            cpu_boost_multiplier = min(2.0, 4.0 / remaining_count)
+            gpu_boost_per_model *= gpu_boost_multiplier
+            cpu_boost_per_model *= cpu_boost_multiplier
+            logger.info(f"Few models remaining ({remaining_count}), applying {gpu_boost_multiplier:.1f}x resource multiplier")
+        
+        # Apply boosts to running models with higher limits for fewer models
+        # This allows for maximum utilization as models finish
+        single_model_remaining = remaining_count == 1
+        gpu_cap = 0.95 if single_model_remaining else (0.9 if remaining_count <= 3 else 0.85)
+        cpu_cap = 8.0 if single_model_remaining else (6.0 if remaining_count <= 3 else 5.0)
+        
         for model_type in running_models:
             if model_type in self.config["model_resource_profiles"]:
                 profile = self.config["model_resource_profiles"][model_type]
@@ -1324,88 +1371,158 @@ class TrainingOptimizer:
                 # Boost GPU resources if the model uses GPU
                 if profile.get("gpu_memory_fraction", 0) > 0:
                     profile["gpu_memory_fraction"] = min(
-                        0.8,  # Cap at 80%
+                        gpu_cap,  # Higher cap for fewer models
                         profile["gpu_memory_fraction"] + gpu_boost_per_model
                     )
                     
                 # Boost CPU resources for all models
                 profile["cpu_weight"] = min(
-                    5.0,  # Cap at 5x normal weight
+                    cpu_cap,  # Higher cap for fewer models
                     profile["cpu_weight"] + cpu_boost_per_model
                 )
                 
         logger.info(f"Resource reallocation complete: GPU +{gpu_boost_per_model:.2f}, CPU +{cpu_boost_per_model:.2f} per model")
-
-
-# Fixed version that correctly belongs to TrainingOptimizer class as a method
-def adjust_resources_for_imbalance(self, model_runtimes):
-    """
-    Dynamically adjust HARDWARE resources when significant training time imbalance is detected.
-
-    This function only adjusts hardware resource allocation (CPU cores, GPU memory)
-    and does NOT modify any model parameters that would affect Optuna's tuning.
-
-    Args:
-        model_runtimes: Dictionary mapping model types to their training runtime in seconds
-    """
-    if not model_runtimes or len(model_runtimes) <= 1:
-        return False
-
-    # Find slowest and fastest models
-    slowest_model = max(model_runtimes.items(), key=lambda x: x[1])
-    fastest_model = min(model_runtimes.items(), key=lambda x: x[1])
-
-    # Check if imbalance is significant (3x or more)
-    imbalance_ratio = slowest_model[1] / max(fastest_model[1], 0.1)
-
-    if imbalance_ratio >= 3.0:
-        logger.info(
-            f"Significant training imbalance detected: {slowest_model[0]} is {imbalance_ratio:.1f}x slower"
-        )
-
-        # Get resource profiles
-        if slowest_model[0] not in self.config["model_resource_profiles"]:
-            return False
-
-        profiles = self.config["model_resource_profiles"]
-
-        # Calculate adjustment factor (capped to avoid overallocation)
-        # Using square root to moderate the adjustment (e.g., 9x imbalance → 3x resources)
-        adjustment_factor = min(3.0, max(1.2, np.sqrt(imbalance_ratio / 3.0)))
-
-        # Apply adjustments to the slowest model's HARDWARE resources only
-        slow_profile = profiles[slowest_model[0]]
-
-        # Record original settings for logging
-        original_settings = {
-            "gpu": slow_profile.get("gpu_memory_fraction", 0),
-            "cpu": slow_profile.get("cpu_weight", 1.0),
-        }
-
-        # Adjust GPU allocation if it's a GPU model
-        if slow_profile.get("gpu_memory_fraction", 0) > 0:
-            # Increase GPU allocation, capped at 80%
-            new_gpu = min(0.8, slow_profile["gpu_memory_fraction"] * adjustment_factor)
-            slow_profile["gpu_memory_fraction"] = new_gpu
-        else:
-            # For CPU-only models, increase CPU allocation
-            new_cpu = slow_profile["cpu_weight"] * adjustment_factor
-            slow_profile["cpu_weight"] = new_cpu
-
-        # Log the adjustments (hardware resources only)
-        logger.info(
-            f"Adjusted hardware resources for {slowest_model[0]}: "
-            f"GPU: {original_settings['gpu']:.2f} → {slow_profile.get('gpu_memory_fraction', 0):.2f}, "
-            f"CPU: {original_settings['cpu']:.1f} → {slow_profile.get('cpu_weight', 1.0):.1f}"
-        )
-
+        logger.info(f"Models can now use up to {gpu_cap*100:.0f}% GPU and {cpu_cap:.1f}x CPU weight")
         return True
 
-    return False
+    def adjust_resources_for_imbalance(self, model_runtimes):
+        """
+        Dynamically adjust HARDWARE resources when significant training time imbalance is detected.
+        This function only adjusts hardware resource allocation (CPU cores, GPU memory)
+        and does NOT modify any model parameters that would affect Optuna's tuning.
 
+        Args:
+            model_runtimes: Dictionary mapping model types to their training runtime in seconds
+        """
+        if not model_runtimes or len(model_runtimes) <= 1:
+            return False
 
-# Add as a method to the TrainingOptimizer class
-TrainingOptimizer.adjust_resources_for_imbalance = adjust_resources_for_imbalance
+        # Find slowest and fastest models
+        slowest_model = max(model_runtimes.items(), key=lambda x: x[1])
+        fastest_model = min(model_runtimes.items(), key=lambda x: x[1])
+
+        # Check if imbalance is significant (3x or more)
+        imbalance_ratio = slowest_model[1] / max(fastest_model[1], 0.1)
+
+        if imbalance_ratio >= 3.0:
+            logger.info(
+                f"Significant training imbalance detected: {slowest_model[0]} is {imbalance_ratio:.1f}x slower"
+            )
+
+            # Get resource profiles
+            if slowest_model[0] not in self.config["model_resource_profiles"]:
+                return False
+
+            profiles = self.config["model_resource_profiles"]
+
+            # Calculate adjustment factor based on imbalance ratio
+            # Using square root to moderate the adjustment (e.g., 9x imbalance → 3x resources)
+            adjustment_factor = min(3.0, max(1.2, np.sqrt(imbalance_ratio / 3.0)))
+
+            # Apply adjustments to the slowest model's HARDWARE resources only
+            slow_profile = profiles[slowest_model[0]]
+
+            # Record original settings for logging
+            original_settings = {
+                "gpu": slow_profile.get("gpu_memory_fraction", 0),
+                "cpu": slow_profile.get("cpu_weight", 1.0),
+            }
+
+            # More aggressive scaling for larger imbalances
+            if imbalance_ratio > 10.0:
+                adjustment_factor *= 1.5
+                logger.info(f"Extreme imbalance detected ({imbalance_ratio:.1f}x), increasing adjustment factor to {adjustment_factor:.1f}x")
+
+            # Adjust GPU allocation if it's a GPU model
+            # Use a higher cap for single model case
+            single_model_case = len(model_runtimes) == 1
+            if slow_profile.get("gpu_memory_fraction", 0) > 0:
+                gpu_cap = 0.95 if single_model_case else 0.85
+                new_gpu = min(gpu_cap, slow_profile["gpu_memory_fraction"] * adjustment_factor)
+                slow_profile["gpu_memory_fraction"] = new_gpu
+            else:
+                # For CPU-only models, increase CPU allocation with a higher cap in single model case
+                cpu_cap = 9.0 if single_model_case else 6.0
+                new_cpu = min(cpu_cap, slow_profile["cpu_weight"] * adjustment_factor)
+                slow_profile["cpu_weight"] = new_cpu
+
+            # Log the adjustments (hardware resources only)
+            logger.info(
+                f"Adjusted hardware resources for {slowest_model[0]}: "
+                f"GPU: {original_settings['gpu']:.2f} → {slow_profile.get('gpu_memory_fraction', 0):.2f}, "
+                f"CPU: {original_settings['cpu']:.1f} → {slow_profile.get('cpu_weight', 1.0):.1f}"
+            )
+
+            return True
+
+        return False
+
+    def get_memory_efficiency_report(self):
+        """
+        Generate a report on memory efficiency and provide recommendations
+        for improving memory usage.
+        
+        Returns:
+            Dict with efficiency metrics and recommendations
+        """
+        # Get current memory info
+        memory_info = self._get_memory_info()
+        
+        # Calculate memory efficiency metrics
+        metrics = {
+            "timestamp": time.time(),
+            "ram_usage_gb": memory_info.get("ram_gb", 0),
+            "ram_usage_percent": memory_info.get("ram_percent", 0),
+            "system_memory_pressure": memory_info.get("system_percent", 0) > 80,
+        }
+        
+        # Add GPU metrics if available
+        if self.has_gpu:
+            gpu_metrics = {}
+            for i in range(8):  # Check up to 8 GPUs
+                if f"gpu{i}_used_gb" in memory_info and f"gpu{i}_total_gb" in memory_info:
+                    used = memory_info[f"gpu{i}_used_gb"]
+                    total = memory_info[f"gpu{i}_total_gb"]
+                    utilization = (used / total) * 100 if total > 0 else 0
+                    
+                    gpu_metrics[f"gpu{i}_utilization"] = utilization
+                    gpu_metrics[f"gpu{i}_used_gb"] = used
+                    gpu_metrics[f"gpu{i}_efficiency"] = "good" if 70 <= utilization <= 95 else (
+                        "low" if utilization < 70 else "high")
+            
+            metrics.update(gpu_metrics)
+        
+        # Generate recommendations
+        recommendations = []
+        
+        if metrics.get("system_memory_pressure", False):
+            recommendations.append("System memory usage is high. Consider reducing batch sizes or " +
+                                 "number of parallel models.")
+        
+        # Check GPU utilization (if available)
+        low_gpu_util = False
+        high_gpu_util = False
+        
+        for k, v in metrics.items():
+            if k.endswith("_efficiency"):
+                if v == "low":
+                    low_gpu_util = True
+                elif v == "high":
+                    high_gpu_util = True
+        
+        if low_gpu_util:
+            recommendations.append("GPU utilization is low. Consider increasing batch sizes or " +
+                                 "model complexity to improve GPU efficiency.")
+        
+        if high_gpu_util:
+            recommendations.append("GPU utilization is very high. Monitor for potential out-of-memory " +
+                                 "errors. Consider enabling mixed precision training.")
+        
+        metrics["recommendations"] = recommendations
+        metrics["overall_efficiency"] = "good" if not (low_gpu_util or high_gpu_util or 
+                                                    metrics.get("system_memory_pressure", False)) else "needs_optimization"
+        
+        return metrics
 
 
 # Streamlit Dashboard Components
@@ -1533,8 +1650,14 @@ _optimizer_instance = None
 def get_training_optimizer(config_path=None):
     """Create and return a TrainingOptimizer instance with optimal hardware settings."""
     global _optimizer_instance
-    if (_optimizer_instance is None):
+    logger = logging.getLogger("prediction_model")
+    
+    if _optimizer_instance is None:
+        logger.info("Creating new TrainingOptimizer instance")
         _optimizer_instance = TrainingOptimizer(config_path)
+    else:
+        logger.debug("Returning existing TrainingOptimizer instance")
+    
     return _optimizer_instance
 
 

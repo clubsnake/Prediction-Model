@@ -524,21 +524,28 @@ def build_model_by_type(
     if architecture_params is None:
         architecture_params = {}
 
-    # If trial is provided, use it to suggest hyperparameters
+    # If trial is provided, use study_manager to suggest hyperparameters
     if trial is not None:
-        # Import the HyperparameterManager class
-        from src.tuning.hyperparameter_utils import HyperparameterManager
-
-        # Create manager and use it to suggest parameters
-        hyperparameter_manager = HyperparameterManager()
-        suggested_params = {}
-
-        # Use the manager to suggest parameters
-        for param_name in ["units", "dropout", "learning_rate"]:
-            suggested_params[param_name] = hyperparameter_manager.suggest_parameter(
-                trial, f"{model_type}_{param_name}"
-            )
-        architecture_params.update(suggested_params)
+        # Import the study_manager function for hyperparameter suggestion
+        from src.tuning.study_manager import suggest_model_hyperparameters
+        
+        # Get model-specific parameters
+        model_params = suggest_model_hyperparameters(trial, model_type)
+        
+        # Update architecture_params with suggested parameters
+        if "units_per_layer" in model_params:
+            architecture_params["units_per_layer"] = model_params["units_per_layer"]
+        if "dropout" in model_params:
+            dropout_rate = model_params["dropout"]
+        if "lr" in model_params:
+            learning_rate = model_params["lr"]
+        if "loss_function" in model_params:
+            loss_function = model_params["loss_function"]
+        if "lookback" in model_params:
+            lookback = model_params["lookback"]
+            
+        # Add any other parameters
+        architecture_params.update(model_params)
 
     # Extract architecture parameters
     units_per_layer = architecture_params.get("units_per_layer", [64, 32])

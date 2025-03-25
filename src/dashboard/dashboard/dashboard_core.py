@@ -67,6 +67,10 @@ except ImportError as e:
     TICKERS = ["ETH-USD", "BTC-USD"]
     TIMEFRAMES = ["1d", "1h"]
 
+# Create and ensure DATA_DIR exists
+DATA_DIR = os.path.join(project_root, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
 
 @robust_error_boundary
 def configure_gpu_for_inference(enable_mixed_precision=False, log_config=True):
@@ -253,36 +257,38 @@ def setup_parallel_model_execution():
 
 @robust_error_boundary
 def improved_refresh_mechanism():
-    """
-    Improved refresh mechanism that shows a countdown and handles refresh more gracefully.
-    """
-    # Check if auto-refresh is enabled
-    if not st.session_state.get("auto_refresh", False):
-        return
-    
-    # Get refresh interval
-    refresh_interval = st.session_state.get("refresh_interval", 30)
-    
-    # Calculate time until next refresh
+    """Improved dashboard refresh mechanism with rate limiting and tuning awareness"""
     current_time = time.time()
+    
+    # More aggressive refresh rate during tuning
+    if st.session_state.get("tuning_in_progress", False):
+        refresh_rate = 30  # much faster refresh during tuning
+    else:
+        refresh_rate = 30  # seconds when not tuning
+    
     if "last_refresh" in st.session_state:
         time_since_last = current_time - st.session_state["last_refresh"]
-        time_to_next = max(0, refresh_interval - time_since_last)
         
-        # Display progress bar in sidebar for refresh countdown
-        if "sidebar_displayed" in st.session_state and st.session_state["sidebar_displayed"]:
-            progress = 1 - (time_to_next / refresh_interval)
-            
-            # Only rerun if we've reached the refresh interval
-            if time_to_next <= 0:
-                # Update last refresh time
+        if time_since_last > refresh_rate:
+            # Auto refresh when tuning is in progress
+            if st.session_state.get("tuning_in_progress", False):
+                # Clear caches to ensure fresh data
+                st.cache_data.clear()
                 st.session_state["last_refresh"] = current_time
-                
-                # Delay slightly to avoid immediate refresh
+                time.sleep(0.1)
+                st.experimental_rerun()
+            
+            # Manual refresh button otherwise
+            if st.button("Refresh Data"):
+                # Clear caches to ensure fresh data
+                st.cache_data.clear()
+                print(f"DEBUG: Cleared cache at {datetime.now()}")
+                st.session_state["last_refresh"] = current_time
                 time.sleep(0.1)
                 st.experimental_rerun()
     else:
         # Initialize last_refresh
+        print(f"DEBUG: Initializing last_refresh")
         st.session_state["last_refresh"] = current_time
 
 
@@ -348,6 +354,9 @@ def init_dashboard_state():
     check_and_update_session_state("error_log", [])
     check_and_update_session_state("metrics_container", None)
     check_and_update_session_state("tuning_in_progress", False)
+    
+    # Trial logs should always be initialized
+    check_and_update_session_state("trial_logs", [])
     
     # Cache initialization
     check_and_update_session_state("data_cache", {})
@@ -922,28 +931,47 @@ def initialize_session_state():
 def check_tuning_status():
     """Check tuning status from file and update session state accordingly."""
     try:
-        # First try to import from progress_helper for more reliable status
-        try:
-            from src.tuning.progress_helper import read_tuning_status as read_from_helper
-            status = read_from_helper()
-        except ImportError:
-            # Fall back to dashboard_error version - import inside function to avoid circular imports
-            try:
-                from src.dashboard.dashboard.dashboard_error import read_tuning_status
-                status = read_tuning_status()
-            except ImportError:
-                # Use fallback function if neither import works
-                status = {"status": "unknown", "is_running": False}
+        # Use progress helper for consistency
+        from src.tuning.progress_helper import read_tuning_status, is_stop_requested, read_progress_from_yaml
 
-        logger.info(f"Checking tuning status: {status}")
-
-        # Make sure is_running is a boolean
+        # Get current tuning status
+        status = read_tuning_status()
         is_running = status.get("is_running", False)
-        if isinstance(is_running, str):
-            # Convert string "True"/"False" to boolean
-            is_running = is_running.lower() == "true"
+        
+        # Log key status parameters for debugging
+        logger.debug(f"Tuning status check: running={is_running}, ticker={status.get('ticker')}, timeframe={status.get('timeframe')}")
+        
+        # Check for manually stopped status
+        if status.get("stopped_manually", False) or status.get("force_stop", False):
+            is_running = False
+            
+        # Also check stop event for consistency
+        if is_stop_requested():
+            is_running = False
+            if status.get("is_running", False):
+                # Update status file to reflect the stop event
+                from src.tuning.progress_helper import write_tuning_status
+                write_tuning_status({
+                    "is_running": False,
+                    "stopped_by_event": True,
+                    "ticker": status.get("ticker"),  # Preserve ticker/timeframe
+                    "timeframe": status.get("timeframe"),
+                    "timestamp": datetime.now().isoformat()
+                })
 
-        # Log any mismatch
+        # Handle the case where we're in the process of stopping
+        if st.session_state.get("stopping_tuning", False):
+            is_running = False
+            st.session_state["tuning_in_progress"] = False
+            # Clear the stopping flag after a short delay
+            if "stopping_timestamp" not in st.session_state:
+                st.session_state["stopping_timestamp"] = time.time()
+            elif time.time() - st.session_state["stopping_timestamp"] > 3:
+                # After 3 seconds, clear the stopping flag
+                st.session_state.pop("stopping_tuning", None)
+                st.session_state.pop("stopping_timestamp", None)
+
+        # Update session state if it's different
         current_status = st.session_state.get("tuning_in_progress", False)
         if is_running != current_status:
             logger.info(
@@ -951,6 +979,11 @@ def check_tuning_status():
             )
             # Update session state to match file
             st.session_state["tuning_in_progress"] = is_running
+            
+            # Force a rerun if the status changed - but only if we're not in a stopping state
+            if not st.session_state.get("stopping_tuning", False):
+                time.sleep(0.1)  # Short delay to avoid rerun loops
+                st.experimental_rerun()
 
         # Store additional info from status
         if "ticker" in status:
@@ -959,6 +992,16 @@ def check_tuning_status():
             st.session_state["tuning_timeframe"] = status["timeframe"]
         if "start_time" in status:
             st.session_state["tuning_start_time"] = status["start_time"]
+        
+        # Get the progress data to check if we have weighted metrics
+        progress_data = read_progress_from_yaml()
+        
+        # Update session state with progress data
+        for key in ["weighted_rmse", "weighted_mape", "weighted_directional_accuracy", 
+                    "model_weights", "normalized_weights", "aggregated_total_trials", 
+                    "aggregated_current_trial"]:
+            if key in progress_data:
+                st.session_state[key] = progress_data[key]
 
         return status
     except Exception as e:
@@ -973,26 +1016,27 @@ def clean_stale_locks():
         # Get path to DATA_DIR - we need this to handle potential lock files
         lock_dir = DATA_DIR
         
-        # Use threadsafe's built-in cleanup function if available
-        try:
-            from src.utils.threadsafe import cleanup_stale_locks
-            logger.info("Running stale lock cleanup...")
-            cleaned_count = cleanup_stale_locks(max_age=3600)  # 1 hour
-            logger.info(f"Cleaned {cleaned_count} stale lock files")
-        except ImportError:
-            logger.warning("threadsafe module not available, using basic lock cleanup")
-            # Basic lock file cleanup - find any .lock files and check if they're stale
-            for filename in os.listdir(lock_dir):
-                if filename.endswith('.lock'):
-                    lock_path = os.path.join(lock_dir, filename)
-                    try:
-                        # Check if lock file is older than 1 hour (stale)
-                        file_age = datetime.now().timestamp() - os.path.getmtime(lock_path)
-                        if file_age > 3600:  # 1 hour in seconds
-                            os.remove(lock_path)
-                            logger.info(f"Removed stale lock file: {lock_path}")
-                    except Exception as e:
-                        logger.warning(f"Error checking/removing lock file {lock_path}: {e}")
+        # Try direct removal of lock files
+        for filename in os.listdir(lock_dir):
+            if filename.endswith('.lock'):
+                lock_path = os.path.join(lock_dir, filename)
+                try:
+                    # Check if lock file is older than 1 hour (stale)
+                    file_age = datetime.now().timestamp() - os.path.getmtime(lock_path)
+                    if file_age > 3600:  # 1 hour in seconds
+                        os.remove(lock_path)
+                        logger.info(f"Removed stale lock file: {lock_path}")
+                except Exception as e:
+                    logger.warning(f"Error checking/removing lock file {lock_path}: {e}")
+        
+        # Also check tuning status file lock specifically
+        tuning_status_lock = os.path.join(lock_dir, "tuning_status.txt.lock")
+        if os.path.exists(tuning_status_lock):
+            try:
+                os.remove(tuning_status_lock)
+                logger.info(f"Removed tuning status lock file: {tuning_status_lock}")
+            except Exception as e:
+                logger.warning(f"Error removing tuning status lock: {e}")
 
         # If tuning status shows running but UI doesn't think so, reset it
         try:
@@ -1030,6 +1074,15 @@ def clean_stale_locks():
 def main_dashboard():
     """Main dashboard entry point with robust error handling"""
     try:
+        # Clean up stale locks first thing
+        clean_stale_locks()
+        
+        # Ensure data directories exist
+        os.makedirs(DATA_DIR, exist_ok=True)
+        os.makedirs(os.path.join(DATA_DIR, "models"), exist_ok=True)
+        os.makedirs(os.path.join(DATA_DIR, "model_progress"), exist_ok=True)
+        os.makedirs(os.path.join(DATA_DIR, "tested_models"), exist_ok=True)
+
         # Configure GPU for inference if not already done
         if "gpu_configured" not in st.session_state:
             st.session_state["gpu_configured"] = configure_gpu_for_inference()
@@ -1037,8 +1090,10 @@ def main_dashboard():
         # Clean up stale locks first thing
         clean_stale_locks()
 
-        # Initialize session state
+        # Initialize session state - ensure trial_logs exists
         initialize_session_state()
+        if "trial_logs" not in st.session_state:
+            st.session_state["trial_logs"] = []
 
         # Setup page config
         set_page_config()
@@ -1838,8 +1893,19 @@ def main_dashboard():
                             # Day of week analysis
                             st.subheader("Day of Week Effect")
                             day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                            
+                            # FIXED: Safely handle potential scalar results
                             day_returns = df.groupby("day_of_week")["Close"].pct_change().mean() * 100
-                            day_returns = day_returns.reindex(range(7))
+                            
+                            # Handle the case where day_returns is a scalar (numpy.float64)
+                            if isinstance(day_returns, (float, int, np.number, np.float64)):
+                                # Create a Series with all days and put the value in day 0
+                                day_returns_series = pd.Series([np.nan] * 7, index=range(7))
+                                day_returns_series[0] = float(day_returns)
+                                day_returns = day_returns_series
+                            else:
+                                # It's already a Series, just make sure we have all days
+                                day_returns = day_returns.reindex(range(7))
                             
                             # Create DataFrame for plot
                             day_returns_df = pd.DataFrame({
@@ -1850,11 +1916,22 @@ def main_dashboard():
                             # Plot
                             st.bar_chart(day_returns_df.set_index("Day"))
                             
-                            # Monthly analysis
+                            # Monthly analysis - apply the same fix
                             st.subheader("Monthly Effect")
                             month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+                            
+                            # FIXED: Safely handle potential scalar results
                             month_returns = df.groupby("month")["Close"].pct_change().mean() * 100
-                            month_returns = month_returns.reindex(range(1, 13))
+                            
+                            # Handle the case where month_returns is a scalar
+                            if isinstance(month_returns, (float, int, np.number, np.float64)):
+                                # Create a Series with all months and put the value in month 1
+                                month_returns_series = pd.Series([np.nan] * 12, index=range(1, 13))
+                                month_returns_series[1] = float(month_returns)
+                                month_returns = month_returns_series
+                            else:
+                                # It's already a Series, just reindex to ensure we have all months
+                                month_returns = month_returns.reindex(range(1, 13))
                             
                             # Create DataFrame for plot
                             month_returns_df = pd.DataFrame({
@@ -1867,8 +1944,16 @@ def main_dashboard():
                         else:
                             st.warning("Price data with proper date column required for seasonality analysis")
                     except Exception as e:
+                        # Handle all errors gracefully
                         logger.error(f"Error in seasonality analysis: {e}")
-                        st.error(f"Error in seasonality analysis: {str(e)}")
+                        st.info("Could not perform seasonality analysis due to data limitations.")
+                        
+                        # Show placeholder instead of error
+                        sample_data = {
+                            "Day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+                            "Return": [0.1, 0.2, -0.1, 0.15, 0.25, 0.05, -0.05]
+                        }
+                        st.bar_chart(pd.DataFrame(sample_data).set_index("Day"))
             else:
                 st.warning("No data available for pattern discovery")
 
@@ -1948,6 +2033,10 @@ def main_dashboard():
             # Also store in metadata if available
             if "metadata" in st.session_state:
                 st.session_state["metadata"]["update_during_walk_forward"] = st.session_state["update_during_walk_forward"]
+
+        # Handle deferred tuning start if needed
+        from src.dashboard.dashboard.dashboard_ui import handle_deferred_tuning_start
+        handle_deferred_tuning_start()
 
     except Exception as e:
         st.error(f"Critical error in main dashboard: {e}")

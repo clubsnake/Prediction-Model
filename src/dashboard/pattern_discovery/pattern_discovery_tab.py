@@ -2059,7 +2059,6 @@ class PatternDiscoveryTab:
 
         return stats
 
-    # Add this new helper method to safely analyze seasonality
     def analyze_seasonality(self, df, patterns=None):
         """
         Analyze seasonality in pattern performance with robust error handling
@@ -2079,6 +2078,27 @@ class PatternDiscoveryTab:
                 patterns = self.pattern_manager.list_patterns()
                 if not patterns:
                     return {"error": "No patterns available for seasonality analysis"}
+            
+            # Helper function to safely convert any data to pandas Series
+            def safe_convert_to_series(data, index=None):
+                """Safely convert any data type to a pandas Series"""
+                if isinstance(data, pd.Series):
+                    return data
+                elif isinstance(data, pd.DataFrame):
+                    if len(data.columns) > 0:
+                        return data.iloc[:, 0]
+                    else:
+                        return pd.Series([], index=index if index is not None else [])
+                elif isinstance(data, (float, int, np.number, np.float64, np.int64)):
+                    if index is not None:
+                        return pd.Series([float(data)], index=[index[0]] if len(index) > 0 else [0])
+                    else:
+                        return pd.Series([float(data)])
+                elif isinstance(data, list) or isinstance(data, np.ndarray):
+                    return pd.Series(data, index=index)
+                else:
+                    # Return empty series as fallback
+                    return pd.Series([], index=index if index is not None else [])
             
             results = {}
             
@@ -2116,11 +2136,13 @@ class PatternDiscoveryTab:
                     # Monthly analysis
                     if len(series) >= 12:
                         monthly = series.groupby(series.index.month).mean()
+                        # Safely convert to dict
                         results[pattern_id]['monthly'] = monthly.to_dict()
                     
                     # Day of week analysis  
                     if len(series) >= 7:
                         daily = series.groupby(series.index.dayofweek).mean()
+                        # Safely convert to dict
                         results[pattern_id]['day_of_week'] = daily.to_dict()
                     
                 except Exception as e:
@@ -2131,85 +2153,93 @@ class PatternDiscoveryTab:
         except Exception as e:
             return {"error": f"Error in seasonality analysis: {str(e)}"}
 
-            with pattern_tabs[2]:
-                    st.subheader("Seasonality Analysis")
-                    st.info("Seasonality analysis identifies recurring patterns in price data")
-                    
-                    try:
-                        # Simple seasonality analysis
-                        if "Close" in df.columns and "date" in df.columns:
-                            # Convert date to datetime if needed
-                            if not pd.api.types.is_datetime64_any_dtype(df["date"]):
-                                df["date"] = pd.to_datetime(df["date"])
-                            
-                            # Create components
-                            df["day_of_week"] = df["date"].dt.dayofweek
-                            df["month"] = df["date"].dt.month
-                            
-                            # Day of week analysis
-                            st.subheader("Day of Week Effect")
-                            day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-                            day_returns = df.groupby("day_of_week")["Close"].pct_change().mean() * 100
-                            
-                            # Fix: Check if day_returns is a Series before reindexing
-                            if isinstance(day_returns, pd.Series):
-                                day_returns = day_returns.reindex(range(7))
-                                day_returns_values = day_returns.values
-                            else:
-                                # Handle scalar case by creating a Series with NaN values
-                                day_returns_values = np.full(7, np.nan)
-                                # If we have a scalar value, put it in the right position
-                                if hasattr(day_returns, "index") and len(day_returns.index) == 1:
-                                    idx = day_returns.index[0]
-                                    if 0 <= idx < 7:
-                                        day_returns_values[idx] = day_returns.values[0]
-                                elif isinstance(day_returns, (float, np.floating)):
-                                    # If it's a plain scalar, we don't know where to put it
-                                    day_returns_values[0] = day_returns
-                            
-                            # Create DataFrame for plot
-                            day_returns_df = pd.DataFrame({
-                                "Day": [day_names[i] for i in range(7)],
-                                "Avg Return %": day_returns_values
-                            })
-                            
-                            # Plot
-                            st.bar_chart(day_returns_df.set_index("Day"))
-                            
-                            # Monthly analysis
-                            st.subheader("Monthly Effect")
-                            month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-                            month_returns = df.groupby("month")["Close"].pct_change().mean() * 100
-                            
-                            # Fix: Check if month_returns is a Series before reindexing
-                            if isinstance(month_returns, pd.Series):
-                                month_returns = month_returns.reindex(range(1, 13))
-                                month_returns_values = month_returns.values
-                            else:
-                                # Handle scalar case by creating an array with NaN values
-                                month_returns_values = np.full(12, np.nan)
-                                # If we have a scalar value with index, put it in the right position
-                                if hasattr(month_returns, "index") and len(month_returns.index) == 1:
-                                    idx = month_returns.index[0]
-                                    if 1 <= idx <= 12:
-                                        month_returns_values[idx-1] = month_returns.values[0]
-                                elif isinstance(month_returns, (float, np.floating)):
-                                    # If it's a plain scalar, we don't know where to put it
-                                    month_returns_values[0] = month_returns
-                            
-                            # Create DataFrame for plot
-                            month_returns_df = pd.DataFrame({
-                                "Month": [month_names[i] for i in range(12)],
-                                "Avg Return %": month_returns_values
-                            })
-                            
-                            # Plot
-                            st.bar_chart(month_returns_df.set_index("Month"))
-                        else:
-                            st.warning("Price data with proper date column required for seasonality analysis")
-                    except Exception as e:
-                        logger.error(f"Error in seasonality analysis: {e}")
-                        st.error(f"Error in seasonality analysis: {str(e)}")
+    def analyze_seasonality(df):
+        """Analyze daily, weekly, and monthly seasonality patterns."""
+        st.header("Seasonality Analysis")
+        
+        # Make sure we have the necessary columns
+        if "day_of_week" not in df.columns:
+            df["day_of_week"] = df.index.dayofweek
+        if "month" not in df.columns:
+            df["month"] = df.index.month
+        
+        # Day of week analysis
+        st.subheader("Day of Week Effect")
+        day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        
+        # Get the day of week returns - THIS IS WHERE THE ERROR OCCURS
+        day_returns = df.groupby("day_of_week")["Close"].pct_change().mean() * 100
+        
+        # FIX: Handle the case where day_returns is a scalar instead of a Series
+        if isinstance(day_returns, (float, int, np.number, np.float64)):
+            # It's a scalar, create a Series manually
+            st.info(f"Converting scalar day_returns ({day_returns}) to Series")
+            
+            # Create a Series with the single value we have
+            day_returns = pd.Series([day_returns], index=[0])
+            
+            # Expand to cover all days of week with NaN
+            full_series = pd.Series(index=range(7), dtype=float)
+            full_series.iloc[0] = day_returns[0]  # Put our value in Monday
+            day_returns = full_series
+        
+        # Create the chart with reindexed data
+        try:
+            # Only try to reindex if it's a Series or DataFrame
+            if hasattr(day_returns, 'reindex'):
+                day_chart_data = day_returns.reindex(range(7))
+                day_chart = pd.DataFrame({
+                    "Day": day_names,
+                    "Return %": day_chart_data.values
+                })
+                st.bar_chart(day_chart.set_index("Day"))
+            else:
+                # Still a scalar somehow, create a simple chart
+                day_chart = pd.DataFrame({
+                    "Day": day_names[0],
+                    "Return %": [float(day_returns)]
+                })
+                st.bar_chart(day_chart.set_index("Day"))
+        except Exception as e:
+            st.error(f"Could not create day of week chart: {e}")
+        
+        # ALSO FIX THE MONTHLY ANALYSIS SECTION:
+        st.subheader("Monthly Effect")
+        month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        
+        # Get monthly returns
+        month_returns = df.groupby("month")["Close"].pct_change().mean() * 100
+        
+        # FIX: Handle scalar month_returns
+        if isinstance(month_returns, (float, int, np.number, np.float64)):
+            st.info(f"Converting scalar month_returns ({month_returns}) to Series")
+            
+            # Create a Series with the single value
+            month_returns = pd.Series([month_returns], index=[1])  # January
+            
+            # Expand to cover all months with NaN
+            full_series = pd.Series(index=range(1, 13), dtype=float)
+            full_series.iloc[0] = month_returns[1]  # Put our value in January
+            month_returns = full_series
+        
+        # Create the chart
+        try:
+            if hasattr(month_returns, 'reindex'):
+                month_chart_data = month_returns.reindex(range(1, 13))
+                month_chart = pd.DataFrame({
+                    "Month": month_names,
+                    "Return %": month_chart_data.values
+                })
+                st.bar_chart(month_chart.set_index("Month"))
+            else:
+                # Still a scalar somehow
+                month_chart = pd.DataFrame({
+                    "Month": month_names[0],
+                    "Return %": [float(month_returns)]
+                })
+                st.bar_chart(month_chart.set_index("Month"))
+        except Exception as e:
+            st.error(f"Could not create monthly chart: {e}")
 
 # Function to add the Pattern Discovery tab to your dashboard
 def add_pattern_discovery_tab(df, ensemble_weighter=None):

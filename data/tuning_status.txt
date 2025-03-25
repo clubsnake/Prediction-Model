@@ -1,3 +1,5 @@
+status: stopped
 is_running: False
-status: reset_at_startup
-timestamp: 2025-03-17T22:26:16.591610
+stopped_manually: True
+stop_time: 1742792687.5182195
+timestamp: 2025-03-24T01:04:47.519214

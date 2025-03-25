@@ -317,7 +317,13 @@ def load_data(ticker, start_date, end_date=None, interval="1d", training_mode=Fa
             logger.warning(
                 f"No data received for {ticker}. Trying backup data sources..."
             )
-            df = load_data_from_backup(ticker, fetch_start_date, end_date, interval)
+            
+            # First try to use the robust fetch_data from data.py if available
+            df = fetch_from_alternative_sources(ticker, fetch_start_date, api_end_date, interval)
+            
+            # If still no data, try local backup files
+            if df is None or df.empty:
+                df = load_data_from_backup(ticker, fetch_start_date, end_date, interval)
 
         # Ensure the date column is properly handled
         if df is not None and not df.empty:
@@ -645,6 +651,10 @@ def load_data_from_backup(ticker, start_date, end_date, interval):
             f"data/{ticker}_{start_date}_{end_date}_{interval}.csv",
             f"Data/{ticker}_{interval}.csv",
             f"Data/Backup/{ticker}.csv",
+            # Add more potential backup locations
+            f"Data/Raw/{ticker}.csv",
+            f"data/processed/{ticker}_{interval}.csv",
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), f"Data/{ticker}.csv")
         ]
 
         for filepath in backup_paths:
@@ -654,112 +664,118 @@ def load_data_from_backup(ticker, start_date, end_date, interval):
 
                     # Ensure date column is properly formatted
                     df, _ = ensure_date_column(df)
+                    
+                    # Filter data by date range if needed
+                    if start_date is not None:
+                        if not isinstance(start_date, pd.Timestamp):
+                            start_date = pd.to_datetime(start_date)
+                        df = df[df["date"] >= start_date]
+                        
+                    if end_date is not None:
+                        if not isinstance(end_date, pd.Timestamp):
+                            end_date = pd.to_datetime(end_date)
+                        df = df[df["date"] <= end_date]
 
+                    logger.info(f"Successfully loaded backup data from {filepath}")
                     return df
 
         # If we've checked all paths and found nothing
         st.warning(f"No backup data found for {ticker}")
         return None
     except Exception as e:
-        logging.error(f"Error loading data from backup file: {e}")
+        logger.error(f"Error loading data from backup file: {e}")
         return None
 
 
-@robust_error_boundary
-def calculate_indicators(df):
+def fetch_from_alternative_sources(ticker, start_date, end_date=None, interval="1d"):
     """
-    Calculate technical indicators for the given dataframe.
-
+    Fetch data using the robust fetch_data function from data.py which includes fallback logic
+    
     Args:
-        df: DataFrame with OHLCV data
-
+        ticker: The ticker symbol to fetch data for
+        start_date: Start date for data
+        end_date: End date for data
+        interval: Data interval (e.g. '1d', '1h')
+        
     Returns:
-        DataFrame with added technical indicators
+        DataFrame with market data or None if all sources fail
     """
-    if df is None or df.empty:
-        return df
-
-    # Create a copy to avoid modifying the original
-    df = df.copy()
-
-    # Check for required columns
-    required_cols = ["Open", "High", "Low", "Close"]
-    if not all(col in df.columns for col in required_cols):
-        logger.warning(
-            f"Missing required columns for indicators. Have: {df.columns.tolist()}"
-        )
-        return df
-
     try:
-        # Simple Moving Averages
-        df["MA20"] = df["Close"].rolling(window=20).mean()
-        df["MA50"] = df["Close"].rolling(window=50).mean()
-        df["MA200"] = df["Close"].rolling(window=200).mean()
-
-        # Exponential Moving Averages
-        df["EMA12"] = df["Close"].ewm(span=12, adjust=False).mean()
-        df["EMA26"] = df["Close"].ewm(span=26, adjust=False).mean()
-
-        # MACD
-        df["MACD"] = df["EMA12"] - df["EMA26"]
-        df["MACD_signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
-        df["MACD_hist"] = df["MACD"] - df["MACD_signal"]
-
-        # RSI
-        delta = df["Close"].diff()
-        gain = delta.where(delta > 0, 0)
-        loss = -delta.where(delta < 0, 0)
-        avg_gain = gain.rolling(window=14).mean()
-        avg_loss = loss.rolling(window=14).mean()
-        rs = avg_gain / avg_loss.replace(0, 0.001)  # Avoid division by zero
-        df["RSI"] = 100 - (100 / (1 + rs))
-
-        # Bollinger Bands
-        df["BB_middle"] = df["Close"].rolling(window=20).mean()
-        df["BB_std"] = df["Close"].rolling(window=20).std()
-        df["BB_upper"] = df["BB_middle"] + 2 * df["BB_std"]
-        df["BB_lower"] = df["BB_middle"] - df["BB_std"]
-
-        # Volume indicators - only if Volume column exists
-        if "Volume" in df.columns:
+        # Try to import the fetch_data function from data.py
+        try:
+            from src.data.data import fetch_data as fetch_data_with_fallbacks
+            
+            # Format dates for API calls
+            if not isinstance(start_date, str) and start_date is not None:
+                start_date_str = start_date.strftime("%Y-%m-%d")
+            else:
+                start_date_str = start_date
+                
+            if end_date is not None and not isinstance(end_date, str):
+                end_date_str = end_date.strftime("%Y-%m-%d")
+            else:
+                end_date_str = end_date
+                
+            # Show a spinner during fetch
+            with st.spinner(f"Fetching {ticker} from alternative data sources..."):
+                # Use the robust fetch_data function which tries multiple sources
+                df = fetch_data_with_fallbacks(
+                    ticker=ticker,
+                    start=start_date_str,
+                    end=end_date_str,
+                    interval=interval,
+                    max_retries=3
+                )
+                
+                if df is not None and not df.empty:
+                    logger.info(f"Successfully fetched {ticker} data from alternative source")
+                    return df
+                else:
+                    logger.warning(f"Alternative sources returned no data for {ticker}")
+                    return None
+                    
+        except ImportError as e:
+            logger.warning(f"Could not import fetch_data from data.py: {e}")
+            
+            # Try to use data_manager as an alternative
             try:
-                # Volume Moving Average
-                df["Volume_MA"] = df["Volume"].rolling(window=20).mean()
-
-                # Fix the Volume_Ratio calculation:
-                # 1. Extract Volume as Series to ensure it's not a DataFrame
-                volume_series = df["Volume"].astype(float)
-                # 2. Extract Volume_MA as Series and replace zeros to avoid division by zero
-                volume_ma_series = df["Volume_MA"].replace(0, 0.001).astype(float)
-
-                # 3. Create a valid index mask to filter out NaN values
-                valid_idx = ~volume_series.isna() & ~volume_ma_series.isna()
-
-                # 4. Initialize Volume_Ratio with NaN values
-                df["Volume_Ratio"] = np.nan
-
-                # 5. Only calculate for valid indices
-                if len(valid_idx[valid_idx == True]) > 0:
-                    # For div operations that may return a DataFrame instead of Series,
-                    # select first column to maintain Series format
-                    division_result = volume_series[valid_idx].div(
-                        volume_ma_series[valid_idx]
-                    )
-                    if isinstance(division_result, pd.DataFrame):
-                        df.loc[valid_idx, "Volume_Ratio"] = division_result.iloc[:, 0]
+                from src.data.data_manager import fetch_ticker_data
+                
+                # Show spinner during fetch
+                with st.spinner(f"Fetching {ticker} from data manager..."):
+                    # Format dates for API calls
+                    if not isinstance(start_date, str) and start_date is not None:
+                        start_date_str = start_date.strftime("%Y-%m-%d")
                     else:
-                        df.loc[valid_idx, "Volume_Ratio"] = division_result
-
-                    # 6. Handle any infinity or NaN values that might result
-                    df["Volume_Ratio"].replace([np.inf, -np.inf], np.nan, inplace=True)
-
-            except Exception as e:
-                logger.error(f"Error calculating volume indicators: {e}", exc_info=True)
-
+                        start_date_str = start_date
+                        
+                    if end_date is not None and not isinstance(end_date, str):
+                        end_date_str = end_date.strftime("%Y-%m-%d")
+                    else:
+                        end_date_str = end_date
+                    
+                    # Use data_manager's fetch function
+                    df = fetch_ticker_data(
+                        ticker=ticker, 
+                        start_date=start_date_str, 
+                        end_date=end_date_str, 
+                        interval=interval
+                    )
+                    
+                    if df is not None and not df.empty:
+                        logger.info(f"Successfully fetched {ticker} data from data manager")
+                        return df
+                    else:
+                        logger.warning(f"Data manager returned no data for {ticker}")
+                        return None
+                    
+            except ImportError as e:
+                logger.warning(f"Could not import fetch_ticker_data from data_manager: {e}")
+                return None
+                
     except Exception as e:
-        logger.error(f"Error calculating indicators: {e}")
-
-    return df
+        logger.error(f"Error in fetch_from_alternative_sources for {ticker}: {e}", exc_info=True)
+        return None
 
 
 @robust_error_boundary
@@ -1138,7 +1154,8 @@ def get_dashboard_data(ticker, start_date, end_date=None, interval="1d", trainin
     fetch_start = training_start_date if training_start_date is not None else start_date
     
     # First load the raw data
-    df = load_data(ticker, fetch_start, end_date, interval)
+    df = load_data(ticker, fetch_start, end_date, interval, training_mode=training_start_date is not None, 
+                  training_start_date=training_start_date)
     
     # Store both dates in session state for visualization and model training
     st.session_state[f"{ticker}_{interval}_display_start"] = start_date

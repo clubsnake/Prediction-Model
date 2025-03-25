@@ -74,6 +74,7 @@ def configure_gpu_resources():
 
         # Configure GPU memory
         result = configure_gpu_memory(memory_config)
+        logger.info(f"GPU memory configuration result: {result}")
 
         # Explicitly configure mixed precision
         configure_mixed_precision(use_mixed_precision)

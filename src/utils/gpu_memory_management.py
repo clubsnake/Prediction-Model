@@ -1,109 +1,23 @@
 """
-Centralized GPU memory management to avoid conflicts between different modules.
-This file should be imported BEFORE any TensorFlow operations.
-
-Note: This module only manages GPU memory allocation and does not affect model
-hyperparameters like batch sizes, which are determined solely by Optuna during tuning.
+GPU memory management utilities to optimize GPU utilization for deep learning models.
+This module provides functions to:
+1. Configure GPU memory allocation 
+2. Monitor GPU usage
+3. Clean up GPU memory when needed
+4. Enable mixed precision training
 """
 
 import logging
 import os
 import platform
 import sys
-from typing import Any, Dict
+import time
+from typing import Any, Dict, List, Union
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Track if memory has already been configured
 _MEMORY_CONFIGURED = False
-
-# Add performance mode flag - when True, maximizes GPU utilization
-_PERFORMANCE_MODE = False
-
-def set_performance_mode(enabled=True):
-    """
-    Enable or disable performance mode.
-    
-    In performance mode, memory growth is disabled and maximum GPU utilization is prioritized
-    over multi-model efficiency. This will push your GPU harder and "get those fans spinning".
-    
-    Args:
-        enabled: Whether to enable performance mode
-        
-    Returns:
-        Current performance mode state
-    """
-    global _PERFORMANCE_MODE
-    _PERFORMANCE_MODE = enabled
-    logger.info(f"GPU Performance Mode {'ENABLED' if enabled else 'DISABLED'}")
-    
-    # Apply performance settings if memory already configured
-    if _MEMORY_CONFIGURED:
-        _apply_performance_optimizations(enabled)
-    
-    return _PERFORMANCE_MODE
-
-def _apply_performance_optimizations(enabled=True):
-    """Apply aggressive performance optimizations to maximize GPU utilization"""
-    try:
-        import tensorflow as tf
-        
-        if enabled:
-            # For maximum GPU utilization:
-            # 1. Enable XLA JIT compilation which can increase performance
-            tf.config.optimizer.set_jit(True)
-            
-            # 2. Set aggressive GPU options
-            gpu_options = tf.config.optimizer.get_experimental_options()
-            aggressive_options = {
-                "layout_optimizer": True,
-                "constant_folding": True,
-                "shape_optimization": True,
-                "remapping": True,
-                "arithmetic_optimization": True,
-                "dependency_optimization": True,
-                "loop_optimization": True,
-                "auto_mixed_precision": True,
-                "disable_meta_optimizer": False,
-                "min_graph_nodes": 1,
-            }
-            tf.config.optimizer.set_experimental_options(aggressive_options)
-            
-            # 3. Use autograph aggressively 
-            os.environ["TF_AUTOGRAPH_STRICT_CONVERSION"] = "1"
-            
-            # 4. Allow TensorFlow to use more GPU memory for caching
-            os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
-            
-            # 5. Set CUDA memory allocation to maximum performance
-            os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
-            
-            # 6. Use cudnn autotune for best performance
-            os.environ["TF_CUDNN_USE_AUTOTUNE"] = "1"
-            
-            # 7. Disable operations on CPU when possible
-            os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"
-            
-            logger.info("Applied aggressive GPU performance optimizations")
-        else:
-            # Reset to default behavior
-            tf.config.optimizer.set_jit(False)
-            tf.config.optimizer.set_experimental_options({})
-            
-            # Reset environment variables
-            if "TF_AUTOGRAPH_STRICT_CONVERSION" in os.environ:
-                del os.environ["TF_AUTOGRAPH_STRICT_CONVERSION"]
-            os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
-            if "TF_GPU_ALLOCATOR" in os.environ:
-                del os.environ["TF_GPU_ALLOCATOR"]
-            if "TF_GPU_THREAD_MODE" in os.environ:
-                del os.environ["TF_GPU_THREAD_MODE"]
-                
-            logger.info("Reset GPU optimizations to default")
-    except Exception as e:
-        logger.error(f"Error applying performance optimizations: {e}")
 
 def detect_amd_gpu() -> bool:
     """Detect if the system has an AMD GPU."""
@@ -120,6 +34,64 @@ def detect_amd_gpu() -> bool:
         logger.warning(f"Error detecting GPU type: {e}")
         return False
 
+def check_gpu_availability():
+    """
+    Check if GPU is available through TensorFlow and return device information.
+    
+    Returns:
+        dict: Information about available devices
+    """
+    try:
+        import tensorflow as tf
+        
+        gpus = tf.config.list_physical_devices('GPU')
+        
+        # Get detailed GPU info
+        gpu_info = {}
+        for i, gpu in enumerate(gpus):
+            try:
+                # Get memory info
+                gpu_info[i] = {
+                    'name': gpu.name,
+                    'device_type': 'GPU',
+                    'memory_limit': tf.config.experimental.get_memory_info(f'GPU:{i}')['current'] if hasattr(tf.config.experimental, 'get_memory_info') else 'Unknown'
+                }
+            except Exception as e:
+                gpu_info[i] = {
+                    'name': gpu.name,
+                    'device_type': 'GPU',
+                    'error': str(e)
+                }
+                
+        result = {
+            'gpus_available': len(gpus) > 0,
+            'gpu_count': len(gpus),
+            'gpu_info': gpu_info,
+            'tf_version': tf.__version__
+        }
+        
+        # Check for CUDA availability in more detail
+        try:
+            cuda_visible = os.environ.get('CUDA_VISIBLE_DEVICES', None)
+            result['cuda_visible_devices'] = cuda_visible
+        except Exception:
+            pass
+            
+        # Add XLA availability
+        try:
+            result['xla_available'] = hasattr(tf, 'function') and callable(tf.function)
+        except Exception:
+            result['xla_available'] = False
+            
+        return result
+        
+    except ImportError:
+        logger.warning("TensorFlow not available")
+        return {'gpus_available': False, 'error': 'TensorFlow not available'}
+    except Exception as e:
+        logger.error(f"Error checking GPU availability: {e}")
+        return {'gpus_available': False, 'error': str(e)}
+
 def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
     """
     Configure GPU memory settings. This should be called only once.
@@ -133,19 +105,22 @@ def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
     Returns:
         Dictionary with configuration results
     """
-    global _MEMORY_CONFIGURED, _PERFORMANCE_MODE
+    global _MEMORY_CONFIGURED
+    logger = logging.getLogger("prediction_model")
+    
+    logger.info("GPU Memory Configuration Attempt - Already Configured: %s", _MEMORY_CONFIGURED)
+    if config:
+        logger.info("Config keys: %s", list(config.keys()))
 
     # Default configuration
     DEFAULT_CONFIG = {
         "allow_growth": True,
-        "memory_limit_mb": None,
-        "gpu_memory_fraction": "auto",
+        "gpu_memory_fraction": 0.95,  # Increased from "auto" to use 95% of GPU memory
         "use_xla": True,
         "mixed_precision": False,  # Default to False for safety
         "visible_gpus": None,
         "directml_enabled": True,
         "use_gpu": True,
-        "performance_mode": _PERFORMANCE_MODE,  # Use current performance mode
     }
 
     # Don't reconfigure if already done
@@ -164,22 +139,12 @@ def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
             if key not in config:
                 config[key] = value
 
-    # Update performance mode from config
-    _PERFORMANCE_MODE = config.get("performance_mode", _PERFORMANCE_MODE)
-    
-    # If in performance mode, override certain settings
-    if _PERFORMANCE_MODE:
-        logger.info("PERFORMANCE MODE ENABLED: Configuring for maximum GPU utilization")
-        config["allow_growth"] = False  # Disable growth for maximum performance
-        config["use_xla"] = True  # Always use XLA
-        config["gpu_memory_fraction"] = 0.95  # Use 95% of GPU memory
-
     # Explicitly check for TF_FORCE_FLOAT32 environment variable
     if "TF_FORCE_FLOAT32" in os.environ and os.environ["TF_FORCE_FLOAT32"] == "1":
         config["mixed_precision"] = False
         logger.info("TF_FORCE_FLOAT32 set to 1, forcing float32 precision")
 
-    results = {"success": True, "gpus_found": 0, "performance_mode": _PERFORMANCE_MODE}
+    results = {"success": True, "gpus_found": 0}
 
     # Disable GPU if requested
     if not config["use_gpu"]:
@@ -239,13 +204,13 @@ def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
             logger.info(f"Found {len(gpus)} GPU(s)")
 
             try:
-                # Apply memory growth setting - but not in performance mode
-                if config["allow_growth"] and not _PERFORMANCE_MODE:
+                # Apply memory growth setting
+                if config["allow_growth"]:
                     for gpu in gpus:
                         tf.config.experimental.set_memory_growth(gpu, True)
                     logger.info("Memory growth enabled for all GPUs")
-                elif not config["allow_growth"] or _PERFORMANCE_MODE:
-                    logger.info("Memory growth DISABLED for maximum GPU utilization")
+                else:
+                    logger.info("Memory growth DISABLED")
 
                 # Enable XLA JIT compilation if requested
                 if config["use_xla"]:
@@ -265,13 +230,20 @@ def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
                     tf.keras.mixed_precision.set_global_policy("float32")
                     logger.info("Mixed precision DISABLED (float32)")
 
-                # Apply performance optimizations if in performance mode
-                if _PERFORMANCE_MODE:
-                    _apply_performance_optimizations(True)
-
                 # Verify the policy was applied
                 actual_policy = tf.keras.mixed_precision.global_policy()
                 logger.info(f"Active precision policy: {actual_policy.name}")
+
+                # NEW: Optimize thread settings for better GPU utilization
+                try:
+                    import multiprocessing
+                    cpu_count = multiprocessing.cpu_count()
+                    # Configure inter-op and intra-op parallelism
+                    tf.config.threading.set_inter_op_parallelism_threads(min(cpu_count, 8))
+                    tf.config.threading.set_intra_op_parallelism_threads(min(cpu_count, 8)) 
+                    logger.info(f"Configured threading for {min(cpu_count, 8)} threads")
+                except Exception as e:
+                    logger.warning(f"Error setting thread parallelism: {e}")
 
                 results["backend"] = "cuda" if len(gpus) > 0 else "cpu"
                 _MEMORY_CONFIGURED = True
@@ -295,6 +267,9 @@ def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
             logger.warning("No GPUs detected. Running on CPU only.")
             results["backend"] = "cpu"
 
+        logger.info("GPU configuration complete - Found %d GPUs", len(gpus))
+        logger.info("Memory growth enabled: %s", config.get('allow_growth', False))
+
     except ImportError:
         logger.error("TensorFlow not installed")
         results["success"] = False
@@ -303,6 +278,8 @@ def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
         logger.error(f"Unexpected error configuring GPU memory: {e}")
         results["success"] = False
         results["error"] = str(e)
+
+    logger.info("Memory configuration results: success=%s", results.get('success', False))
 
     return results
 
@@ -609,14 +586,9 @@ except ImportError:
     logger.warning("GPUtil not installed. Detailed GPU monitoring will be limited.")
     HAS_GPUTIL = False
 
-# Add an automatic resource management function to replace the static performance mode
-
 def apply_optimal_gpu_settings(workload_intensity=None):
     """
     Dynamically apply optimal GPU settings based on workload intensity.
-    
-    This replaces the old static performance mode with a more dynamic approach
-    that automatically adjusts settings based on the current workload needs.
     
     Args:
         workload_intensity: Optional float from 0.0-1.0 indicating workload intensity
@@ -773,3 +745,243 @@ def apply_optimal_gpu_settings(workload_intensity=None):
     except Exception as e:
         logger.warning(f"Error applying GPU settings: {e}")
         return {"status": "error", "message": str(e)}
+
+def get_detailed_gpu_utilization():
+    """
+    Get current GPU utilization using NVIDIA tools (requires pynvml).
+    
+    Returns:
+        List of dicts with GPU utilization info
+    """
+    try:
+        import pynvml
+        
+        pynvml.nvmlInit()
+        device_count = pynvml.nvmlDeviceGetCount()
+        
+        utilization = []
+        for i in range(device_count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            
+            # Get device name
+            name = pynvml.nvmlDeviceGetName(handle)
+            
+            # Get utilization
+            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+            
+            # Get memory info
+            memory = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            
+            # Get temperature
+            temperature = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+            
+            utilization.append({
+                'id': i,
+                'name': name,
+                'gpu_util': util.gpu,  # GPU utilization percentage
+                'memory_util': (memory.used / memory.total) * 100,  # Memory utilization percentage
+                'memory_total_mb': memory.total / (1024 * 1024),  # Total memory in MB
+                'memory_used_mb': memory.used / (1024 * 1024),  # Used memory in MB
+                'memory_free_mb': memory.free / (1024 * 1024),  # Free memory in MB
+                'temperature': temperature  # Temperature in Celsius
+            })
+            
+        pynvml.nvmlShutdown()
+        return utilization
+    except ImportError:
+        logger.warning("pynvml package not available. Install with: pip install pynvml")
+        return []
+    except Exception as e:
+        logger.error(f"Error getting GPU utilization: {e}")
+        return []
+
+def deep_clean_gpu_memory():
+    """
+    Clean up GPU memory by clearing TensorFlow, PyTorch and CUDA caches.
+    
+    Returns:
+        bool: True if cleanup was successful
+    """
+    try:
+        import gc
+        
+        # Run Python garbage collector
+        gc.collect()
+        
+        # Clear TensorFlow session
+        try:
+            import tensorflow as tf
+            tf.keras.backend.clear_session()
+            logger.info("TensorFlow session cleared")
+        except ImportError:
+            logger.debug("TensorFlow not available for memory cleanup")
+        except Exception as e:
+            logger.warning(f"Error clearing TensorFlow session: {e}")
+        
+        # Clear PyTorch cache if available
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                logger.info("PyTorch CUDA cache cleared")
+        except ImportError:
+            logger.debug("PyTorch not available for memory cleanup")
+        except Exception as e:
+            logger.warning(f"Error clearing PyTorch cache: {e}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error cleaning GPU memory: {e}")
+        return False
+
+def optimize_gpu_performance():
+    """
+    Apply optimizations to maximize GPU performance including:
+    - Setting TensorFlow to use the GPU aggressively
+    - Increasing CUDA work queue depth
+    - Enabling tensor cores if available
+    
+    Returns:
+        dict: Optimization results
+    """
+    result = {
+        'success': False,
+        'optimizations': []
+    }
+    
+    try:
+        import tensorflow as tf
+        
+        # Set CUDA environment variables for performance
+        os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+        os.environ['TF_GPU_THREAD_MODE'] = 'gpu_private'
+        os.environ['TF_GPU_THREAD_COUNT'] = '1'
+        os.environ['TF_USE_CUDNN'] = '1'  # Use cuDNN library for deep neural networks
+        result['optimizations'].append('environment_variables')
+        
+        # Enable XLA (Accelerated Linear Algebra)
+        try:
+            tf.config.optimizer.set_jit(True)
+            result['optimizations'].append('xla_jit')
+        except:
+            pass
+            
+        # Enable tensor cores for mixed precision if available
+        try:
+            policy = tf.keras.mixed_precision.Policy('mixed_float16')
+            tf.keras.mixed_precision.set_global_policy(policy)
+            result['optimizations'].append('mixed_precision')
+        except:
+            pass
+            
+        # Configure threading for optimal performance
+        try:
+            import multiprocessing
+            cpu_count = multiprocessing.cpu_count()
+            # Larger ops like matrix multiply and convolutions benefit from more threads
+            tf.config.threading.set_intra_op_parallelism_threads(cpu_count)
+            # Setting inter-op to 1 or 2 is often optimal for GPU-heavy workloads
+            tf.config.threading.set_inter_op_parallelism_threads(2)
+            result['optimizations'].append('threading')
+        except:
+            pass
+            
+        result['success'] = True
+    except ImportError:
+        result['error'] = 'TensorFlow not available'
+    except Exception as e:
+        result['error'] = str(e)
+        
+    return result
+
+def get_memory_info():
+    """
+    Get memory information for the system and GPUs.
+    
+    Returns:
+        dict: Memory information
+    """
+    memory_info = {
+        'system': {},
+        'gpus': []
+    }
+    
+    # Get system memory info
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        memory_info['system'] = {
+            'total_gb': vm.total / (1024**3),
+            'available_gb': vm.available / (1024**3),
+            'used_gb': vm.used / (1024**3),
+            'percent_used': vm.percent
+        }
+    except ImportError:
+        memory_info['system']['error'] = 'psutil not available'
+    except Exception as e:
+        memory_info['system']['error'] = str(e)
+    
+    # Get GPU memory info
+    try:
+        import tensorflow as tf
+        gpus = tf.config.list_physical_devices('GPU')
+        
+        # If TensorFlow experimental memory info is available
+        for i, gpu in enumerate(gpus):
+            try:
+                mem_info = tf.config.experimental.get_memory_info(f'GPU:{i}')
+                memory_info['gpus'].append({
+                    'id': i,
+                    'name': gpu.name,
+                    'current_bytes': mem_info.get('current', 0),
+                    'peak_bytes': mem_info.get('peak', 0),
+                    'current_mb': mem_info.get('current', 0) / (1024**2),
+                    'peak_mb': mem_info.get('peak', 0) / (1024**2)
+                })
+            except:
+                # Fall back to pynvml if TF experimental API fails
+                try:
+                    gpu_util = get_gpu_utilization()
+                    if gpu_util and i < len(gpu_util):
+                        memory_info['gpus'].append(gpu_util[i])
+                except:
+                    memory_info['gpus'].append({
+                        'id': i, 
+                        'name': gpu.name,
+                        'error': 'Memory info not available'
+                    })
+    except Exception as e:
+        memory_info['gpus_error'] = str(e)
+    
+    # If no TensorFlow info, try using pynvml directly
+    if not memory_info['gpus']:
+        try:
+            gpu_util = get_gpu_utilization()
+            memory_info['gpus'] = gpu_util
+        except:
+            pass
+    
+    return memory_info
+
+# Additional function to optimize the model for improved GPU utilization
+def optimize_model_for_gpu(model):
+    """
+    Optimize a TensorFlow model for better GPU utilization.
+    
+    Args:
+        model: A TensorFlow model
+        
+    Returns:
+        The optimized model
+    """
+    try:
+        import tensorflow as tf
+        
+        # Convert to a function-compiled model which can use XLA and other optimizations
+        optimized_model = tf.function(model, jit_compile=True)
+        
+        # Return the optimized model
+        return optimized_model
+    except Exception as e:
+        logger.warning(f"Could not optimize model for GPU: {e}")
+        return model

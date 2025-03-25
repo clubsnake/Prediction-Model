@@ -67,9 +67,9 @@ class PredictionMonitor:
                 self.predictions_log["timestamp"] = pd.to_datetime(
                     self.predictions_log["timestamp"]
                 )
-                logger.info(f"Loaded {len(self.predictions_log)} prediction logs")
+                logger.info("Loaded %d prediction logs", len(self.predictions_log))
         except Exception as e:
-            logger.error(f"Error loading prediction logs: {e}")
+            logger.error("Error loading prediction logs: %s", e)
 
     def log_prediction(
         self,
@@ -126,11 +126,12 @@ class PredictionMonitor:
             self._save_logs()
 
             logger.debug(
-                f"Logged prediction for {ticker}/{timeframe}: predicted={predicted}, actual={actual}"
+                "Logged prediction for %s/%s: predicted=%.4f, actual=%s",
+                ticker, timeframe, predicted, actual if actual is not None else "None"
             )
             return True
         except Exception as e:
-            logger.error(f"Error logging prediction: {e}")
+            logger.error("Error logging prediction: %s", e)
             return False
 
     def update_actual(
@@ -192,8 +193,9 @@ class PredictionMonitor:
         try:
             log_file = os.path.join(self.logs_path, "predictions.csv")
             self.predictions_log.to_csv(log_file, index=False)
+            logger.debug("Saved %d prediction logs to %s", len(self.predictions_log), log_file)
         except Exception as e:
-            logger.error(f"Error saving prediction logs: {e}")
+            logger.error("Error saving prediction logs: %s", e)
 
     def get_accuracy_metrics(
         self, window: str = "all", ticker: str = None, timeframe: str = None

@@ -1,60 +1,3 @@
-# Study Manager for hyperparameter optimization
-# Provides centralized management of Optuna studies for different model types
-
-# Imports
-import os
-import sys
-import logging
-import traceback
-import multiprocessing
-import threading
-import time
-from datetime import datetime
-
-# Configure logger before using it
-logger = logging.getLogger(__name__)
-if not logger.hasHandlers():
-    logging.basicConfig(level=logging.INFO)
-
-# Import cross-platform locking from your existing threadsafe module
-try:
-    from src.utils.threadsafe import FileLock
-except ImportError:
-    logger.warning("Could not import FileLock from threadsafe, using fallback implementation")
-    # Simple fallback implementation if import fails
-    class FileLock:
-        def __init__(self, filepath, timeout=10.0, retry_delay=0.1):
-            self.filepath = filepath
-        
-        def __enter__(self):
-            return self
-            
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            pass
-
-# Fix import path
-current_file = os.path.abspath(__file__)
-src_dir = os.path.dirname(os.path.dirname(current_file))
-project_root = os.path.dirname(src_dir)
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-import traceback
-import optuna
-import numpy as np
-
-# Import GPU resource management tools
-try:
-    from src.utils.gpu_memory_management import set_performance_mode, get_memory_info, get_gpu_utilization
-    from src.utils.gpu_memory_manager import GPUMemoryManager
-    from src.utils.training_optimizer import get_training_optimizer
-    HAS_GPU_MANAGEMENT = True
-except ImportError:
-    logger.warning("GPU memory management modules not available")
-    HAS_GPU_MANAGEMENT = False
-
-from src.tuning.progress_helper import TESTED_MODELS_FILE, update_trial_info_in_yaml
-
 """
 Hyperparameter optimization study management module.
 
@@ -69,6 +12,81 @@ hyperparameter optimization across all model types. It includes:
 The StudyManager class centralizes Optuna study management to ensure consistent
 hyperparameter optimization across all model types while maximizing hardware utilization.
 """
+
+# Imports
+import os
+import sys
+import logging
+import traceback
+import multiprocessing
+import threading
+import time
+from datetime import datetime
+
+
+# Fix import path
+current_file = os.path.abspath(__file__)
+src_dir = os.path.dirname(os.path.dirname(current_file))
+project_root = os.path.dirname(src_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+import traceback
+import optuna
+import numpy as np
+
+
+# Configure logger before using it
+logger = logging.getLogger(__name__)
+if not logger.hasHandlers():
+    logging.basicConfig(level=logging.INFO)
+
+
+
+# Import GPU resource management tools
+try:
+    from src.utils.gpu_memory_management import get_memory_info, get_gpu_utilization
+    from src.utils.gpu_memory_manager import GPUMemoryManager
+    from src.utils.training_optimizer import get_training_optimizer
+    HAS_GPU_MANAGEMENT = True
+except ImportError:
+    logger.warning("GPU memory management modules not available")
+    HAS_GPU_MANAGEMENT = False
+
+from src.tuning.progress_helper import TESTED_MODELS_FILE, update_trial_info_in_yaml
+
+
+
+
+# Import cross-platform locking from your existing threadsafe module
+try:
+    from src.utils.threadsafe import FileLock
+except ImportError:
+    logger.warning("FileLock not available, will use simple file locking")
+    
+    # Define a simple fallback FileLock class
+    class FileLock:
+        def __init__(self, path):
+            self.path = path + ".lock"
+            self._locked = False
+            
+        def __enter__(self):
+            try:
+                with open(self.path, 'x') as f:  # Create lock file exclusively
+                    f.write(str(os.getpid()))
+                self._locked = True
+            except FileExistsError:
+                logger.warning(f"Lock file exists: {self.path}")
+                raise RuntimeError(f"Resource locked: {self.path}")
+            return self
+            
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            if self._locked and os.path.exists(self.path):
+                os.remove(self.path)
+                self._locked = False
+
+
+
 
 # Initialize GPU memory manager if available
 gpu_memory_manager = None
@@ -115,6 +133,7 @@ def create_model_objective(
     normalized_weights = {k: v / total_weight for k, v in metric_weights.items()}
 
     def objective(trial):
+        """Model-specific objective function for Optuna."""
         # Force this model type
         trial.suggest_categorical("model_type", [model_type])
 
@@ -169,6 +188,26 @@ def create_model_objective(
         }
 
         update_trial_info_in_yaml(TESTED_MODELS_FILE, trial_info)
+
+        # Also update model-specific progress file - Note: 'study' is accessed from trial
+        # We need to get the study from the trial to access n_trials
+        try:
+            from src.tuning.progress_helper import update_model_progress
+            # Access study from trial
+            study = trial.study
+            
+            update_model_progress(model_type, {
+                "current_trial": trial.number,
+                "total_trials": study.user_attrs.get("n_trials", 1000),
+                "current_rmse": float(rmse),
+                "current_mape": float(mape),
+                "directional_accuracy": float(da),
+                "completion_percentage": (trial.number / max(1, study.user_attrs.get("n_trials", 1000))) * 100,
+                "timestamp": datetime.now().isoformat(),
+                "cycle": study.user_attrs.get("cycle", 1)
+            })
+        except Exception as e:
+            logger.warning(f"Error updating model progress: {e}")
 
         return weighted_score
 
@@ -397,7 +436,11 @@ class StudyManager:
         # Resource tracking
         self.finished_models = set()  # Models that have completed all trials
         self.running_models = set()  # Models still running
+        
+        # Update cycle barrier to match n_startup_trials from config
+        from config.config_loader import N_STARTUP_TRIALS
         self.cycle_barrier = threading.Barrier(1)  # Will be resized based on active models
+        self.n_startup_trials = N_STARTUP_TRIALS  # Store the n_startup_trials value
         self.current_cycle = 1  # Track current cycle
         self.cycle_lock = threading.RLock()  # Lock for cycle synchronization
         self.resource_lock = threading.RLock()  # Lock for resource allocation
@@ -409,7 +452,7 @@ class StudyManager:
         # Dynamic trial count management
         self.trials_per_model = 1000  # Default starting value
         self.min_trials_per_cycle = 5  # Minimum trials to run per cycle
-        self.max_trials_per_cycle = 5000  # Maximum trials to run per cycle
+        self.max_trials_per_cycle = 10000  # Maximum trials to run per cycle
         self.trial_history = []  # Store trial counts and times for optimization
         self.trial_count_lock = threading.RLock()  # Lock for updating trial counts
         
@@ -418,9 +461,6 @@ class StudyManager:
         self.memory_usage_history = []
         self.last_gpu_check = 0
         self.gpu_check_interval = 5  # seconds
-        
-        # Performance mode management
-        self.performance_mode_enabled = False
         
         # Get training optimizer
         try:
@@ -565,34 +605,6 @@ class StudyManager:
         except Exception as e:
             logger.debug(f"Error monitoring resources: {e}")
 
-    def enable_performance_mode(self):
-        """Enable GPU performance mode for intensive operations."""
-        if not HAS_GPU_MANAGEMENT or self.performance_mode_enabled:
-            return
-            
-        try:
-            set_performance_mode(True)
-            if gpu_memory_manager:
-                gpu_memory_manager.enable_performance_mode()
-            self.performance_mode_enabled = True
-            logger.info("GPU performance mode enabled for intensive operations")
-        except Exception as e:
-            logger.warning(f"Failed to enable performance mode: {e}")
-    
-    def disable_performance_mode(self):
-        """Disable GPU performance mode to save energy."""
-        if not HAS_GPU_MANAGEMENT or not self.performance_mode_enabled:
-            return
-            
-        try:
-            set_performance_mode(False)
-            if gpu_memory_manager:
-                gpu_memory_manager.disable_performance_mode()
-            self.performance_mode_enabled = False
-            logger.info("GPU performance mode disabled")
-        except Exception as e:
-            logger.warning(f"Failed to disable performance mode: {e}")
-    
     def clean_gpu_memory(self, force_gc=True):
         """Clean GPU memory to free up resources."""
         if not HAS_GPU_MANAGEMENT:
@@ -635,6 +647,9 @@ class StudyManager:
         Returns:
             Optuna study
         """
+        logger = logging.getLogger("prediction_model")
+        logger.info("Creating study for %s - cycle %d", model_type, cycle)
+        
         # Get all model types from config to validate
         try:
             from config.config_loader import ACTIVE_MODEL_TYPES as CONFIG_MODEL_TYPES
@@ -744,6 +759,12 @@ class StudyManager:
         study.user_attrs["cycle"] = cycle
         study.user_attrs["n_trials"] = n_trials
         
+        # After study creation or loading
+        if study and hasattr(study, 'trials'):
+            logger.info("Study %s loaded with %d existing trials", study_name, len(study.trials))
+        else:
+            logger.info("Created new study: %s", study_name)
+        
         return study
     
     def log_study_status(self):
@@ -782,14 +803,17 @@ class StudyManager:
         from collections import defaultdict
         results = {}
         
-        # Enable performance mode for intensive operations
-        self.enable_performance_mode()
+        logger = logging.getLogger("prediction_model")
+        logger.info("Running %d studies in parallel", len(studies_config))
         
-        # Warm up GPU if available
+        # Initialize GPU - one time at the beginning
         if HAS_GPU_MANAGEMENT and gpu_memory_manager:
             try:
-                gpu_memory_manager.warmup_gpu(intensity=0.7)
-                logger.info("GPU warmed up for study execution")
+                # Make sure GPU warmup only happens once
+                if not hasattr(self, '_gpu_warmed_up'):
+                    gpu_memory_manager.warmup_gpu(intensity=0.7)
+                    logger.info("GPU warmed up for study execution")
+                    self._gpu_warmed_up = True
             except Exception as e:
                 logger.warning(f"Failed to warm up GPU: {e}")
         
@@ -818,7 +842,7 @@ class StudyManager:
             gpu_models = sum(1 for cfg in studies_config if "lstm" in cfg["component_type"] 
                           or "cnn" in cfg["component_type"] or "tft" in cfg["component_type"])
             if gpu_models > 0:
-                max_workers = min(max_workers, 3)  # Limit concurrent GPU workers
+                max_workers = min(max_workers, 7)  # Limit concurrent GPU workers
                 
         logger.info(f"Running {len(studies_config)} studies with {max_workers} workers")
         
@@ -898,9 +922,6 @@ class StudyManager:
             except Exception as e:
                 logger.warning(f"Error adjusting resources: {e}")
         
-        # Disable performance mode when done
-        self.disable_performance_mode()
-        
         # Clean memory after all studies
         self.clean_gpu_memory(True)
         
@@ -914,33 +935,48 @@ class StudyManager:
         self._apply_resource_settings(model_type)
         
         try:
-            # Set start time for tracking
-            study.user_attrs["start_time"] = time.time()
+            # Track this model in the running_models set
+            with self.resource_lock:
+                self.running_models.add(model_type)
+                logger.info(f"Added {model_type} to running models. Current running: {self.running_models}")
             
-            # Run the study
-            study.optimize(objective, n_trials=n_trials, callbacks=callbacks)
-            
-            # Check if all trials completed
-            completed_trials = len(study.trials)
-            remaining = n_trials - completed_trials
-            
-            # When a model completes all trials
-            if remaining <= 0:
-                logger.info(f"Model {model_type} completed all {n_trials} trials")
+            try:
+                # Add model_type-specific progress callback
+                model_callbacks = list(callbacks)
+                from src.tuning.meta_tuning import create_progress_callback
                 
-                # Mark this model as finished
+                # Get ticker and timeframe from study user attributes if available
+                ticker = study.user_attrs.get("ticker", None)
+                timeframe = study.user_attrs.get("timeframe", None)
+                
+                # Create progress callback with correct arguments
+                progress_callback = create_progress_callback(
+                    cycle=self.current_cycle, 
+                    model_type=model_type,
+                    ticker=ticker,
+                    timeframe=timeframe
+                )
+                model_callbacks.append(progress_callback)
+                
+                # Run Optuna optimization
+                study.optimize(objective, n_trials=n_trials, callbacks=model_callbacks)
+                
+                # If we reach here without exception, the study completed successfully
+                with self.resource_lock:
+                    self.finished_models.add(model_type)
+                    if model_type in self.running_models:
+                        self.running_models.remove(model_type)
+                    
+                    # Move resource reallocation AFTER the cycle barrier
+                    self.reallocation_needed.set()
+                    logger.info(f"Model {model_type} completed, will reallocate after cycle barrier")
+            except Exception as e:
+                logger.error(f"Error optimizing {model_type}: {e}")
+                # Still try to update sets in case of error
                 with self.resource_lock:
                     if model_type in self.running_models:
                         self.running_models.remove(model_type)
-                        self.finished_models.add(model_type)
-                        
-                        # This is the key part - trigger resource reallocation
-                        from src.utils.training_optimizer import get_training_optimizer
-                        optimizer = get_training_optimizer()
-                        optimizer.prioritize_slower_models(
-                            finished_models={model_type}, 
-                            running_models=self.running_models
-                        )
+                    self.finished_models.add(model_type)
             
             # Get best trial
             best_trial = study.best_trial if study.trials else None
@@ -954,25 +990,37 @@ class StudyManager:
                     logger.info(f"Model {model_type} waiting at cycle barrier")
                     self.cycle_barrier.wait()
                     logger.info(f"All models reached barrier, continuing to next cycle")
-            except threading.BrokenBarrierError:
-                logger.warning(f"Barrier was broken, some models may have failed")
+                    
+                    # NOW do resource reallocation after all models have reached the barrier
+                    # Only the last model to reach the barrier will do the reallocation
+                    with self.lock:
+                        if self.reallocation_needed.is_set() and model_type == list(self.finished_models)[-1]:
+                            logger.info("Performing resource reallocation now that all models reached barrier")
+                            from src.utils.training_optimizer import get_training_optimizer
+                            optimizer = get_training_optimizer()
+                            optimizer.prioritize_slower_models(
+                                finished_models=self.finished_models, 
+                                running_models=self.running_models
+                            )
+                            self.reallocation_needed.clear()
             except Exception as e:
-                logger.error(f"Error at cycle barrier: {e}")
-            
-            # Return results
-            result = {
-                "study": study,
-                "best_trial": best_trial,
-                "n_completed_trials": len(study.trials),
-                "metrics": metrics,
-                "runtime": time.time() - study.user_attrs.get("start_time", time.time())
-            }
-            
+                logger.error(f"Error at cycle barrier for {model_type}: {e}")
+
             # Store updated study in shared dict
             for study_name, s in studies.items():
-                if s == study:
-                    result["study_name"] = study_name
-                    break
+                if study_name == study.study_name:
+                    studies[study_name] = study
+                    
+            # Create result dictionary
+            result = {
+                "model_type": model_type,
+                "best_value": study.best_value if best_trial else None,
+                "best_trial_number": best_trial.number if best_trial else None,
+                "rmse": best_trial.user_attrs.get("rmse") if best_trial else None,
+                "mape": best_trial.user_attrs.get("mape") if best_trial else None,
+                "directional_accuracy": best_trial.user_attrs.get("directional_accuracy") if best_trial else None,
+                "trials_completed": len(study.trials),
+            }
                     
             return result
             
@@ -1013,9 +1061,11 @@ class StudyManager:
                 
                 # Apply GPU settings if applicable
                 if settings.get("gpu_memory_fraction", 0) > 0 and HAS_GPU_MANAGEMENT:
-                    # If this is a GPU-intensive model, ensure we have performance mode
+                    # Use training optimizer's recommended settings directly
+                    from src.utils.gpu_memory_management import apply_optimal_gpu_settings
                     if settings["gpu_memory_fraction"] > 0.2:
-                        self.enable_performance_mode()
+                        # Apply optimal settings for GPU-intensive model
+                        apply_optimal_gpu_settings(workload_intensity=settings["gpu_memory_fraction"])
                     
             except Exception as e:
                 logger.warning(f"Error applying resource settings for {model_type}: {e}")
@@ -1100,39 +1150,59 @@ class StudyManager:
             study: Completed Optuna study
         """
         try:
-            from src.tuning.progress_helper import update_cycle_metrics
+            metrics = {}
             
-            # Get current cycle if available
-            cycle = getattr(study, 'user_attrs', {}).get('cycle', 1)
-            
-            # Extract metrics from best trial if it exists
-            best_metrics = {}
-            try:
-                if hasattr(study, 'best_trial') and study.best_trial:
+            # Calculate per-model metrics
+            if study.trials:
+                try:
                     best_trial = study.best_trial
-                    best_metrics = {
-                        "rmse": best_trial.user_attrs.get("rmse", float('inf')),
-                        "mape": best_trial.user_attrs.get("mape", float('inf')),
-                        "directional_accuracy": best_trial.user_attrs.get("directional_accuracy", 0.0),
-                        "best_value": best_trial.value
+                    metrics = {
+                        "best_trial": best_trial.number,
+                        "best_value": float(best_trial.value),
+                        "rmse": float(best_trial.user_attrs.get("rmse", float("inf"))),
+                        "mape": float(best_trial.user_attrs.get("mape", float("inf"))),
+                        "directional_accuracy": float(best_trial.user_attrs.get("directional_accuracy", 0)),
                     }
-            except (ValueError, AttributeError) as e:
-                logger.warning(f"Could not extract best trial metrics for {model_type}: {e}")
+                except (ValueError, AttributeError, RuntimeError):
+                    logger.warning(f"No best trial available for {model_type}")
             
-            # Create model-specific metrics dictionary
-            model_metrics = {
-                "model_type": model_type,
-                "completed_trials": len(study.trials),
-                "total_trials": study.user_attrs.get("n_trials", 0),
-                "timestamp": datetime.now().isoformat(),
-                **best_metrics  # Include best metrics if available
+            # Count completed trials
+            metrics["completed_trials"] = len(study.trials)
+            
+            # Update individual model progress file
+            from src.tuning.progress_helper import update_model_progress, _update_aggregated_progress
+            progress_data = {
+                "current_trial": len(study.trials),
+                "total_trials": study.user_attrs.get("n_trials", 1000),
+                "current_rmse": metrics.get("rmse", None),
+                "current_mape": metrics.get("mape", None),
+                "completion_percentage": (len(study.trials) / max(1, study.user_attrs.get("n_trials", 1000))) * 100,
+                "cycle": self.current_cycle,
+                "timestamp": datetime.now().isoformat()
             }
+            update_model_progress(model_type, progress_data)
             
-            # Update cycle metrics with this model's data
-            update_cycle_metrics(model_metrics, cycle_num=cycle)
+            # Update the aggregated progress after updating individual model progress
+            _update_aggregated_progress()
             
+            # Update cycle metrics
+            from src.tuning.progress_helper import get_cycle_metrics, update_cycle_metrics
+            cycle_metrics = get_cycle_metrics(self.current_cycle) or {}
+            
+            # Make sure model_metrics dict exists
+            if "model_metrics" not in cycle_metrics:
+                cycle_metrics["model_metrics"] = {}
+                
+            # Add metrics for this model
+            cycle_metrics["model_metrics"][model_type] = metrics
+            
+            # Update cycle metrics file
+            update_cycle_metrics(cycle_metrics, self.current_cycle)
+            
+            return metrics
         except Exception as e:
-            logger.warning(f"Could not update model metrics for {model_type}: {e}")
+            logger.error(f"Error updating metrics for {model_type}: {e}")
+            return {}
 
     def _prepare_for_next_cycle(self):
         """Prepare for the next tuning cycle"""

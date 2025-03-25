@@ -106,6 +106,12 @@ incremental_learning:
     mape_threshold: 50
   max_saved_models: 100
 
+logger:
+  retention:
+    max_files: 1  # Maximum number of log files to keep
+    max_age_days: 30  # Delete logs older than this many days
+    auto_cleanup: true  # Enable automatic cleanup
+
 model:
   active_model_types:
     nbeats: true

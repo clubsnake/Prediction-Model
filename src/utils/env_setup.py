@@ -2,40 +2,34 @@
 TensorFlow environment setup and optimization utilities.
 
 This module handles the configuration of TensorFlow runtime environment variables
-and settings to optimize hardware resource utilization. It provides:
+and settings to optimize hardware resource utilization. It works in conjunction
+with the training_optimizer to ensure consistent memory management.
 
-1. Function to setup optimal TensorFlow environment based on available hardware
-2. Memory management utilities to clean up TensorFlow resources
-3. Proper handling of GPU memory allocation and growth settings
+This refactored version:
+1. Delegates GPU memory management to training_optimizer
+2. Focuses on environment variable setup while avoiding conflicts
+3. Allows training_optimizer settings to take precedence
+4. Maintains platform-specific optimizations
 
 The module is designed to be imported early in the application startup process
 to ensure TensorFlow is configured correctly before any models are loaded.
-Circular imports are avoided by moving TensorFlow imports inside functions.
 """
 
 import logging
 import multiprocessing
 import os
 import platform
+import sys
 from typing import Dict
-import threading
 
-# Fix incorrect imports
-try:
-    # Try relative import first
-    from ..utils.gpu_memory_management import configure_gpu_memory
-except ImportError:
-    # Fall back to absolute import if needed
-    try:
-        from src.utils.gpu_memory_management import configure_gpu_memory
-    except ImportError:
-        # Define a no-op function as fallback
-        def configure_gpu_memory(*args, **kwargs):
-            pass
+# Import training_optimizer for unified memory management
+from src.utils.training_optimizer import get_training_optimizer
 
+# Import gpu_memory_management for configuration
+from src.utils.gpu_memory_management import configure_gpu_memory
 
 try:
-    # Fix import to use correct path
+    # Import config settings
     from config.config_loader import get_config, get_value
 except ImportError:
     # Fall back to stub if needed
@@ -50,27 +44,20 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Move TensorFlow import inside functions to avoid initialization issues
-# This helps prevent circular imports when other modules import this one
-
-
 def setup_tf_environment(
-    cpu_threads=None, memory_growth=True, mixed_precision=None
+    cpu_threads=None, memory_growth=True, mixed_precision=None, use_training_optimizer=True
 ) -> Dict[str, str]:
     """
     Setup environment variables and TensorFlow configurations for optimal hardware utilization.
-
-    This function configures various environment variables and TensorFlow settings to
-    optimize performance based on available hardware. It handles:
-    - CPU thread allocation
-    - GPU memory growth settings
-    - Mixed precision configuration
-    - Platform-specific optimizations
+    
+    This function cooperates with training_optimizer for memory management while focusing on
+    environment variable configuration.
 
     Args:
         cpu_threads: Number of threads to use (None = auto-detect)
         memory_growth: Enable dynamic GPU memory growth
         mixed_precision: Enable mixed precision training (None = use config setting)
+        use_training_optimizer: Whether to delegate GPU configuration to training_optimizer
 
     Returns:
         Dictionary of set environment variables
@@ -112,79 +99,102 @@ def setup_tf_environment(
 
     logger.info(f"Environment configured with {cpu_threads} threads")
 
-    # Configure TensorFlow if imported
-    try:
-        # Import TensorFlow here instead of at the module level
-        import tensorflow as tf
-
-        # Dynamic memory growth for GPUs
+    # Use training_optimizer for GPU configuration if requested
+    if use_training_optimizer:
+        optimizer = get_training_optimizer()
+        
+        # Let training_optimizer handle GPU memory growth
         if memory_growth:
-            gpus = tf.config.experimental.list_physical_devices("GPU")
-            if gpus:
-                logger.info(f"Found {len(gpus)} GPU(s)")
-                for gpu in gpus:
-                    try:
-                        tf.config.experimental.set_memory_growth(gpu, True)
-                        logger.info(f"Enabled dynamic memory growth for {gpu}")
-                    except RuntimeError as e:
-                        logger.warning(f"Error setting memory growth: {e}")
+            # Just log this - don't configure directly
+            logger.info("Delegating GPU memory growth to training_optimizer")
+        
+        # Let training_optimizer handle mixed precision
+        if mixed_precision is not None:
+            # Just log this - don't configure directly
+            logger.info(f"Delegating mixed precision setting ({mixed_precision}) to training_optimizer")
+    else:
+        # Use direct configuration only if explicitly requested
+        # This path should be avoided in most cases
+        try:
+            # Import TensorFlow here instead of at the module level
+            import tensorflow as tf
+
+            # Dynamic memory growth for GPUs
+            if memory_growth:
+                gpus = tf.config.experimental.list_physical_devices("GPU")
+                if gpus:
+                    logger.info(f"Found {len(gpus)} GPU(s)")
+                    for gpu in gpus:
+                        try:
+                            tf.config.experimental.set_memory_growth(gpu, True)
+                            logger.info(f"Enabled dynamic memory growth for {gpu}")
+                        except RuntimeError as e:
+                            logger.warning(f"Error setting memory growth: {e}")
+                else:
+                    logger.info("No GPUs detected - using CPU only")
+
+            # If mixed_precision is None, try to get from config
+            if mixed_precision is None:
+                try:
+                    mixed_precision = get_value("hardware.use_mixed_precision", False)
+                    logger.info(f"Using mixed_precision={mixed_precision} from user_config.yaml")
+                except ImportError:
+                    mixed_precision = False
+                    logger.warning(
+                        "Could not import config.config_loader, defaulting mixed_precision to False"
+                    )
+
+            # Mixed precision for faster training - only if explicitly enabled
+            if mixed_precision:
+                policy = tf.keras.mixed_precision.Policy("mixed_float16")
+                tf.keras.mixed_precision.set_global_policy(policy)
+                logger.info("Mixed precision enabled (float16)")
             else:
-                logger.info("No GPUs detected - using CPU only")
+                policy = tf.keras.mixed_precision.Policy("float32")
+                tf.keras.mixed_precision.set_global_policy(policy)
+                logger.info("Mixed precision disabled (using float32)")
 
-        # If mixed_precision is None, try to get from config
-        if mixed_precision is None:
-            try:
-                from config.config_loader import get_value
+            # Check what policy was actually applied
+            active_policy = tf.keras.mixed_precision.global_policy()
+            logger.info(f"Active precision policy: {active_policy.name}")
 
-                mixed_precision = get_value("hardware.use_mixed_precision", False)
-                logger.info(
-                    f"Using mixed_precision={mixed_precision} from user_config.yaml"
-                )
-            except ImportError:
-                mixed_precision = False
-                logger.warning(
-                    "Could not import config.config_loader, defaulting mixed_precision to False"
-                )
+            # Log TensorFlow configuration
+            logger.info(f"TensorFlow version: {tf.__version__}")
+            logger.info(f"Eager execution: {tf.executing_eagerly()}")
 
-        # Mixed precision for faster training - only if explicitly enabled
-        if mixed_precision:
-            policy = tf.keras.mixed_precision.Policy("mixed_float16")
-            tf.keras.mixed_precision.set_global_policy(policy)
-            logger.info("Mixed precision enabled (float16)")
-        else:
-            policy = tf.keras.mixed_precision.Policy("float32")
-            tf.keras.mixed_precision.set_global_policy(policy)
-            logger.info("Mixed precision disabled (using float32)")
-
-        # Check what policy was actually applied
-        active_policy = tf.keras.mixed_precision.global_policy()
-        logger.info(f"Active precision policy: {active_policy.name}")
-
-        # Log TensorFlow configuration
-        logger.info(f"TensorFlow version: {tf.__version__}")
-        logger.info(f"Eager execution: {tf.executing_eagerly()}")
-
-    except ImportError:
-        logger.warning(
-            "TensorFlow not imported yet - will apply settings when imported"
-        )
-    except Exception as e:
-        logger.error(f"Error configuring TensorFlow: {e}")
+        except ImportError:
+            logger.warning(
+                "TensorFlow not imported yet - will apply settings when imported"
+            )
+        except Exception as e:
+            logger.error(f"Error configuring TensorFlow: {e}")
     
-    # Apply settings for maximum performance by default
+    # Apply general performance settings that don't conflict with training_optimizer
     os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"
     env_vars["TF_GPU_THREAD_MODE"] = "gpu_private"
     
     os.environ["TF_CUDNN_USE_AUTOTUNE"] = "1"
     env_vars["TF_CUDNN_USE_AUTOTUNE"] = "1"
     
-    # Apply mixed precision automatically if supported
-    os.environ["TF_ENABLE_AUTO_MIXED_PRECISION"] = "1" if mixed_precision else "0"
-    env_vars["TF_ENABLE_AUTO_MIXED_PRECISION"] = "1" if mixed_precision else "0"
-    
-    # Set faster GPU allocator
-    os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
-    env_vars["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
+    # Don't set GPU allocator directly - let training_optimizer handle it
+    # This avoids conflicts with training_optimizer's memory management
     
     return env_vars
 
+def init_environment():
+    """Initialize environment with training_optimizer taking precedence."""
+    # First initialize training_optimizer
+    optimizer = get_training_optimizer()
+    
+    # Then set up environment variables
+    env_vars = setup_tf_environment(use_training_optimizer=True)
+    
+    return {
+        "environment_variables": env_vars,
+        "training_optimizer_initialized": True
+    }
+
+if __name__ == "__main__":
+    # Run initialization when module is executed directly
+    init_result = init_environment()
+    print(f"Environment initialized: {len(init_result['environment_variables'])} variables set")

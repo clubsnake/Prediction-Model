@@ -27,6 +27,70 @@ _cleanup_thread = None
 CRITICAL_FILES = ["progress.yaml", "tuning_status.txt", "tested_models.yaml"]
 
 
+def cleanup_stale_temp_files(directory=None, max_age=3600, pattern=None):
+    """
+    Clean up stale temporary files created during atomic write operations.
+    
+    Args:
+        directory: Directory to search (defaults to project data directory)
+        max_age: Maximum age in seconds before a temp file is considered stale
+        pattern: Optional filename pattern to match (e.g., 'tested_models.yaml')
+        
+    Returns:
+        int: Number of temporary files cleaned up
+    """
+    try:
+        # Determine directory to clean
+        if directory is None:
+            current_file = os.path.abspath(__file__)
+            src_dir = os.path.dirname(os.path.dirname(current_file))
+            project_root = os.path.dirname(src_dir)
+            directory = os.path.join(project_root, "data")
+
+        logger.info(f"Cleaning up stale temporary files in {directory}")
+        cleaned_count = 0
+        
+        # Find all temporary files recursively
+        for root, _, files in os.walk(directory):
+            for file in files:
+                # Match different patterns of temp files created during atomic writes
+                is_temp = (file.endswith('.tmp') or '.tmp.' in file or 
+                          file.endswith('.temp') or '.temp.' in file or
+                          '.emergency.' in file)
+                
+                # If pattern is provided, only clean temp files related to that pattern
+                if is_temp and (pattern is None or pattern in file):
+                    temp_path = os.path.join(root, file)
+                    try:
+                        # Check age of temp file
+                        try:
+                            file_age = time.time() - os.path.getmtime(temp_path)
+                        except OSError:
+                            # File might be inaccessible - consider it stale
+                            file_age = max_age + 1
+                            logger.warning(f"Could not check age of temp file: {temp_path}")
+
+                        if file_age > max_age:
+                            try:
+                                os.remove(temp_path)
+                                cleaned_count += 1
+                                logger.info(f"Removed stale temp file: {temp_path} (Age: {file_age:.1f}s)")
+                            except PermissionError:
+                                logger.warning(f"Permission error removing temp file {temp_path} - may be in use")
+                            except Exception as e:
+                                logger.warning(f"Could not remove temp file {temp_path}: {e}")
+                    except Exception as e:
+                        logger.error(f"Error checking temp file {temp_path}: {e}")
+
+        if cleaned_count > 0:
+            logger.info(f"Cleaned up {cleaned_count} stale temporary files")
+        return cleaned_count
+
+    except Exception as e:
+        logger.error(f"Error cleaning up temporary files: {e}")
+        return 0
+
+
 def cleanup_stale_locks(directory=None, max_age=300, force=False):
     """Clean up stale lock files in the directory with more aggressive handling for critical files."""
     try:
@@ -118,8 +182,12 @@ def cleanup_stale_locks(directory=None, max_age=300, force=False):
                 except Exception as e:
                     logger.error(f"Error checking lock file {lock_path}: {e}")
 
+        # Also clean up temporary files while we're at it
+        temp_files_cleaned = cleanup_stale_temp_files(directory, max_age=max_age*2)  # Use longer timeout for temp files
+        cleaned_count += temp_files_cleaned
+
         if cleaned_count > 0:
-            logger.info(f"Cleaned up {cleaned_count} stale lock files")
+            logger.info(f"Cleaned up {cleaned_count} stale files total")
         return cleaned_count
 
     except Exception as e:
@@ -142,11 +210,19 @@ def _background_cleanup_task():
                 break
 
             # Run cleanup with shorter max_age for background task
+            # Also cleans temporary files now
             count = cleanup_stale_locks(max_age=180)  # 3 minutes
+
+            # If there are still many temp files, do targeted cleanup for tested_models
+            if count > 0:
+                # Special focus on tested_models.yaml temp files since those accumulate
+                temp_count = cleanup_stale_temp_files(pattern='tested_models.yaml', max_age=120)  # More aggressive 2 minute timeout
+                if temp_count > 0:
+                    logger.info(f"Cleaned {temp_count} stale tested_models temporary files")
 
             # Log only if we cleaned something
             if count > 0:
-                logger.info(f"Background task cleaned {count} stale lock files")
+                logger.info(f"Background task cleaned {count} stale files")
 
         except Exception as e:
             logger.error(f"Error in background cleanup task: {e}")
@@ -225,8 +301,16 @@ class FileLock:
                     del _active_locks[self._pid]
 
     def __enter__(self):
-        """Acquire the lock when entering a 'with' block."""
+        logger = logging.getLogger("prediction_model")
+        logger.debug("Attempting to acquire lock: %s", self.lockfile)
+        
         self.acquire()
+        
+        if self._locked:
+            logger.debug("Lock acquired: %s", self.lockfile)
+        else:
+            logger.warning("Failed to acquire lock after %d seconds: %s", self.timeout, self.lockfile)
+        
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -261,52 +345,72 @@ class FileLock:
             # Check for and clean stale lock before attempting to acquire
             self._check_and_clean_stale_lock()
             
-            while True:
-                try:
-                    if self._acquire_lock_impl():
-                        self._locked = True
-                        self._lock_time = time.time()
-                        logger.debug(f"Acquired lock for {self.filepath} (PID: {self._pid})")
-                        return True
-                except Exception as e:
-                    # If timeout exceeded, raise exception
-                    if time.time() - start_time >= self.timeout:
-                        # For critical files, try cleaning one more time before failing
-                        file_path = self.filepath  # Avoid using 'os' variable name here
-                        is_critical = any(critical_file in file_path for critical_file in CRITICAL_FILES)
-                        lock_file_path = self.lockfile  # Avoid using 'os' variable name here
-                        
-                        if is_critical and os.path.exists(lock_file_path):
-                            logger.warning(f"Timeout exceeded for critical file, attempting emergency cleanup: {file_path}")
-                            try:
-                                lock_age = time.time() - os.path.getmtime(lock_file_path)
-                                if lock_age > 30:  # More aggressive 30 second threshold for emergency cleanup
-                                    os.remove(lock_file_path)
-                                    logger.warning(f"Emergency removal of stale lock: {lock_file_path}")
-                                    # Try one more time
-                                    if self._acquire_lock_impl():
-                                        self._locked = True
-                                        self._lock_time = time.time()
-                                        logger.debug(f"Acquired lock after emergency cleanup: {file_path}")
-                                        return True
-                            except Exception as cleanup_e:
-                                logger.error(f"Emergency cleanup failed: {cleanup_e}")
-                                
-                        raise FileLockError(f"Could not acquire lock for {file_path}: {str(e)}")
-                
-                # Random jitter to prevent lock-step retries from multiple processes
-                jitter = random.uniform(0, self.retry_delay * 0.5)
-                time.sleep(self.retry_delay + jitter)
-                
-                # Check for timeout
-                if time.time() - start_time >= self.timeout:
-                    # For critical files, one last attempt to clean stale lock
-                    file_path = self.filepath  # Avoid using 'os' variable name here
-                    is_critical = any(critical_file in file_path for critical_file in CRITICAL_FILES)
-                    if is_critical:
-                        self._check_and_clean_stale_lock(force=True)
+            acquired_handle = False
+            try:
+                while True:
+                    try:
+                        if self._acquire_lock_impl():
+                            acquired_handle = True
+                            self._locked = True
+                            self._lock_time = time.time()
+                            logger.debug(f"Acquired lock for {self.filepath} (PID: {self._pid})")
+                            return True
+                    except Exception as e:
+                        # If timeout exceeded, raise exception
+                        if time.time() - start_time >= self.timeout:
+                            # For critical files, try cleaning one more time before failing
+                            file_path = self.filepath
+                            is_critical = any(critical_file in file_path for critical_file in CRITICAL_FILES)
+                            lock_file_path = self.lockfile
+                            
+                            if is_critical and os.path.exists(lock_file_path):
+                                logger.warning(f"Timeout exceeded for critical file, attempting emergency cleanup: {file_path}")
+                                try:
+                                    lock_age = time.time() - os.path.getmtime(lock_file_path)
+                                    if lock_age > 30:  # More aggressive 30 second threshold for emergency cleanup
+                                        os.remove(lock_file_path)
+                                        logger.warning(f"Emergency removal of stale lock: {lock_file_path}")
+                                        # Try one more time
+                                        if self._acquire_lock_impl():
+                                            acquired_handle = True
+                                            self._locked = True
+                                            self._lock_time = time.time()
+                                            logger.debug(f"Acquired lock after emergency cleanup: {file_path}")
+                                            return True
+                                except Exception as cleanup_e:
+                                    logger.error(f"Emergency cleanup failed: {cleanup_e}")
+                                    
+                            # If we couldn't acquire the lock, make sure to release any resources
+                            if acquired_handle and not self._locked:
+                                try:
+                                    self._release_lock_impl()
+                                except Exception:
+                                    pass
+                                    
+                            raise FileLockError(f"Could not acquire lock for {file_path}: {str(e)}")
                     
-                    raise FileLockError(f"Timeout while waiting for lock on {file_path}")
+                    # Random jitter to prevent lock-step retries from multiple processes
+                    jitter = random.uniform(0, self.retry_delay * 0.5)
+                    time.sleep(self.retry_delay + jitter)
+                    
+                    # Check for timeout
+                    if time.time() - start_time >= self.timeout:
+                        # For critical files, one last attempt to clean stale lock
+                        file_path = self.filepath
+                        is_critical = any(critical_file in file_path for critical_file in CRITICAL_FILES)
+                        if is_critical:
+                            self._check_and_clean_stale_lock(force=True)
+                        
+                        raise FileLockError(f"Timeout while waiting for lock on {file_path}")
+                        
+            except Exception:
+                # If anything goes wrong, ensure we clean up any acquired resources
+                if acquired_handle and not self._locked:
+                    try:
+                        self._release_lock_impl()
+                    except Exception:
+                        pass
+                raise
 
     def _check_and_clean_stale_lock(self, force=False):
         """
@@ -644,93 +748,41 @@ def safe_read_yaml(filepath: str, default: Any = None, max_retries: int = 5) -> 
 
 
 def safe_write_yaml(filepath: str, data: Any, max_retries: int = 5) -> bool:
-    """
-    Thread-safe YAML file writing with retries and locking.
-    Enhanced with better error handling and emergency fallbacks.
+    """Thread-safe YAML writing with temporary file approach and better error handling."""
+    temp_file = f"{filepath}.tmp.{int(time.time() * 1000)}"
     
-    Args:
-        filepath: Path to the YAML file
-        data: Data to write
-        max_retries: Maximum number of retries on failure
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    # Create directory if it doesn't exist
-    file_path = filepath  # Avoid variable name 'os'
     try:
-        directory = os.path.dirname(os.path.abspath(file_path))
-        os.makedirs(directory, exist_ok=True)
-    except Exception as e:
-        logger.error(f"Failed to create directory for {file_path}: {e}")
-        
-    # Convert NumPy types to native Python types
-    processed_data = convert_to_native_types(data)
-    
-    # Configure timeout based on file type
-    is_critical = any(critical_file in file_path for critical_file in CRITICAL_FILES)
-    timeout = 5.0 if is_critical else 30.0
-    
-    # Try to write with retries
-    retry_count = 0
-    while retry_count < max_retries:
-        try:
-            # Use atomic write pattern
-            with FileLock(file_path, timeout=timeout):
-                # Write to temp file with unique timestamp
-                temp_path = f"{file_path}.tmp.{int(time.time() * 1000)}"
-                with open(temp_path, "w", encoding="utf-8") as f:
-                    yaml.safe_dump(processed_data, f, default_flow_style=False)
-                    f.flush()
-                    os.fsync(f.fileno())  # Force write to disk
-                    
-                # Rename temp file to target file (atomic operation)
-                os.replace(temp_path, file_path)
+        # Write to temp file first
+        with open(temp_file, 'w') as f:
+            yaml.dump(data, f)
+            
+        # Try to replace with original file
+        for retry in range(max_retries):
+            try:
+                os.replace(temp_file, filepath)
                 return True
-                
-        except FileLockError as e:
-            retry_count += 1
-            logger.warning(f"Lock error writing YAML (attempt {retry_count}/{max_retries}): {e}")
-            
-            if retry_count >= max_retries - 1:
-                # On the last retry, attempt emergency cleanup first
-                logger.warning(f"Attempting emergency cleanup for {file_path} before final attempt")
-                emergency_cleanup_for_file(file_path)
-                
-            if retry_count >= max_retries:
-                # If all retries failed, try emergency direct write as last resort
-                try:
-                    logger.warning(f"Attempting emergency direct write for {file_path}")
-                    # Write to unique temp file
-                    temp_path = f"{file_path}.emergency.{int(time.time() * 1000)}"
-                    with open(temp_path, "w", encoding="utf-8") as f:
-                        yaml.safe_dump(processed_data, f)
-                        f.flush()
-                        os.fsync(f.fileno())
-                        
-                    # Atomic rename
-                    os.replace(temp_path, file_path)
-                    logger.warning(f"Emergency direct write succeeded for {file_path}")
-                    return True
-                except Exception as last_e:
-                    logger.error(f"Emergency write failed: {last_e}")
-                    return False
-                    
-            # Exponential backoff with jitter
-            delay = 0.2 * (2**retry_count) + random.uniform(0, 0.2)
-            time.sleep(delay)
-                
+            except PermissionError as e:
+                # If file is locked, wait and retry
+                if retry < max_retries - 1:
+                    logger.debug(f"File locked, retrying in {(retry+1)*0.5}s: {filepath}")
+                    time.sleep((retry + 1) * 0.5)
+                else:
+                    raise e
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to write YAML to {filepath}: {e}")
+        return False
+    
+    finally:
+        # Always try to clean up the temp file
+        try:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
         except Exception as e:
-            retry_count += 1
-            logger.error(f"Error writing YAML (attempt {retry_count}/{max_retries}): {e}")
-            
-            if retry_count >= max_retries:
-                return False
-                
-            # Linear backoff for other errors
-            time.sleep(0.2 * retry_count)
-            
-    return False
+            # Log but don't halt execution
+            logger.warning(f"Failed to remove temp file {temp_file}: {e}")
 
 
 def append_to_yaml_list(filepath: str, item: Any, max_attempts: int = 5) -> bool:
@@ -820,9 +872,10 @@ def _cleanup_all_locks():
 atexit.register(_cleanup_all_locks)
 
 # Run cleanup at module import and start background task
-cleaned_count = cleanup_stale_locks()
-if cleaned_count > 0:
-    logger.warning(f"Found and cleaned up {cleaned_count} stale lock files on startup")
+cleaned_lock_count = cleanup_stale_locks()
+cleaned_temp_count = cleanup_stale_temp_files(pattern='tested_models.yaml', max_age=7200)  # More aggressive cleanup for tested_models on startup
+if cleaned_lock_count > 0 or cleaned_temp_count > 0:
+    logger.warning(f"Found and cleaned up {cleaned_lock_count} stale lock files and {cleaned_temp_count} temporary files on startup")
 start_background_cleanup()
 
 class AtomicFileWriter:

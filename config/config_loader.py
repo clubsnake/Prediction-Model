@@ -189,44 +189,44 @@ MAX_SAVED_MODELS = user_config.get("incremental_learning", {}).get(
 DATA_DIR = (
     system_config.get("project", {})
     .get("data_dirs", {})
-    .get("data", os.path.join(PROJECT_ROOT, "data"))
+    .get("data", os.path.join(PROJECT_ROOT, "data"))  # Ensure lowercase "data"
 )
 DB_DIR = (
     system_config.get("project", {})
     .get("data_dirs", {})
-    .get("db", os.path.join(DATA_DIR, "DB"))
+    .get("db", os.path.join(DATA_DIR, "db"))  # Ensure lowercase "db"
 )
 MODELS_DIR = (
     system_config.get("project", {})
     .get("data_dirs", {})
-    .get("models", os.path.join(DATA_DIR, "Models"))
+    .get("models", os.path.join(DATA_DIR, "models"))  # Ensure lowercase "models"
 )
 HYPERPARAMS_DIR = (
     system_config.get("project", {})
     .get("data_dirs", {})
-    .get("hyperparams", os.path.join(MODELS_DIR, "Hyperparameters"))
+    .get("hyperparams", os.path.join(MODELS_DIR, "hyperparams"))  # Use lowercase "hyperparams"
 )
 RAW_DATA_DIR = (
     system_config.get("project", {})
     .get("data_dirs", {})
-    .get("raw_data", os.path.join(DATA_DIR, "Raw"))
+    .get("raw_data", os.path.join(DATA_DIR, "raw"))  # Ensure lowercase "raw"
 )
 PROCESSED_DATA_DIR = (
     system_config.get("project", {})
     .get("data_dirs", {})
-    .get("processed_data", os.path.join(DATA_DIR, "Processed"))
+    .get("processed_data", os.path.join(DATA_DIR, "processed"))  # Ensure lowercase "processed"
 )
 LOGS_DIR = (
     system_config.get("project", {})
     .get("data_dirs", {})
-    .get("logs", os.path.join(DATA_DIR, "Logs"))
+    .get("logs", os.path.join(DATA_DIR, "logs"))  # Ensure lowercase "logs"
 )
 
 # Add new registry directory constants
 REGISTRY_DIR = (
     system_config.get("project", {})
     .get("data_dirs", {})
-    .get("registry", os.path.join(MODELS_DIR, "Registry"))
+    .get("registry", os.path.join(MODELS_DIR, "registry"))  # Ensure lowercase "registry"
 )
 
 # Add registry configuration constants
@@ -263,6 +263,9 @@ BEST_PARAMS_FILE = (
     .get("best_params_file", os.path.join(HYPERPARAMS_DIR, "best_params.yaml"))
 )
 
+# Add model progress directory path
+MODEL_PROGRESS_DIR = os.path.join(DATA_DIR, "model_progress")  # Maintain lowercase
+
 # Constants for visualization
 SHOW_PREDICTION_PLOTS = user_config.get("dashboard", {}).get(
     "show_prediction_plots", True
@@ -287,6 +290,7 @@ for directory in [
     RAW_DATA_DIR,
     PROCESSED_DATA_DIR,
     REGISTRY_DIR, 
+    MODEL_PROGRESS_DIR,  # Add this to ensure it's created
 ]:
     try:
         os.makedirs(directory, exist_ok=True)
@@ -335,6 +339,9 @@ THRESHOLDS = {
         'lambda_sparse': 0.001
     }
 }
+
+# Add update interval for walk forward
+UPDATE_DURING_WALK_FORWARD_INTERVAL = 60  # Default update interval in seconds
 
 # Function to get data directory path
 def get_data_dir(subdir=None):

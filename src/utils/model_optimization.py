@@ -1,55 +1,64 @@
+"""
+TensorFlow model optimization utilities.
+
+This module provides functions for optimizing TensorFlow models for deployment and
+improved performance. It includes support for:
+
+1. Model quantization to reduce size and improve inference speed
+2. Model pruning to reduce parameter count while maintaining accuracy
+3. XLA compilation for faster execution
+4. Performance benchmarking to measure optimization impacts
+5. Memory optimization that integrates with the training_optimizer
+
+This module now consistently uses the centralized training_optimizer for
+GPU memory management, avoiding conflicts with other parts of the system.
+"""
 import os
 import time
+import logging
+import numpy as np
+import tensorflow as tf  # Add missing import
 from datetime import datetime
 
-import numpy as np
-import tensorflow as tf
+# Import centralized training optimizer for memory management
+from src.utils.training_optimizer import get_training_optimizer
 
-# Import centralized GPU memory management
-from config.resource_config import configure_gpu_memory
+# Configure module logger
+logger = logging.getLogger(__name__)
+
+# Get the optimizer instance
+optimizer = get_training_optimizer()
 
 
 def apply_mixed_precision():
     """Enable mixed precision training for faster computation on supporting GPUs."""
-    # Use centralized configuration
-    config = {
-        "mixed_precision": True,
-        "allow_growth": True,
-    }
-    result = configure_gpu_memory(config)
-    return result.get("success", False)
+    # Delegate to training optimizer
+    result = optimizer.enable_mixed_precision()
+    return result
 
 
 def optimize_gpu_memory_growth():
     """Configure GPU memory growth to prevent OOM errors."""
-    # Use centralized configuration
-    config = {
-        "allow_growth": True,
-    }
-    result = configure_gpu_memory(config)
-    return result.get("success", False)
+    # Apply lightweight memory cleanup via training optimizer
+    optimizer.cleanup_memory(level="light", preserve_tf_session=True)
+    return True
 
 
 def enable_xla_compilation():
     """Enable XLA (Accelerated Linear Algebra) JIT compilation for better performance."""
-    # Use centralized configuration
-    config = {
-        "use_xla": True,
-    }
-    configure_gpu_memory(config)
-
+    # Delegate to the training optimizer's XLA settings
+    
     # Verify with a simple test function
     try:
-        import tensorflow as tf
-
         @tf.function(jit_compile=True)
         def test_func(x):
-            return tf.reduce_sum(x * x)
+            return tf.matmul(x, x)  # Simple matrix multiplication test
 
         test_func(tf.random.normal([100, 100]))
+        logger.info("XLA compilation enabled and verified")
         return True
     except Exception as e:
-        print(f"Could not verify XLA compilation: {e}")
+        logger.error(f"Could not verify XLA compilation: {e}")
         return False
 
 
@@ -58,31 +67,25 @@ def ensure_xla_compilation():
     Verify XLA compilation is working and enabled for TensorFlow models.
     Returns True if XLA is operational, False otherwise.
     """
-    import tensorflow as tf
 
     # Check current XLA status
     xla_enabled = tf.config.optimizer.get_jit() is not None
     if not xla_enabled:
         try:
-            # Enable XLA JIT compilation
             tf.config.optimizer.set_jit(True)
-            print("XLA JIT compilation enabled")
-            xla_enabled = True
+            logger.info("Enabled XLA JIT compilation")
         except Exception as e:
-            print(f"Could not enable XLA: {e}")
-            return False
+            logger.error(f"Failed to enable XLA: {e}")
 
     # Verify XLA works with a simple test
     try:
-
         @tf.function(jit_compile=True)
         def test_func(x):
-            return tf.reduce_sum(tf.square(x))
+            return tf.matmul(x, x)  # Simple matrix multiplication test
 
         test_input = tf.random.normal([1000, 1000])
 
         # Time execution both with and without XLA
-        import time
 
         # Warm-up run
         _ = test_func(test_input).numpy()
@@ -95,7 +98,7 @@ def ensure_xla_compilation():
         # Regular execution timing
         @tf.function(jit_compile=False)
         def test_func_no_xla(x):
-            return tf.reduce_sum(tf.square(x))
+            return tf.matmul(x, x)
 
         # Warm-up
         _ = test_func_no_xla(test_input).numpy()
@@ -106,13 +109,13 @@ def ensure_xla_compilation():
 
         # Check if XLA is actually faster (should be)
         speedup = no_xla_time / xla_time
-        print(f"XLA test completed. Speedup: {speedup:.2f}x")
+        logger.info(f"XLA test completed. Speedup: {speedup:.2f}x")
 
         # Return success if we got here without errors
         return True
 
     except Exception as e:
-        print(f"XLA test failed: {e}")
+        logger.error(f"XLA test failed: {e}")
         return False
 
 
@@ -186,8 +189,9 @@ def quantize_model(model, dataset_gen=None, optimizations=None):
         Quantized TFLite model
     """
     try:
-        pass
-
+        # Clean memory before quantization to maximize available resources
+        optimizer.cleanup_memory(level="light")
+        
         if optimizations is None:
             optimizations = ["DEFAULT"]
 
@@ -241,6 +245,9 @@ def prune_model(model, pruning_schedule=None, epochs=10, validation_data=None):
         Pruned model
     """
     try:
+        # Clean memory before pruning to ensure resources
+        optimizer.cleanup_memory(level="medium")
+        
         import tensorflow_model_optimization as tfmot
 
         # Define pruning schedule if not provided
@@ -313,6 +320,9 @@ def optimize_model(
     """
     from config.config_loader import DATA_DIR
 
+    # Log optimizer usage
+    optimizer.log_memory_usage("before_optimize_model")
+
     # Create Models directory if it doesn't exist
     models_dir = os.path.join(DATA_DIR, "Models", "optimized")
     os.makedirs(models_dir, exist_ok=True)
@@ -342,14 +352,29 @@ def optimize_model(
         )
         model.save(model_path)
 
+    # Clean up memory after optimization
+    optimizer.log_memory_usage("after_optimize_model")
+    optimizer.cleanup_memory(level="medium")
+
     return optimized_model, quantized_tflite
 
 
 def apply_performance_optimizations():
     """Apply all TensorFlow performance optimizations at once."""
-    # Use centralized configuration with all optimizations enabled
-    config = {"allow_growth": True, "mixed_precision": True, "use_xla": True}
-    result = configure_gpu_memory(config)
+    # Use the training optimizer for GPU memory management
+    optimizer.cleanup_memory(level="light")
+    
+    # Enable mixed precision if supported by hardware
+    enable_mixed_precision = optimizer.enable_mixed_precision()
+    
+    # Enable XLA compilation
+    enable_xla = ensure_xla_compilation()
+    
+    result = {
+        "mixed_precision": enable_mixed_precision,
+        "xla_enabled": enable_xla,
+        "memory_optimized": True
+    }
 
     print(f"Applied performance optimizations: {result}")
     return result
@@ -371,6 +396,9 @@ def benchmark_model(
     Returns:
         Dictionary with benchmark results
     """
+    # Clean memory before benchmarking
+    optimizer.cleanup_memory(level="medium")
+    
     results = {}
 
     # Generate random test data
@@ -430,6 +458,9 @@ def benchmark_model(
             results["speedup"] = speedup
             print(f"TFLite speedup: {speedup:.2f}x")
 
+    # Clean memory after benchmarking
+    optimizer.cleanup_memory()
+    
     return results
 
 

@@ -7,6 +7,9 @@ import os
 import sys
 from datetime import datetime
 from typing import Optional
+import glob
+import time
+from pathlib import Path
 
 # Add project root to the path to fix imports if needed
 current_file = os.path.abspath(__file__)
@@ -15,11 +18,13 @@ project_root = os.path.dirname(config_dir)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Directly use paths instead of importing them to avoid circular imports
-DATA_DIR = os.path.join(
-    project_root, "Data"
-)  # Capital D to match system_config  # lowercase 'data'
-LOGS_DIR = os.path.join(DATA_DIR, "Logs")
+# Try to import paths from config_loader first to ensure consistency
+try:
+    from config.config_loader import DATA_DIR, LOGS_DIR
+except ImportError:
+    # Fallback to direct path definitions if import fails
+    DATA_DIR = os.path.join(project_root, "data")  # Use lowercase for consistency
+    LOGS_DIR = os.path.join(DATA_DIR, "logs")  # Use lowercase for consistency
 
 # Make sure logs directory exists
 os.makedirs(LOGS_DIR, exist_ok=True)
@@ -98,10 +103,10 @@ def setup_logger(
 
         log_format = get_value(
             "logger.default_format",
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            "%(asctime)s - %(name)s - %(levellevel)s - %(message)s",
         )
     except ImportError:
-        log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        log_format = "%(asctime)s - %(name)s - %(levellevel)s - %(message)s"
 
     formatter = logging.Formatter(log_format)
 
@@ -131,6 +136,111 @@ def setup_logger(
         logger.addHandler(file_handler)
 
         # Log the file location
-        logger.info(f"Logging to file: {log_file_path}")
+        logger.info("Logging to file: %s", log_file_path)
+    
+        # Add log rotation capability
+        try:
+            from config.config_loader import get_value
+            max_log_files = get_value("logger.max_log_files", 10)
+            max_log_age_days = get_value("logger.max_log_age_days", 7)
+            
+            # Clean up old log files
+            log_pattern = os.path.join(log_dir, f"{prefix}_*.log")
+            log_files = glob.glob(log_pattern)
+            
+            # Sort by modification time (oldest first)
+            log_files.sort(key=lambda x: os.path.getmtime(x))
+            
+            # Remove old logs if we have too many
+            if len(log_files) > max_log_files:
+                files_to_remove = log_files[:-max_log_files]
+                for old_file in files_to_remove:
+                    try:
+                        os.remove(old_file)
+                        logger.info("Cleaned up old log file: %s", old_file)
+                    except Exception as e:
+                        logger.warning("Could not remove old log file %s: %s", old_file, e)
+            
+            logger.info("Cleaned up %d old log files", len(files_to_remove) if 'files_to_remove' in locals() else 0)
+        except Exception as e:
+            logger.warning("Error during log rotation: %s", e)
 
     return logger
+
+
+def cleanup_old_logs(max_files=10, max_age_days=7):
+    """
+    Remove old log files based on retention settings.
+    
+    Args:
+        max_files: Maximum number of log files to keep
+        max_age_days: Maximum age of log files in days
+    
+    Returns:
+        tuple: (number of files deleted, list of deleted files)
+    """
+    try:
+        # Find all prediction model log files
+        log_pattern = os.path.join(LOGS_DIR, "prediction_model_*.log")
+        log_files = glob.glob(log_pattern)
+        
+        if not log_files:
+            return 0, []
+        
+        # Sort by modification time (newest first)
+        log_files.sort(key=os.path.getmtime, reverse=True)
+        
+        # Keep track of deleted files
+        deleted_files = []
+        
+        # Calculate cutoff time for age-based deletion
+        current_time = time.time()
+        max_age_seconds = max_age_days * 24 * 60 * 60
+        cutoff_time = current_time - max_age_seconds
+        
+        # Delete old files based on count
+        if max_files > 0 and len(log_files) > max_files:
+            files_to_delete_by_count = log_files[max_files:]
+            for file_path in files_to_delete_by_count:
+                try:
+                    os.remove(file_path)
+                    deleted_files.append(os.path.basename(file_path))
+                except Exception as e:
+                    logger.warning(f"Failed to delete old log file {file_path}: {e}")
+        
+        # Delete files based on age
+        for file_path in log_files[:max_files]:  # Only check remaining files
+            try:
+                mtime = os.path.getmtime(file_path)
+                if mtime < cutoff_time:
+                    os.remove(file_path)
+                    deleted_files.append(os.path.basename(file_path))
+            except Exception as e:
+                logger.warning(f"Failed to check/delete log file {file_path}: {e}")
+        
+        # Log summary if files were deleted
+        if deleted_files:
+            logger.info(f"Cleaned up {len(deleted_files)} old log files")
+            
+        return len(deleted_files), deleted_files
+    except Exception as e:
+        logger.error(f"Error cleaning up log files: {e}")
+        return 0, []
+
+# Run cleanup at module import
+try:
+    # Try to import the config values first
+    from config.config_loader import get_value
+    
+    max_files = get_value("logger.retention.max_files", 10)
+    max_age_days = get_value("logger.retention.max_age_days", 7)
+    auto_cleanup = get_value("logger.retention.auto_cleanup", True)
+    
+    if auto_cleanup:
+        cleaned_count, _ = cleanup_old_logs(max_files, max_age_days)
+        if cleaned_count > 0:
+            logger.info(f"Cleaned up {cleaned_count} old log files on startup")
+except Exception as e:
+    # Fall back to defaults if config can't be loaded
+    logger.warning(f"Using default log retention settings: {e}")
+    cleanup_old_logs(10, 7)

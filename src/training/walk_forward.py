@@ -13,9 +13,6 @@ from datetime import datetime
 import time
 
 
-# Set environment variables BEFORE importing TensorFlow
-from src.utils.env_setup import setup_tf_environment
-
 # Configure paths
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if (project_root not in sys.path):
@@ -57,7 +54,7 @@ try:
         get_config,
     )
     use_mixed_precision = get_value("hardware.use_mixed_precision", False)
-except ImportError:
+except ImportError as e:
     # Define fallbacks
     ACTIVE_MODEL_TYPES = [
         "rnn",
@@ -80,6 +77,21 @@ except ImportError:
     UPDATE_DURING_WALK_FORWARD_INTERVAL = 5  # Default to updating every 5 cycles
     use_mixed_precision = False
     
+    # Define a fallback for get_value and get_config functions
+    def get_value(path, default=None):
+        logger.warning(f"Using fallback value for {path}: {default}")
+        return default
+    
+    def get_config():
+        logger.warning("Using fallback empty config")
+        return {
+            "LOOKBACK": 30,
+            "PREDICTION_HORIZON": 30,
+            "WALK_FORWARD_DEFAULT": WALK_FORWARD_DEFAULT
+        }
+    
+    logger.warning(f"Config import failed, using fallbacks: {e}")
+
 # Set up TensorFlow environment
 tf_env = setup_tf_environment(mixed_precision=use_mixed_precision)
 
@@ -885,8 +897,7 @@ def unified_walk_forward(
                     try:
                         # 1. Neural network models: LSTM, RNN, TFT
                         if model_type in ["lstm", "rnn", "tft"]:
-                            from src.models.model import build_model_by_type
-
+                                     
                             # Extract architecture parameters
                             arch_params = {
                                 "units_per_layer": params.get(

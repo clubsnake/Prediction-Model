@@ -768,7 +768,7 @@ def discover_patterns_from_df(df, lookback=90, min_occurrences=5, min_zscore=1.5
             above_mask = df[indicator] > threshold
 
             if above_mask.sum() >= min_occurrences:
-                # Get average returns after crossing
+                # Get average returns after crossing - handle potential scalar results
                 avg_return_1d = df.loc[above_mask, "return_1d"].mean()
                 avg_return_3d = df.loc[above_mask, "return_3d"].mean()
                 avg_return_5d = df.loc[above_mask, "return_5d"].mean()
@@ -778,19 +778,25 @@ def discover_patterns_from_df(df, lookback=90, min_occurrences=5, min_zscore=1.5
                 std_return_3d = df["return_3d"].std()
                 std_return_5d = df["return_5d"].std()
 
-                # Calculate z-scores
+                # Calculate z-scores - handle division by zero
                 zscore_1d = avg_return_1d / (std_return_1d + 1e-10)
                 zscore_3d = avg_return_3d / (std_return_3d + 1e-10)
                 zscore_5d = avg_return_5d / (std_return_5d + 1e-10)
 
-                # Convert numpy values to Python native types to prevent reindexing errors
+                # Ensure all values are Python native types, not numpy types
                 if isinstance(zscore_1d, np.number):
                     zscore_1d = float(zscore_1d)
                 if isinstance(zscore_3d, np.number):
                     zscore_3d = float(zscore_3d)
                 if isinstance(zscore_5d, np.number):
                     zscore_5d = float(zscore_5d)
-
+                if isinstance(avg_return_1d, np.number):
+                    avg_return_1d = float(avg_return_1d)
+                if isinstance(avg_return_3d, np.number):
+                    avg_return_3d = float(avg_return_3d)
+                if isinstance(avg_return_5d, np.number):
+                    avg_return_5d = float(avg_return_5d)
+                
                 # Get the max z-score and corresponding period
                 zscores = [zscore_1d, zscore_3d, zscore_5d]
                 max_zscore_idx = np.argmax(np.abs(zscores))
@@ -855,7 +861,13 @@ def discover_patterns_from_df(df, lookback=90, min_occurrences=5, min_zscore=1.5
                     zscore_3d = float(zscore_3d)
                 if isinstance(zscore_5d, np.number):
                     zscore_5d = float(zscore_5d)
-
+                if isinstance(avg_return_1d, np.number):
+                    avg_return_1d = float(avg_return_1d)
+                if isinstance(avg_return_3d, np.number):
+                    avg_return_3d = float(avg_return_3d)
+                if isinstance(avg_return_5d, np.number):
+                    avg_return_5d = float(avg_return_5d)
+                
                 # Get the max z-score and corresponding period
                 zscores = [zscore_1d, zscore_3d, zscore_5d]
                 max_zscore_idx = np.argmax(np.abs(zscores))

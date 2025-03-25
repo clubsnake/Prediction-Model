@@ -255,9 +255,9 @@ class ModelFactory:
                 include_price_specific=include_price_specific,
                 normalize_input=normalize_input
             )
-        except ImportError:
+        except ImportError as e:
             logger.error("N-BEATS model module not available")
-            raise ImportError("N-BEATS model module not available")
+            raise ImportError(f"N-BEATS model module not available: {e}")
 
     @staticmethod
     def _create_tabnet_model(params: Dict[str, Any]) -> Any:
@@ -294,9 +294,9 @@ class ModelFactory:
             )
 
             return model
-        except ImportError:
+        except ImportError as e:
             logger.error("scikit-learn module not available")
-            raise ImportError("scikit-learn module not available")
+            raise ImportError(f"scikit-learn module not available: {e}")
 
     @staticmethod
     def _create_xgboost_model(params: Dict[str, Any]) -> Any:
@@ -320,9 +320,9 @@ class ModelFactory:
             )
 
             return model
-        except ImportError:
+        except ImportError as e:
             logger.error("XGBoost module not available")
-            raise ImportError("XGBoost module not available")
+            raise ImportError(f"XGBoost module not available: {e}")
 
     @staticmethod
     def _create_ensemble_model(params: Dict[str, Any]) -> Any:
@@ -331,9 +331,9 @@ class ModelFactory:
             from src.models.ensemble_utils import create_ensemble_model
 
             return create_ensemble_model(params)
-        except ImportError:
+        except ImportError as e:
             logger.error("Ensemble module not available")
-            raise ImportError("Ensemble module not available")
+            raise ImportError(f"Ensemble module not available: {e}")
 
     @staticmethod
     def _create_ltc_model(params: Dict[str, Any]) -> Any:
@@ -360,9 +360,9 @@ class ModelFactory:
             )
 
             return model
-        except ImportError:
+        except ImportError as e:
             logger.error("LTC model module not available")
-            raise ImportError("LTC model module not available")
+            raise ImportError(f"LTC model module not available: {e}")
 
     @staticmethod
     def _create_cnn_model(params: Dict[str, Any]) -> Any:
@@ -394,9 +394,9 @@ class ModelFactory:
             )
 
             return model
-        except ImportError:
+        except ImportError as e:
             logger.error("CNN model module not available")
-            raise ImportError("CNN model module not available")
+            raise ImportError(f"CNN model module not available: {e}")
 
 
 # Create an instance for convenience

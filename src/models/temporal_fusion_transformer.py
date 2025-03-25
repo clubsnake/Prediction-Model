@@ -1,5 +1,3 @@
-# Add this to a new file Scripts/models/transformer_models.py
-
 import tensorflow as tf
 from tensorflow.keras.layers import ( # type: ignore
     Dense,  

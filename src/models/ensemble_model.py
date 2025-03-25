@@ -12,6 +12,8 @@ import logging
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any
+import os
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -395,6 +397,34 @@ class EnhancedEnsembleModel:
                     results["models"][model_type]["directional_accuracy"] = float(model_da)
                 else:
                     results["models"][model_type]["directional_accuracy"] = 0.0
+                
+                # Update model progress file with evaluation metrics
+                try:
+                    from src.tuning.progress_helper import update_model_progress, get_model_progress_file, safe_read_yaml
+                    
+                    # Read existing progress data to retain trial information
+                    progress_file = get_model_progress_file(model_type)
+                    existing_progress = safe_read_yaml(progress_file, default={})
+                    
+                    # Create combined progress data
+                    progress_data = {
+                        "current_rmse": float(model_rmse),
+                        "current_mape": float(model_mape) if "mape" in results["models"][model_type] else float('inf'),
+                        "directional_accuracy": results["models"][model_type]["directional_accuracy"],
+                        "evaluation_timestamp": time.time(),
+                        "weight": self.weights.get(model_type, 0.0)
+                    }
+                    
+                    # Only include trial information if it exists
+                    if "current_trial" in existing_progress:
+                        progress_data["current_trial"] = existing_progress["current_trial"]
+                    if "total_trials" in existing_progress:
+                        progress_data["total_trials"] = existing_progress["total_trials"]
+                    
+                    # Update model progress
+                    update_model_progress(model_type, progress_data)
+                except Exception as e:
+                    logger.warning(f"Could not update model progress for {model_type}: {e}")
                     
             except Exception as e:
                 logger.error(f"Error evaluating model {model_type}: {e}")
@@ -405,9 +435,16 @@ class EnhancedEnsembleModel:
                     "weight": self.weights.get(model_type, 0.0),
                     "error": str(e)
                 }
+        
+        # Update the aggregated progress file to calculate weighted metrics
+        try:
+            from src.tuning.progress_helper import _update_aggregated_progress
+            _update_aggregated_progress()
+        except Exception as e:
+            logger.warning(f"Error updating aggregated progress: {e}")
                 
         return results
-        
+
     def save_weights(self, filepath: str) -> bool:
         """
         Save the current ensemble weights to a file.

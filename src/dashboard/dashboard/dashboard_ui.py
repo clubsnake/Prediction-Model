@@ -11,6 +11,8 @@ This module provides UI components for the main dashboard, including:
 The components are designed to be imported and used by dashboard_core.py.
 """
 
+import time
+
 def diagnose_imports():
     """Test all critical imports and report errors"""
     import sys
@@ -73,22 +75,100 @@ fix_import_paths()
 
 # Add this function to dashboard_ui.py to always run at startup
 def reset_tuning_status_at_startup():
-    """Reset tuning status file at application startup"""
+    """Reset tuning status file at application startup and ensure all required directories exist"""
     try:
+        # First, create all required directories
+        try:
+            # Import needed path constants
+            from src.tuning.progress_helper import (
+                DATA_DIR, MODEL_PROGRESS_DIR, TESTED_MODELS_DIR,
+                PROGRESS_FILE, TUNING_STATUS_FILE
+            )
+            import os
+            
+            # Create directories
+            os.makedirs(DATA_DIR, exist_ok=True)
+            os.makedirs(MODEL_PROGRESS_DIR, exist_ok=True)
+            os.makedirs(TESTED_MODELS_DIR, exist_ok=True)
+            
+            # Ensure parent directories of these files exist
+            os.makedirs(os.path.dirname(PROGRESS_FILE), exist_ok=True)
+            os.makedirs(os.path.dirname(TUNING_STATUS_FILE), exist_ok=True)
+            
+            print(f"Created directory structure: {DATA_DIR}")
+            
+            # Create initial empty files if they don't exist
+            if not os.path.exists(PROGRESS_FILE):
+                with open(PROGRESS_FILE, 'w') as f:
+                    f.write('{}')  # Empty JSON object
+                print(f"Created initial progress file: {PROGRESS_FILE}")
+                
+            if not os.path.exists(TUNING_STATUS_FILE):
+                with open(TUNING_STATUS_FILE, 'w') as f:
+                    f.write('is_running: False\nstatus: initialized\n')
+                print(f"Created initial tuning status file: {TUNING_STATUS_FILE}")
+                
+        except ImportError:
+            # Fallback if import fails
+            print("Warning: Could not import paths from progress_helper. Using defaults.")
+            import os
+            
+            # Use default paths
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+            data_dir = os.path.join(project_root, "data")
+            
+            # Create default directories
+            dirs_to_create = [
+                data_dir,
+                os.path.join(data_dir, "model_progress"),
+                os.path.join(data_dir, "tested_models"),
+                os.path.join(data_dir, "models", "hyperparameters")
+            ]
+            
+            for directory in dirs_to_create:
+                os.makedirs(directory, exist_ok=True)
+                print(f"Created directory: {directory}")
+            
+            # Create initial files
+            status_file = os.path.join(data_dir, "tuning_status.txt")
+            progress_file = os.path.join(data_dir, "progress.yaml")
+            
+            if not os.path.exists(progress_file):
+                with open(progress_file, 'w') as f:
+                    f.write('{}')
+                    
+            if not os.path.exists(status_file):
+                with open(status_file, 'w') as f:
+                    f.write('is_running: False\nstatus: initialized\n')
+                    
+        # Now reset the tuning status
         from src.tuning.progress_helper import write_tuning_status
         import time
         from datetime import datetime
         
-        # Force reset tuning status
+        # Force reset tuning status - always set to not running at startup
         write_tuning_status({
             "is_running": False,
             "status": "reset_at_startup",
             "timestamp": datetime.now().isoformat(),
+            "reset": True  # Force total reset of the file
         })
         
         print("Reset tuning status at startup")
+        
+        # Clear any stale lock files
+        try:
+            from src.utils.threadsafe import cleanup_stale_locks
+            cleaned = cleanup_stale_locks()
+            if cleaned > 0:
+                print(f"Cleaned {cleaned} stale lock files")
+        except Exception as e:
+            print(f"Could not clean lock files: {e}")
+            
     except Exception as e:
-        print(f"Error resetting tuning status at startup: {e}")
+        print(f"Error in startup initialization: {e}")
+        import traceback
+        traceback.print_exc()
 
 # Call this function when your app starts up
 reset_tuning_status_at_startup()
@@ -298,55 +378,83 @@ def create_control_panel() -> Dict:
     
     with col1:
         if not st.session_state.get("tuning_in_progress", False):
-            if st.sidebar.button(
-                "🚀 Start Tuning",
-                key="sidebar_btn_start_tuning",
-                use_container_width=True,
-            ):
+            if st.sidebar.button("🚀 Start Tuning", key="sidebar_btn_start_tuning", use_container_width=True):
+                # Get parameters
+                ticker = st.session_state.get("selected_ticker", "ETH-USD")
+                timeframe = st.session_state.get("selected_timeframe", "1d")
+                multipliers = st.session_state.get("tuning_multipliers", {})
+                
                 try:
-                    # First make sure status is set to NOT RUNNING
-                    from src.tuning.progress_helper import write_tuning_status
-                    
-                    # Force reset tuning status before starting
-                    write_tuning_status({
-                        "is_running": False,
-                        "status": "reset",
-                        "timestamp": dt_module.now().isoformat(),
-                    })
-                    
-                    # Add a small delay to ensure file is updated
-                    import time
-                    time.sleep(0.2)
-                    
-                    # Get parameters
+
+                   # Import the start_tuning function  
+                    from src.dashboard.dashboard.dashboard_model import start_tuning
+
+                    # Start tuning process
                     ticker = st.session_state.get("selected_ticker", "ETH-USD")
                     timeframe = st.session_state.get("selected_timeframe", "1d")
                     multipliers = st.session_state.get("tuning_multipliers", {})
-                    
-                    # Add date parameters
-                    multipliers['start_date'] = st.session_state.get("start_date_user").strftime("%Y-%m-%d")
-                    multipliers['training_start_date'] = st.session_state.get("training_start_date_user").strftime("%Y-%m-%d")
-                    
-                    # Set UI state for better responsiveness
+                    start_tuning(ticker, timeframe, multipliers)
+
+                    # First set tuning status to true, BEFORE starting the actual tuning
                     st.session_state["tuning_in_progress"] = True
                     
-                    # Import and call start_tuning
-                    from src.dashboard.dashboard.dashboard_model import start_tuning
-                    start_tuning(ticker, timeframe, multipliers)
+                    # Update tuning status file for immediate UI feedback
+                    from src.tuning.progress_helper import write_tuning_status
+                    from datetime import datetime  # Import datetime class from datetime module
+                    write_tuning_status({
+                        "is_running": True,
+                        "status": "starting",
+                        "ticker": ticker,
+                        "timeframe": timeframe,
+                        "timestamp": datetime.now().isoformat(),
+                        "start_time": time.time()
+                    })
+
+                    # Force a rerun to update UI BEFORE starting tuning
+                    st.experimental_rerun()
                     
                 except Exception as e:
-                    st.sidebar.error(f"Failed to start tuning: {str(e)}")
-                    print(f"ERROR starting tuning: {e}")
+                    st.sidebar.error(f"Failed to initialize tuning: {str(e)}")
+                    logger.error(f"Error initializing tuning UI state: {e}", exc_info=True)
                     st.session_state["tuning_in_progress"] = False
-
+                
     with col2:
         # If tuning is ongoing, give option to stop
         if st.session_state.get("tuning_in_progress", False):
             if st.sidebar.button(
                 "⏹️ Stop Tuning", key="sidebar_btn_stop_tuning", use_container_width=True
             ):
-                # Set flag for processing after column context
-                st.session_state["stop_tuning_clicked"] = True
+                # Try to stop tuning immediately instead of using a flag
+                try:
+                    # First update the session state to show stopping
+                    st.session_state["stopping_tuning"] = True
+                    st.session_state["tuning_in_progress"] = False
+                    
+                    # Update the tuning status file first
+                    from src.tuning.progress_helper import write_tuning_status
+                    write_tuning_status({
+                        "is_running": False,
+                        "status": "stopping",
+                        "stopped_manually": True,
+                        "timestamp": dt_module.now().isoformat(),
+                        "stop_time": time.time()
+                    })
+                    
+                    # Then call stop_tuning without rerunning immediately after
+                    from src.dashboard.dashboard.dashboard_model import stop_tuning
+                    stop_result = stop_tuning()
+                    
+                    if stop_result:
+                        st.sidebar.success("Tuning process has been stopped")
+                    else:
+                        st.sidebar.warning("Stop request sent, but process may still be running")
+                    
+                    # Clear any remaining flags - don't rerun here
+                    st.session_state.pop("stopping_tuning", None)
+                    
+                except Exception as e:
+                    st.sidebar.error(f"Error stopping tuning: {str(e)}")
+                    logger.error(f"Error stopping tuning: {e}", exc_info=True)
 
     # Process button clicks outside of column contexts
     print(f"DEBUG: Checking for start_tuning_clicked: {st.session_state.get('start_tuning_clicked', False)}")
@@ -796,7 +904,7 @@ def create_control_panel() -> Dict:
                 try:
                     os._exit(0)
                 except:
-                    # Last resort - just tell the user to close the tab
+                        # Last resort - just tell the user to close the tab
                     st.error("Could not automatically shut down. Please close this browser tab.")
         except Exception as e:
             st.sidebar.error(f"Error shutting down: {e}")
@@ -820,6 +928,98 @@ def create_control_panel() -> Dict:
 
 
 @robust_error_boundary
+def handle_deferred_tuning_start():
+    """
+    Handle deferred tuning start requests.
+    This function checks if a tuning start was requested but not yet executed,
+    and initiates the tuning process if needed.
+    """
+    if st.session_state.get("start_tuning_clicked", False):
+        try:
+            # Get parameters
+            ticker = st.session_state.get("selected_ticker", "ETH-USD")
+            timeframe = st.session_state.get("selected_timeframe", "1d")
+            multipliers = st.session_state.get("tuning_multipliers", {})
+            
+            # Validate essential parameters
+            if not ticker or not timeframe:
+                logger.error(f"Invalid tuning parameters: ticker={ticker}, timeframe={timeframe}")
+                st.error("Invalid tuning parameters. Please select a ticker and timeframe.")
+                st.session_state.pop("start_tuning_clicked", None)
+                return
+                
+            logger.info(f"Deferred tuning start for {ticker}/{timeframe}")
+            
+            # Properly validate and convert date parameters
+            start_date = st.session_state.get("start_date_user")
+            if not isinstance(start_date, date_type):
+                logger.warning(f"Invalid start date type: {type(start_date)}, value: {start_date}")
+                # Ensure we have a proper date object
+                if isinstance(start_date, str):
+                    try:
+                        start_date = dt_module.strptime(start_date, "%Y-%m-%d").date()
+                    except ValueError:
+                        # If the string looks like a timeframe ('1d'), use 5 years ago
+                        logger.warning(f"Using 5 years ago - {start_date} is not a valid date")
+                        start_date = dt_module.now().date() - timedelta(days=365*5)
+                else:
+                    # Default to 5 years ago
+                    start_date = dt_module.now().date() - timedelta(days=365*5)
+                st.session_state["start_date_user"] = start_date
+            
+            # No need to explicitly update status here, let start_tuning handle it
+            # This avoids double updates and potential race conditions
+            
+            # Start tuning with the current parameters
+            try:
+                from src.dashboard.dashboard.dashboard_model import start_tuning
+                
+                # Call start_tuning with validated parameters
+                success = start_tuning(ticker, timeframe, multipliers)
+                
+                if not success:
+                    logger.error(f"Failed to start tuning for {ticker}/{timeframe}")
+                    st.error("Failed to start tuning process. Check the logs for details.")
+                
+                # Clear the flag after processing whether successful or not
+                st.session_state.pop("start_tuning_clicked", None)
+                
+            except ImportError as e:
+                logger.error(f"Could not import start_tuning: {e}")
+                st.error(f"Could not start tuning process: {e}")
+                st.session_state.pop("start_tuning_clicked", None)
+                
+        except Exception as e:
+            logger.error(f"Error in handle_deferred_tuning_start: {e}", exc_info=True)
+            st.error(f"Failed to start tuning: {str(e)}")
+            # Reset tuning state and flags
+            st.session_state["tuning_in_progress"] = False
+            st.session_state.pop("start_tuning_clicked", None)
+
+
+# Initialize session state for trial_logs if it doesn't exist
+if "trial_logs" not in st.session_state:
+    st.session_state["trial_logs"] = []
+
+# Add an auto-refresh mechanism for tuning status
+def create_auto_refresh():
+    """Create an automatic refresh mechanism for tuning status pages."""
+    # Ensure last_refresh_time and refresh_interval are set
+    if "last_refresh_time" not in st.session_state:
+        st.session_state["last_refresh_time"] = 0
+    if "refresh_interval" not in st.session_state:
+        st.session_state["refresh_interval"] = 5  # seconds
+    
+    current_time = time.time()
+    # Only trigger a refresh if elapsed time exceeds interval
+    if current_time - st.session_state["last_refresh_time"] > st.session_state["refresh_interval"]:
+        st.session_state["last_refresh_time"] = current_time
+        st_autorefresh(interval=st.session_state["refresh_interval"] * 1000, key="auto_refresh")
+    else:
+        # Delay a bit if called too early
+        time.sleep(0.5)
+
+@robust_error_boundary
 def create_tuning_panel():
     """
     Unified tuning panel function that consolidates the duplicated functionality.
@@ -827,6 +1027,9 @@ def create_tuning_panel():
     Fixed to show individual model progress and avoid nesting issues.
     """
     st.header("Model Tuning Monitor")
+    
+    # Add auto-refresh for dynamic updates
+    create_auto_refresh()
 
     # Initialize the watchdog if not already in session state
     if "watchdog" not in st.session_state:
@@ -877,12 +1080,40 @@ def create_tuning_panel():
         display_watchdog()
 
 
+@st.cache_data(ttl=2)  # Only cache for 2 seconds
+def get_fresh_progress():
+    """Get fresh progress data from files, bypassing cache."""
+    from src.tuning.progress_helper import read_progress_from_yaml, get_individual_model_progress
+    return {
+        "main": read_progress_from_yaml(),
+        "models": get_individual_model_progress() or {}
+    }
+
+def create_live_progress_updater():
+    """
+    Create a component that automatically updates the progress display.
+    Uses st_autorefresh to periodically refresh the page when tuning is active.
+    """
+    # Only add the autorefresh component if tuning is in progress
+    if st.session_state.get("tuning_in_progress", False):
+        # Create autorefresh with shorter interval during tuning (2 seconds)
+        refresh_interval = 2000  # milliseconds
+        st_autorefresh(interval=refresh_interval, key="tuning_progress_autorefresh")
+        
+        # Show a small indicator that auto-refresh is active
+        st.caption("🔄 Auto-refreshing progress...")
+
 @robust_error_boundary
 def display_tuning_status():
-    """
-    Display the current tuning status with emphasis on cycle and trial information.
-    Enhanced to show individual model progress.
-    """
+    """Display current tuning status with progress bars."""
+    # Get fresh data
+    progress_data = get_fresh_progress()
+    main_progress = progress_data["main"]
+    model_progress = progress_data["models"]
+    
+    # Show current status
+    st.subheader("💨 Tuning Status")
+    
     # Get latest progress and status
     progress = load_latest_progress()
     status = read_tuning_status()
@@ -972,21 +1203,27 @@ def display_tuning_status():
     # NEW: Display individual model progress
     st.subheader("Individual Model Progress")
     
-    # Get individual model progress information
-    model_progress = get_individual_model_progress()
-    
-    if model_progress:
-        # Create a progress bar for each model
-        for model_type, info in model_progress.items():
-            current = info.get("current_trial", 0)
-            total = info.get("total_trials", 1)
-            percentage = info.get("completion_percentage", 0)
-            
-            # Display model type and progress
-            st.write(f"**{model_type}**: Trial {current}/{total}")
-            st.progress(min(1.0, percentage / 100))
-    else:
-        st.info("No individual model progress information available")
+    # Get individual model progress information with error handling
+    try:
+        from src.tuning.progress_helper import get_individual_model_progress
+        model_progress = get_individual_model_progress()
+        
+        # Check if model_progress is a valid dictionary and not empty
+        if isinstance(model_progress, dict) and model_progress:
+            # Create a progress bar for each model
+            for model_type, info in model_progress.items():
+                current = info.get("current_trial", 0)
+                total = info.get("total_trials", 1)
+                percentage = info.get("completion_percentage", 0)
+                
+                # Display model type and progress
+                st.write(f"**{model_type}**: Trial {current}/{total}")
+                st.progress(min(1.0, percentage / 100))
+        else:
+            st.info("No individual model progress information available")
+    except Exception as e:
+        st.error(f"Error displaying model progress: {str(e)}")
+        st.info("Could not load model progress information")
 
     # Additional details in expandable section
     with st.expander("Additional Details", expanded=False):
@@ -1005,6 +1242,9 @@ def display_tuning_status():
             st.markdown("<br>".join(details), unsafe_allow_html=True)
         else:
             st.info("No tuning progress information available.")
+    
+    # Add live progress updater at the end
+    create_live_progress_updater()
 
 
 @robust_error_boundary
@@ -1016,7 +1256,11 @@ def display_trials_table(max_trials=20):
     Args:
         max_trials: Maximum number of trials to display
     """
-    if "trial_logs" in st.session_state and st.session_state["trial_logs"]:
+    # Initialize trial_logs if it doesn't exist
+    if "trial_logs" not in st.session_state:
+        st.session_state["trial_logs"] = []
+        
+    if st.session_state["trial_logs"]:
         logs = st.session_state["trial_logs"][-max_trials:]
 
         # Convert to DataFrame for better display
@@ -1175,7 +1419,7 @@ def display_technical_indicators():
         ticker = st.session_state.get("selected_ticker", "")
         close_column = get_price_column(df, ticker, "Close") 
         
-        if close_column:
+        if (close_column):
             # Add price column to potential indicators
             indicator_cols = [close_column]
         else:
