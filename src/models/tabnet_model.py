@@ -47,6 +47,8 @@ except ImportError:
     logger.warning("TabNet module not available. TabNet models will not be supported.")
     TABNET_AVAILABLE = False
 
+from src.utils.gpu_memory_manager import GPUMemoryManager
+from src.models.model import place_on_device
 
 class TabNetPricePredictor(BaseEstimator, RegressorMixin):
     """
@@ -136,6 +138,22 @@ class TabNetPricePredictor(BaseEstimator, RegressorMixin):
         self.model = None
         self.scaler = StandardScaler()
         self.fitted = False
+
+        # Initialize GPU manager for proper device placement
+        self.gpu_manager = GPUMemoryManager(allow_growth=True)
+        self.gpu_manager.initialize()
+        
+        # Override device_name if set to "auto"
+        if device_name == "auto":
+            # Let the GPU manager determine the appropriate device
+            self.device = self.gpu_manager.get_torch_device()
+            self.device_name = "cuda" if str(self.device) == "cuda" else "cpu"
+        else:
+            self.device_name = device_name
+            self.device = device_name
+        
+        # Log the selected device
+        logger.info(f"TabNet using device: {self.device}")
 
     def fit(
         self,
@@ -644,12 +662,9 @@ class TabNetOptunaOptimizer:
             logger.error(f"Error in trial: {str(e)}")
             raise optuna.exceptions.TrialPruned() from e
 
-    def optimize(self, study) -> Dict[str, Any]:
+    def optimize(self) -> Dict[str, Any]:
         """
-        Run hyperparameter optimization using a provided study.
-
-        Args:
-            study: Optuna study object created by study_manager
+        Run hyperparameter optimization.
 
         Returns:
             Dictionary with optimization results
@@ -658,8 +673,13 @@ class TabNetOptunaOptimizer:
             RuntimeError: If optimization fails
         """
         try:
-            # Use provided study instead of creating one
-            self.study = study
+            # Create Optuna study
+            self.study = optuna.create_study(
+                study_name=self.study_name,
+                storage=self.storage,
+                direction=self.direction,
+                load_if_exists=True,
+            )
 
             # Set random seed
             np.random.seed(self.random_state)

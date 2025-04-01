@@ -666,6 +666,7 @@ def unified_walk_forward(
     trial=None,
     enable_parallel=True,
     update_frequency=5,
+    model_type=None,  # Ensure model_type is included in parameters
 ):
     """
     Unified walk-forward implementation that combines realistic incremental learning
@@ -682,6 +683,7 @@ def unified_walk_forward(
         trial: Optuna trial object for hyperparameter tuning (default: None)
         enable_parallel: Whether to use parallel training (default: True)
         update_frequency: How often to report progress and update dashboard (default: 5)
+        model_type: Type of the model being trained (default: None)
 
     Returns:
         tuple: (ensemble_model, metrics_dict) - The trained ensemble model and performance metrics
@@ -689,6 +691,39 @@ def unified_walk_forward(
     # Default values and input validation
     target_col = "Close"  # Default target column
     log_memory_usage("Starting unified_walk_forward")
+
+    # Load model progress and sync with global cycle if model_type is provided
+    if model_type is not None:
+        try:
+            from src.tuning.progress_helper import get_model_progress, get_current_cycle
+            import time
+            
+            # Get model progress
+            model_progress = get_model_progress(model_type)
+            
+            # Wait here until this model's cycle matches the global cycle
+            model_cycle = model_progress.get("cycle", 0)
+            global_cycle = get_current_cycle()
+            
+            # Add timeout protection (10 minutes max wait)
+            max_wait_seconds = 600
+            wait_start_time = time.time()
+            
+            while model_cycle < global_cycle:
+                logger.info(f"[{model_type}] Waiting for cycle sync: model at {model_cycle}, global at {global_cycle}")
+                
+                # Check timeout
+                if time.time() - wait_start_time > max_wait_seconds:
+                    logger.warning(f"[{model_type}] Timeout waiting for cycle sync after {max_wait_seconds} seconds")
+                    break
+                    
+                # Wait before checking again
+                time.sleep(5)
+                global_cycle = get_current_cycle()
+        except ImportError as e:
+            logger.warning(f"Could not import progress helper modules: {e}")
+        except Exception as e:
+            logger.warning(f"Error during cycle synchronization: {e}")
 
     # Check for dashboard update interval in session state
     if hasattr(st, "session_state") and "update_during_walk_forward_interval" in st.session_state:

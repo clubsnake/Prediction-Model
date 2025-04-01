@@ -26,6 +26,9 @@ from typing import Dict, Any, Optional, List, Union
 import yaml
 import numpy as np
 
+# Import the robust FileLock implementation
+from src.utils.threadsafe import FileLock
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -79,45 +82,6 @@ __all__ = [
     "DATA_DIR"
 ]
 
-# File lock implementation for thread-safe file operations
-class FileLock:
-    """Simple file-based lock for thread and process safety."""
-    
-    def __init__(self, filepath, timeout=10.0, retry_delay=0.1):
-        self.lock_file = f"{filepath}.lock"
-        self.timeout = timeout
-        self.retry_delay = retry_delay
-        self.acquired = False
-    
-    def __enter__(self):
-        start_time = time.time()
-        while not self.acquired:
-            try:
-                # Create lock file exclusively
-                fd = os.open(self.lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.close(fd)
-                self.acquired = True
-                return self
-            except (FileExistsError, PermissionError):
-                if time.time() - start_time > self.timeout:
-                    raise TimeoutError(f"Could not acquire lock for {self.lock_file}")
-                time.sleep(self.retry_delay)
-                # Check if lock file is stale (older than 60 seconds)
-                try:
-                    if os.path.exists(self.lock_file) and time.time() - os.path.getmtime(self.lock_file) > 60:
-                        os.remove(self.lock_file)
-                        logger.warning(f"Removed stale lock file: {self.lock_file}")
-                except (FileNotFoundError, PermissionError):
-                    pass  # Lock file was removed by another process
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.acquired:
-            try:
-                os.remove(self.lock_file)
-                self.acquired = False
-            except (FileNotFoundError, PermissionError):
-                logger.warning(f"Lock file already removed: {self.lock_file}")
-
 # ==========================================
 # Progress File Path Management
 # ==========================================
@@ -140,7 +104,7 @@ def safe_read_yaml(file_path: str, default: Any = None) -> Any:
         return default if default is not None else {}
     
     try:
-        with FileLock(file_path, timeout=5.0):
+        with FileLock(file_path):
             with open(file_path, 'r') as f:
                 return yaml.safe_load(f) or default
     except (yaml.YAMLError, TimeoutError, FileNotFoundError) as e:
@@ -152,15 +116,18 @@ def safe_write_yaml(file_path: str, data: Any) -> bool:
     try:
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         
+        # Validate and clean data before serialization to prevent corruption
+        data = sanitize_yaml_data(data)
+        
         # Create temp file first
         temp_file = f"{file_path}.tmp.{int(time.time())}"
         with open(temp_file, 'w') as f:
-            yaml.safe_dump(data, f, default_flow_style=False)
+            yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
             f.flush()
             os.fsync(f.fileno())  # Ensure data is written to disk
         
         # Use atomic rename for thread safety
-        with FileLock(file_path, timeout=5.0):
+        with FileLock(file_path):
             os.replace(temp_file, file_path)
         
         return True
@@ -168,12 +135,65 @@ def safe_write_yaml(file_path: str, data: Any) -> bool:
         logger.error(f"Error writing {file_path}: {e}")
         return False
 
+def sanitize_yaml_data(data: Any) -> Any:
+    """
+    Sanitize data before YAML serialization to prevent corruption.
+    
+    Args:
+        data: Data to sanitize
+        
+    Returns:
+        Sanitized data safe for YAML serialization
+    """
+    # Convert to native types first
+    data = convert_to_native_types(data)
+    
+    if isinstance(data, dict):
+        # Create a new dict with sanitized keys and values
+        result = {}
+        for k, v in data.items():
+            # Ensure keys are strings, not None or other types
+            if k is None:
+                k = "null_key"
+            elif not isinstance(k, str):
+                k = str(k)
+                
+            # Remove problematic characters from keys
+            if isinstance(k, str):
+                # Replace any characters that might cause YAML issues
+                k = k.replace('\t', ' ').replace('\n', ' ')
+                
+            # Recursively sanitize values
+            v = sanitize_yaml_data(v)
+            
+            result[k] = v
+        return result
+    elif isinstance(data, list):
+        # Recursively sanitize list items
+        return [sanitize_yaml_data(item) for item in data]
+    elif isinstance(data, (str, bytes)):
+        # Ensure string values don't have problematic characters
+        if isinstance(data, bytes):
+            try:
+                data = data.decode('utf-8')
+            except UnicodeDecodeError:
+                data = str(data)
+        
+        # Replace tabs and newlines in strings as they can cause indentation issues
+        return data.replace('\t', ' ').replace('\r\n', '\n')
+    elif data is None or isinstance(data, (int, float, bool)):
+        # These types are safe for YAML
+        return data
+    else:
+        # Convert any other types to strings
+        return str(data)
+
 def append_to_yaml_list(file_path: str, item: Any) -> bool:
     """Append an item to a YAML list with thread safety."""
     try:
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         
-        with FileLock(file_path, timeout=5.0):
+        with FileLock(file_path):
             # Read existing data
             if os.path.exists(file_path):
                 with open(file_path, 'r') as f:
@@ -185,12 +205,15 @@ def append_to_yaml_list(file_path: str, item: Any) -> bool:
             if not isinstance(data, list):
                 data = [data]
                 
+            # Sanitize the item before appending
+            item = sanitize_yaml_data(item)
+            
             # Append new item
             data.append(item)
             
-            # Write back to file
+            # Write back to file using safer serialization
             with open(file_path, 'w') as f:
-                yaml.safe_dump(data, f, default_flow_style=False)
+                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
                 f.flush()
                 os.fsync(f.fileno())
                 
@@ -291,6 +314,11 @@ def read_progress_from_yaml() -> Dict[str, Any]:
     if "model_trials" not in progress_data:
         progress_data["model_trials"] = {}
     
+    # IMPROVED: Make sure current_trial and total_trials always use aggregated values if available
+    if "aggregated_current_trial" in progress_data and "aggregated_total_trials" in progress_data:
+        progress_data["current_trial"] = progress_data["aggregated_current_trial"]
+        progress_data["total_trials"] = progress_data["aggregated_total_trials"]
+    
     # Update global cycle
     _current_cycle = progress_data.get("cycle", 1)
     
@@ -357,7 +385,7 @@ class ProgressFileLock(FileLock):
     """Enhanced file lock that tracks progress changes."""
     
     def __init__(self, filepath, operation="update", timeout=10.0, retry_delay=0.1):
-        super().__init__(filepath, timeout, retry_delay)
+        super().__init__(filepath)
         self.operation = operation
         self.filepath = filepath
         
@@ -377,6 +405,7 @@ def update_progress_in_yaml(progress_data: Dict[str, Any], model_type: Optional[
     Args:
         progress_data: Dictionary with progress information
         model_type: If provided, updates model-specific progress file
+        aggregate_trials: Whether to trigger aggregation after model update
     
     Returns:
         bool: Success status
@@ -407,7 +436,7 @@ def update_progress_in_yaml(progress_data: Dict[str, Any], model_type: Optional[
         _log_progress_change(model_progress_file, f"Updating model-specific progress for {model_type}", progress_data)
         
         # Use enhanced lock specifically for model progress
-        with ProgressFileLock(model_progress_file, operation=f"update_model_{model_type}", timeout=5.0):
+        with ProgressFileLock(model_progress_file, operation=f"update_model_{model_type}"):
             # Read existing data to preserve fields
             existing_data = safe_read_yaml(model_progress_file, default={})
             
@@ -444,16 +473,23 @@ def update_progress_in_yaml(progress_data: Dict[str, Any], model_type: Optional[
     _log_progress_change(PROGRESS_FILE, "Updating main progress file", progress_data)
     
     # Use enhanced lock for main progress file
-    with ProgressFileLock(PROGRESS_FILE, operation="update_main_progress", timeout=5.0):
+    with ProgressFileLock(PROGRESS_FILE, operation="update_main_progress"):
         existing_data = safe_read_yaml(PROGRESS_FILE, default={})
         
         # Preserve important fields
         for field in ["ticker", "timeframe", "model_trials", "aggregated_total_trials", "aggregated_current_trial"]:
             if field not in progress_data and field in existing_data:
                 progress_data[field] = existing_data[field]
-                
+        
         # Merge data
         existing_data.update(progress_data)
+        
+        # IMPROVED: Ensure aggregated values are consistently used as the main values
+        # If we have aggregated values, use them as the main trial counts
+        if "aggregated_total_trials" in existing_data:
+            existing_data["total_trials"] = existing_data["aggregated_total_trials"]
+        if "aggregated_current_trial" in existing_data:
+            existing_data["current_trial"] = existing_data["aggregated_current_trial"]
         
         # Write merged data
         result = safe_write_yaml(PROGRESS_FILE, existing_data)
@@ -464,186 +500,81 @@ def update_progress_in_yaml(progress_data: Dict[str, Any], model_type: Optional[
     
     return result
 
-def _update_aggregated_progress() -> bool:
+
+def _update_aggregated_progress():
     """
     Update aggregated progress by combining metrics from all model types.
-    
-    This combines individual model progress into a unified view with:
-    - Combined trial counts
-    - Best metrics across models
-    - Weighted ensemble metrics
-    - Current progress status
-    
-    Returns:
-        bool: Success status
+    Uses the new AtomicMultiFileUpdate to ensure consistency.
     """
     try:
-        _log_progress_change(PROGRESS_FILE, "Starting aggregated progress update")
+        logger.info("Starting aggregated progress update")
         
-        # Get active model types from config if available
+        # Get active model types
         try:
             from config.config_loader import ACTIVE_MODEL_TYPES
             model_types = ACTIVE_MODEL_TYPES
         except ImportError:
-            # Scan the model_progress directory for model types
+            # Scan the model_progress directory
             model_types = []
             for file in os.listdir(MODEL_PROGRESS_DIR):
                 if file.endswith("_progress.yaml"):
                     model_type = file.replace("_progress.yaml", "")
                     model_types.append(model_type)
         
-        # Get ticker and timeframe from status file first
+        # Get model progress data
+        model_progress_files = [get_model_progress_file(model_type) for model_type in model_types]
+        model_data_list = {}
+        
+        # Read all model progress files first
+        for model_type, progress_file in zip(model_types, model_progress_files):
+            if os.path.exists(progress_file):
+                model_data = safe_read_yaml(progress_file, default={})
+                if model_data:
+                    model_data_list[model_type] = model_data
+        
+        # If no data found, nothing to aggregate
+        if not model_data_list:
+            logger.info("No model progress data found, skipping aggregation")
+            return True
+        
+        # Extract ticker/timeframe from first available model's data
         ticker = None
         timeframe = None
-        try:
-            status = read_tuning_status()
-            ticker = status.get("ticker")
-            timeframe = status.get("timeframe")
-        except Exception as e:
-            logger.warning(f"Could not read tuning status: {e}")
-        
-        # Initialize aggregated data
+        for data in model_data_list.values():
+            if "ticker" in data:
+                ticker = data["ticker"]
+            if "timeframe" in data:
+                timeframe = data["timeframe"]
+            if ticker and timeframe:
+                break
+                
+        # Prepare aggregated data
         aggregated_data = {
             "aggregated_total_trials": 0,
             "aggregated_current_trial": 0,
             "model_trials": {},
             "cycle": get_current_cycle(),
             "timestamp": time.time(),
-            "update_id": int(time.time() * 1000),  # Add unique ID for cache busting
+            "update_id": int(time.time() * 1000),
             "ticker": ticker,
             "timeframe": timeframe
         }
         
-        # Track best metrics across models
+        # Calculate aggregated metrics across all models
         best_rmse = float('inf')
         best_mape = float('inf')
         best_model = None
-        
-        # Track weighted metrics
         weighted_metrics = {"rmse": 0.0, "mape": 0.0, "directional_accuracy": 0.0}
-        total_weight = 0.0
         ensemble_weights = {}
+        total_weight = 0.0
         
-        # FIXED: Get startup trials value for proper counting
-        try:
-            from config.config_loader import N_STARTUP_TRIALS
-            startup_trials = N_STARTUP_TRIALS
-        except ImportError:
-            startup_trials = 10000  # Default if not defined
+        # Process each model's data
+        for model_type, data in model_data_list.items():
+            # Get trial counts
+            total_trials = data.get("total_trials", 0)
+            current_trial = data.get("current_trial", 0)
             
-        # Calculate expected trials per model type
-        try:
-            from config.config_loader import TUNING_TRIALS_PER_CYCLE_max, TUNING_TRIALS_PER_CYCLE_min, ACTIVE_MODEL_TYPES
-            trials_per_model = (TUNING_TRIALS_PER_CYCLE_max + TUNING_TRIALS_PER_CYCLE_min) // 2
-            # Adjust the total trials to account for all active model types
-            theoretical_max_trials = len(ACTIVE_MODEL_TYPES) * trials_per_model
-        except ImportError:
-            trials_per_model = 200  # Default if not defined
-            theoretical_max_trials = len(model_types) * trials_per_model
-            
-        # Get tuning status to see if we're in an active tuning session
-        is_tuning_active = False
-        try:
-            status = read_tuning_status()
-            is_tuning_active = status.get("is_running", False)
-        except Exception:
-            pass
-        
-        # Debug to track what's happening
-        found_model_count = 0
-        trial_sources = []
-        
-        # FIXED: First check if any valid model progress files actually exist
-        # This prevents trying to update when there's nothing to update
-        any_model_progress_exists = False
-        for model_type in model_types:
-            model_progress_file = get_model_progress_file(model_type)
-            if os.path.exists(model_progress_file):
-                any_model_progress_exists = True
-                break
-                
-        if not any_model_progress_exists:
-            logger.info("No model progress files exist yet, setting default aggregated trials")
-            # If we're in an active tuning session, use a more accurate estimate of total trials
-            if is_tuning_active:
-                try:
-                    from config.config_loader import TUNING_TRIALS_PER_CYCLE_max, ACTIVE_MODEL_TYPES
-                    # More accurate estimate: trials per model * number of models
-                    theoretical_max_trials = TUNING_TRIALS_PER_CYCLE_max * len(ACTIVE_MODEL_TYPES)
-                    logger.info(f"Setting total trials to {theoretical_max_trials} based on active tuning session")
-                except ImportError:
-                    # Fallback to the previous calculation
-                    pass
-                    
-            aggregated_data["aggregated_total_trials"] = theoretical_max_trials
-            aggregated_data["total_trials"] = theoretical_max_trials
-            aggregated_data["aggregated_current_trial"] = 0
-            aggregated_data["current_trial"] = 0
-            
-            # Put the default data in main progress file
-            with ProgressFileLock(PROGRESS_FILE, operation="update_default_aggregated", timeout=5.0):
-                safe_write_yaml(PROGRESS_FILE, aggregated_data)
-            
-            # Also update the tuning status to be consistent
-            try:
-                status = read_tuning_status()
-                if status.get("is_running", False):
-                    # Make sure ticker/timeframe are present
-                    if ticker and "ticker" not in status:
-                        status["ticker"] = ticker
-                    if timeframe and "timeframe" not in status:
-                        status["timeframe"] = timeframe
-                    
-                    # Update trial counts in status
-                    status["total_trials"] = theoretical_max_trials
-                    status["current_trial"] = 0
-                    
-                    write_tuning_status(status)
-            except Exception as e:
-                logger.warning(f"Could not update tuning status during default aggregation: {e}")
-                
-            return True
-        
-        # Process each model's progress
-        for model_type in model_types:
-            model_progress_file = get_model_progress_file(model_type)
-            
-            if not os.path.exists(model_progress_file):
-                continue
-                
-            # Read progress data - use our safe_read_yaml function
-            model_data = safe_read_yaml(model_progress_file, default={})
-            
-            if not model_data:
-                continue
-                
-            found_model_count += 1
-            
-            # Check if this model is for the same ticker/timeframe
-            if ticker and timeframe and model_data.get("ticker") != ticker and model_data.get("timeframe") != timeframe:
-                logger.debug(f"Skipping model {model_type} with different ticker/timeframe")
-                continue
-                
-            # If we don't have ticker/timeframe yet, get it from the first model
-            if not ticker and "ticker" in model_data:
-                ticker = model_data.get("ticker")
-                aggregated_data["ticker"] = ticker
-            if not timeframe and "timeframe" in model_data:
-                timeframe = model_data.get("timeframe")
-                aggregated_data["timeframe"] = timeframe
-                
-            # Get trial information
-            total_trials = model_data.get("total_trials", 0)
-            current_trial = model_data.get("current_trial", 0)
-            
-            # Track source of trial counts for debugging
-            trial_sources.append({
-                "model": model_type,
-                "total": total_trials,
-                "current": current_trial
-            })
-            
-            # Add to aggregated total
+            # Add to aggregated totals
             aggregated_data["aggregated_total_trials"] += total_trials
             aggregated_data["aggregated_current_trial"] += current_trial
             
@@ -652,14 +583,15 @@ def _update_aggregated_progress() -> bool:
                 "total_trials": total_trials,
                 "current_trial": current_trial,
                 "completion_percentage": (current_trial / max(1, total_trials)) * 100,
-                "rmse": model_data.get("current_rmse"),
-                "mape": model_data.get("current_mape"),
-                "directional_accuracy": model_data.get("directional_accuracy", 0.0)
+                "rmse": data.get("current_rmse"),
+                "mape": data.get("current_mape"),
+                "directional_accuracy": data.get("directional_accuracy", 0.0),
+                "cycle": data.get("cycle", get_current_cycle())
             }
             
             # Track best metrics
-            rmse = model_data.get("current_rmse")
-            mape = model_data.get("current_mape")
+            rmse = data.get("current_rmse")
+            mape = data.get("current_mape")
             
             if rmse is not None and rmse < best_rmse:
                 best_rmse = rmse
@@ -669,7 +601,7 @@ def _update_aggregated_progress() -> bool:
                 best_mape = mape
             
             # Get model weight for ensemble calculations
-            weight = model_data.get("weight", 0.0)
+            weight = data.get("weight", 0.0)
             if weight > 0:
                 ensemble_weights[model_type] = weight
                 total_weight += weight
@@ -679,108 +611,63 @@ def _update_aggregated_progress() -> bool:
                     weighted_metrics["rmse"] += rmse * weight
                 if mape is not None:
                     weighted_metrics["mape"] += mape * weight
-                da = model_data.get("directional_accuracy", 0.0)
+                da = data.get("directional_accuracy", 0.0)
                 if da is not None:
                     weighted_metrics["directional_accuracy"] += da * weight
         
-        # FIXED: Don't overwrite trials if we don't find any models 
-        if found_model_count == 0:
-            logger.warning("No valid model progress found in existing files")
-            
-            # Check if we already have progress data we should preserve
-            current_progress = safe_read_yaml(PROGRESS_FILE, default={})
-            
-            # If there's existing data with trial info, use that instead
-            if "aggregated_total_trials" in current_progress and current_progress["aggregated_total_trials"] > 0:
-                logger.info(f"Preserving existing trial counts from progress file")
-                aggregated_data["aggregated_total_trials"] = current_progress["aggregated_total_trials"]
-                aggregated_data["aggregated_current_trial"] = current_progress["aggregated_current_trial"]
-            else:
-                # Otherwise set to theoretical maximum
-                logger.info(f"No model progress found, using theoretical max of {theoretical_max_trials} trials")
-                aggregated_data["aggregated_total_trials"] = theoretical_max_trials
-        
-        # IMPROVED: If the total trials is suspiciously low, use more accurate estimation
-        if is_tuning_active and aggregated_data["aggregated_total_trials"] < len(model_types) * 100:
-            logger.warning(f"Aggregated trial count suspiciously low: {aggregated_data['aggregated_total_trials']} for {len(model_types)} models")
-            
-            # During active tuning, use a more accurate estimate based on config values
-            try:
-                from config.config_loader import TUNING_TRIALS_PER_CYCLE_max, ACTIVE_MODEL_TYPES
-                # More accurate estimate: trials per model * number of models
-                correct_total_trials = TUNING_TRIALS_PER_CYCLE_max * len(ACTIVE_MODEL_TYPES)
-                logger.info(f"Setting total trials to {correct_total_trials} based on config")
-                aggregated_data["aggregated_total_trials"] = correct_total_trials
-            except ImportError:
-                # Fallback to theoretical maximum if config import fails
-                logger.info(f"Setting to theoretical maximum of {theoretical_max_trials} trials instead")
-                aggregated_data["aggregated_total_trials"] = theoretical_max_trials
-            
-        # Log the trial sources for debugging
-        logger.debug(f"Aggregated {aggregated_data['aggregated_current_trial']}/{aggregated_data['aggregated_total_trials']} trials from {found_model_count} models")
-        logger.debug(f"Trial sources: {trial_sources}")
-        
-        # Store best metrics in aggregated data
-        aggregated_data["best_rmse"] = best_rmse if best_rmse != float('inf') else None
-        aggregated_data["best_mape"] = best_mape if best_mape != float('inf') else None
-        aggregated_data["best_model"] = best_model
-        
-        # Calculate normalized weights and add to aggregated data
+        # Normalize weighted metrics if we have weights
         if total_weight > 0:
             normalized_weights = {
-                model: weight/total_weight 
-                for model, weight in ensemble_weights.items()
+                model: weight/total_weight for model, weight in ensemble_weights.items()
             }
+            
+            # Add to aggregated data
             aggregated_data["ensemble_weights"] = ensemble_weights
             aggregated_data["normalized_weights"] = normalized_weights
             
-            # Normalize weighted metrics
+            # Normalize metrics
             for metric in weighted_metrics:
                 weighted_metrics[metric] /= total_weight
                 
             aggregated_data["weighted_metrics"] = weighted_metrics
-            
-            # Add ensemble metrics directly to the top level for easy access
             aggregated_data["ensemble_rmse"] = weighted_metrics["rmse"]
             aggregated_data["ensemble_mape"] = weighted_metrics["mape"]
             aggregated_data["ensemble_directional_accuracy"] = weighted_metrics["directional_accuracy"]
         
-        # FIXED: Always set these values consistently
-        # Use aggregate trials as the main trial counts for progress display
+        # Add best metrics to aggregated data
+        aggregated_data["best_rmse"] = best_rmse if best_rmse != float('inf') else None
+        aggregated_data["best_mape"] = best_mape if best_mape != float('inf') else None
+        aggregated_data["best_model"] = best_model
+        
+        # Set main trial counts for consistency
         aggregated_data["total_trials"] = aggregated_data["aggregated_total_trials"]
         aggregated_data["current_trial"] = aggregated_data["aggregated_current_trial"]
         
-        # Write the aggregated progress with exclusive lock
-        _log_progress_change(PROGRESS_FILE, "Writing aggregated progress", 
-                             {"ticker": ticker, "timeframe": timeframe, 
-                              "total_trials": aggregated_data["total_trials"],
-                              "current_trial": aggregated_data["current_trial"]})
+        # Also get tuning status to keep it in sync
+        tuning_status = read_tuning_status()
         
-        # Write with exclusive lock
-        with ProgressFileLock(PROGRESS_FILE, operation="write_aggregated", timeout=5.0):
-            result = safe_write_yaml(PROGRESS_FILE, aggregated_data)
+        # Prepare updated status that matches aggregated data
+        updated_status = {
+            "is_running": tuning_status.get("is_running", False),
+            "status": tuning_status.get("status", "idle"),
+            "ticker": ticker,
+            "timeframe": timeframe,
+            "current_trial": aggregated_data["current_trial"],
+            "total_trials": aggregated_data["total_trials"],
+            "timestamp": datetime.now().isoformat(),
+            "update_id": int(time.time() * 1000)
+        }
         
-        # Update tuning status to ensure it's marked as running if needed
-        if result:
-            status = read_tuning_status()
-            if status.get("is_running", False):
-                # Update timestamp to show activity
-                status["timestamp"] = datetime.now().isoformat()
-                status["update_id"] = int(time.time() * 1000)
-                
-                # Ensure ticker/timeframe are present
-                if ticker and "ticker" not in status:
-                    status["ticker"] = ticker
-                if timeframe and "timeframe" not in status:
-                    status["timeframe"] = timeframe
-                    
-                # Also update trial counts in status
-                status["current_trial"] = aggregated_data["current_trial"]
-                status["total_trials"] = aggregated_data["total_trials"]
-                    
-                write_tuning_status(status)
+        # Update both progress and status files atomically
+        from src.utils.threadsafe import AtomicMultiFileUpdate
         
-        return result
+        with AtomicMultiFileUpdate([PROGRESS_FILE, TUNING_STATUS_FILE], timeout=10.0) as update:
+            update.write_yaml(PROGRESS_FILE, aggregated_data)
+            update.write_yaml(TUNING_STATUS_FILE, updated_status)
+        
+        logger.info(f"Updated aggregated progress with {aggregated_data['current_trial']}/{aggregated_data['total_trials']} trials")
+        return True
+        
     except Exception as e:
         logger.error(f"Error updating aggregated progress: {e}", exc_info=True)
         return False
@@ -814,9 +701,8 @@ def update_trial_info_in_yaml(file_path: str, trial_info: Dict[str, Any], model_
     if "cycle" not in trial_info:
         trial_info["cycle"] = get_current_cycle()
     
-    # FIXED: Make sure trial_info is properly formatted for YAML
-    # Convert any potential non-serializable objects
-    trial_info = convert_to_native_types(trial_info)
+    # IMPROVED: More thorough sanitization for trial_info to prevent YAML corruption
+    trial_info = sanitize_yaml_data(trial_info)
     
     # Ensure params is a proper dictionary
     if "params" in trial_info and not isinstance(trial_info["params"], dict):
@@ -836,7 +722,7 @@ def update_trial_info_in_yaml(file_path: str, trial_info: Dict[str, Any], model_
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         
         # Use the enhanced lock for consistent operations
-        with ProgressFileLock(file_path, operation="update_trial_info", timeout=5.0):
+        with ProgressFileLock(file_path, operation="update_trial_info"):
             # Read existing data first
             if os.path.exists(file_path):
                 with open(file_path, 'r') as f:
@@ -852,9 +738,11 @@ def update_trial_info_in_yaml(file_path: str, trial_info: Dict[str, Any], model_
             # Add the new trial info
             data.append(trial_info)
             
-            # Write back to file
+            # Write back to file with safer serialization settings
             with open(file_path, 'w') as f:
-                yaml.safe_dump(data, f, default_flow_style=False)
+                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+                f.flush()
+                os.fsync(f.fileno())
         
         success = True
     except Exception as e:
@@ -977,7 +865,7 @@ def write_tuning_status(status_dict: Dict[str, Any]) -> None:
                     logger.warning(f"Could not read progress file for trial counts: {e}")
                     
             # Write the status to file with lock
-            with ProgressFileLock(TUNING_STATUS_FILE, operation="write_status", timeout=5.0):
+            with ProgressFileLock(TUNING_STATUS_FILE, operation="write_status"):
                 with open(TUNING_STATUS_FILE, "w") as f:
                     for key, value in status_dict.items():
                         f.write(f"{key}: {value}\n")
@@ -1202,8 +1090,59 @@ def update_model_progress(model_type: str, progress_data: Dict[str, Any]) -> boo
     # Make sure model_type is included in the data
     progress_data["model_type"] = model_type
     
+    # Ensure cycle information is included in the model progress data
+    progress_data["cycle"] = get_current_cycle()
+    
     # Update the model-specific progress file
-    return update_progress_in_yaml(progress_data, model_type=model_type)
+    result = update_progress_in_yaml(progress_data, model_type=model_type)
+    
+    # Store cycle history if enabled in config
+    try:
+        # Try to get config settings
+        store_cycle_history = False
+        cycle_history_path = os.path.join(MODEL_PROGRESS_DIR, f"{model_type}_history.yaml")
+        
+        try:
+            from config.config_loader import TUNING_CONFIG
+            if isinstance(TUNING_CONFIG, dict):
+                store_cycle_history = TUNING_CONFIG.get("store_cycle_history", False)
+                if "cycle_history_path" in TUNING_CONFIG:
+                    cycle_history_path = TUNING_CONFIG["cycle_history_path"].format(model=model_type)
+        except ImportError:
+            # Fall back to default settings if config can't be imported
+            logger.debug("Could not import TUNING_CONFIG, using default cycle history settings")
+        
+        if store_cycle_history:
+            cycle = progress_data.get("cycle", get_current_cycle())
+            
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(cycle_history_path), exist_ok=True)
+            
+            # Use our existing file lock mechanism
+            with ProgressFileLock(cycle_history_path, operation=f"update_history_{model_type}", timeout=5.0):
+                # Load existing history or initialize
+                history = safe_read_yaml(cycle_history_path, default={})
+                history.setdefault("cycles", {})
+                
+                # Add this cycle's data
+                history["cycles"][str(cycle)] = {
+                    "rmse": progress_data.get("current_rmse"),
+                    "mape": progress_data.get("current_mape"),
+                    "directional_accuracy": progress_data.get("directional_accuracy"),
+                    "trials": progress_data.get("current_trial"),
+                    "timestamp": datetime.now().isoformat(),
+                    "ticker": progress_data.get("ticker"),
+                    "timeframe": progress_data.get("timeframe")
+                }
+                
+                # Write updated history
+                safe_write_yaml(cycle_history_path, history)
+                logger.debug(f"Updated cycle history for {model_type} at cycle {cycle}")
+    except Exception as e:
+        logger.warning(f"Failed to update cycle history for {model_type}: {e}")
+        # Don't fail the whole operation if just the history update fails
+    
+    return result
 
 def get_individual_model_progress() -> Dict[str, Dict[str, Any]]:
     """
@@ -1446,7 +1385,123 @@ def synchronize_paths_with_config():
         logger.error(f"Error synchronizing paths: {e}")
         return False
 
-# Modify this function to check file consistency on module import
+def verify_progress_consistency():
+    """
+    Verify consistency between progress files and fix if needed.
+    Returns True if files were consistent or fixed, False if unrecoverable errors.
+    """
+    inconsistencies = 0
+    fixes = 0
+    
+    try:
+        # Read main progress file
+        progress_data = safe_read_yaml(PROGRESS_FILE, default={})
+        
+        # Read tuning status
+        status_data = read_tuning_status()
+        
+        # Check ticker/timeframe consistency
+        if "ticker" in progress_data and "ticker" in status_data:
+            if progress_data["ticker"] != status_data["ticker"]:
+                logger.warning(f"Ticker mismatch: {progress_data['ticker']} vs {status_data['ticker']}")
+                inconsistencies += 1
+                
+                # Trust the status file for ticker/timeframe
+                progress_data["ticker"] = status_data["ticker"]
+                fixes += 1
+                
+        if "timeframe" in progress_data and "timeframe" in status_data:
+            if progress_data["timeframe"] != status_data["timeframe"]:
+                logger.warning(f"Timeframe mismatch: {progress_data['timeframe']} vs {status_data['timeframe']}")
+                inconsistencies += 1
+                
+                # Trust the status file for ticker/timeframe
+                progress_data["timeframe"] = status_data["timeframe"]
+                fixes += 1
+        
+        # Check trial count consistency
+        if "current_trial" in progress_data and "current_trial" in status_data:
+            try:
+                progress_trial = int(progress_data["current_trial"])
+                status_trial = int(status_data["current_trial"])
+                
+                if abs(progress_trial - status_trial) > 10:
+                    logger.warning(f"Trial count mismatch: {progress_trial} vs {status_trial}")
+                    inconsistencies += 1
+                    
+                    # Use the maximum value
+                    max_trial = max(progress_trial, status_trial)
+                    progress_data["current_trial"] = max_trial
+                    status_data["current_trial"] = str(max_trial)
+                    fixes += 1
+            except (ValueError, TypeError):
+                pass
+                
+        # Check model progress files for consistency with main progress
+        try:
+            # Get model types from config or from existing directories
+            try:
+                from config.config_loader import ACTIVE_MODEL_TYPES
+                model_types = ACTIVE_MODEL_TYPES
+            except ImportError:
+                # Fallback to scanning directory
+                model_types = []
+                for file in os.listdir(MODEL_PROGRESS_DIR):
+                    if file.endswith("_progress.yaml"):
+                        model_type = file.replace("_progress.yaml", "")
+                        model_types.append(model_type)
+            
+            # Check each model's progress file
+            for model_type in model_types:
+                model_file = get_model_progress_file(model_type)
+                if os.path.exists(model_file):
+                    model_data = safe_read_yaml(model_file, default={})
+                    
+                    # Check ticker/timeframe consistency
+                    if "ticker" in model_data and "ticker" in progress_data:
+                        if model_data["ticker"] != progress_data["ticker"]:
+                            logger.warning(f"Model {model_type} ticker mismatch: {model_data['ticker']} vs {progress_data['ticker']}")
+                            inconsistencies += 1
+                            
+                            # Update model file with main progress ticker
+                            model_data["ticker"] = progress_data["ticker"]
+                            safe_write_yaml(model_file, model_data)
+                            fixes += 1
+                    
+                    # Check timeframe consistency
+                    if "timeframe" in model_data and "timeframe" in progress_data:
+                        if model_data["timeframe"] != progress_data["timeframe"]:
+                            logger.warning(f"Model {model_type} timeframe mismatch: {model_data['timeframe']} vs {progress_data['timeframe']}")
+                            inconsistencies += 1
+                            
+                            # Update model file with main progress timeframe
+                            model_data["timeframe"] = progress_data["timeframe"]
+                            safe_write_yaml(model_file, model_data)
+                            fixes += 1
+        except Exception as model_err:
+            logger.error(f"Error checking model progress files: {model_err}")
+        
+        # If we fixed anything, write back the files
+        if fixes > 0:
+            logger.info(f"Fixed {fixes} consistency issues")
+            
+            # Write progress data
+            safe_write_yaml(PROGRESS_FILE, progress_data)
+            
+            # Update status data with new values
+            if "current_trial" in status_data and isinstance(status_data["current_trial"], int):
+                status_update = {
+                    "current_trial": status_data["current_trial"],
+                    "timestamp": datetime.now().isoformat()
+                }
+                write_tuning_status(status_update)
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error checking consistency: {e}")
+        return False
+
+# Update the existing check_file_consistency function to use our new method
 def check_file_consistency():
     """Check consistency between progress and status files at module load time."""
     try:
@@ -1457,40 +1512,8 @@ def check_file_consistency():
         if not status_file_exists or not progress_file_exists:
             return
         
-        # Read both files
-        status = read_tuning_status()
-        progress = read_progress_from_yaml()
-        
-        needs_update = False
-        
-        # Check if ticker/timeframe match
-        if status.get("is_running", False):
-            # If status is running, check ticker/timeframe consistency
-            if "ticker" in status and "ticker" in progress and status["ticker"] != progress["ticker"]:
-                logger.warning(f"Mismatch between status ticker ({status['ticker']}) and progress ticker ({progress['ticker']})")
-                # Use the status ticker to update progress
-                progress["ticker"] = status["ticker"]
-                needs_update = True
-                
-            if "timeframe" in status and "timeframe" in progress and status["timeframe"] != progress["timeframe"]:
-                logger.warning(f"Mismatch between status timeframe ({status['timeframe']}) and progress timeframe ({progress['timeframe']})")
-                # Use the status timeframe to update progress
-                progress["timeframe"] = status["timeframe"]
-                needs_update = True
-                
-            # Check trial count consistency
-            if "current_trial" in status and "current_trial" in progress and status["current_trial"] != progress["current_trial"]:
-                logger.warning(f"Mismatch between status current_trial ({status['current_trial']}) and progress current_trial ({progress['current_trial']})")
-                # Leave as is - don't know which is right
-                
-            if "total_trials" in status and "total_trials" in progress and status["total_trials"] != progress["total_trials"]:
-                logger.warning(f"Mismatch between status total_trials ({status['total_trials']}) and progress total_trials ({progress['total_trials']})")
-                # Leave as is - don't know which is right
-        
-        # If progress needs updating, do it
-        if needs_update:
-            logger.info("Updating progress file to match tuning status")
-            update_progress_in_yaml(progress)
+        # Use our new comprehensive verification function
+        verify_progress_consistency()
             
     except Exception as e:
         logger.error(f"Error checking file consistency: {e}")

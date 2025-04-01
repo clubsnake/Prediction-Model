@@ -1,5 +1,6 @@
-status: stopped
+status: test_status
 is_running: False
 stopped_manually: True
-stop_time: 1742792687.5182195
-timestamp: 2025-03-24T01:04:47.519214
+stop_time: 1743401494.516729
+timestamp: 2025-03-31T02:07:00
+test_key: test_value

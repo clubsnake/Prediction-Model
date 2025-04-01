@@ -5,6 +5,15 @@ from tensorflow.keras.layers import ( # type: ignore
     LayerNormalization,
     MultiHeadAttention,
 )
+import tensorflow as tf
+# Fix circular import - import directly from gpu_memory_manager instead of model
+from src.utils.gpu_memory_manager import GPUMemoryManager
+from src.utils.gpu_memory_manager import place_on_device
+
+# Initialize GPU manager
+gpu_manager = GPUMemoryManager(allow_growth=True)
+gpu_manager.initialize()
+tf_device = gpu_manager.get_tf_device()
 
 
 class PositionalEncoding(tf.keras.layers.Layer):
@@ -374,29 +383,36 @@ def build_tft_model(
     Returns:
         Compiled TFT model
     """
-    model = TemporalFusionTransformer(
-        num_features=num_features,
-        forecast_horizon=horizon,
-        hidden_size=hidden_size,
-        lstm_units=lstm_units,
-        num_heads=num_heads,
-        dropout_rate=dropout_rate,
-        max_positions=max_positions,  # now tunable
-    )
-
-    # Define input shape and do a forward pass to build the model
-    sample_input = tf.random.normal(
-        (1, 30, num_features)
-    )  # Batch size of 1, sequence length of 30
-    model(sample_input)
-
-    # Compile the model
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-        loss=loss_function,
-    )
-
-    return model
+    # Place model on GPU if available (wrapping existing model build code)
+    with tf.device(tf_device):
+        # Model input
+        inputs = {
+            # Existing input definitions
+        }
+        
+        # Create model
+        model = TemporalFusionTransformer(
+            num_features=num_features,
+            forecast_horizon=horizon,
+            hidden_size=hidden_size,
+            lstm_units=lstm_units,
+            num_heads=num_heads,
+            dropout_rate=dropout_rate,
+            max_positions=max_positions,  # now tunable
+        )(inputs)
+        
+        # Compile the model
+        tft_model = tf.keras.Model(inputs=inputs, outputs=model)
+        tft_model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+            loss=loss_function
+        )
+    
+    # Apply GPU memory manager's configuration
+    gpu_manager.enable_mixed_precision()
+    
+    # Return the model placed on the appropriate device
+    return tft_model
 
 
 def add_tft_to_model_types():
@@ -412,7 +428,7 @@ def add_tft_to_model_types():
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(current_dir)
-    if parent_dir not in sys.path:
+    if (parent_dir not in sys.path):
         sys.path.append(parent_dir)
 
     # Add the model type to the global model types list

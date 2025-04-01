@@ -1,5 +1,5 @@
 aggregated_current_trial: 0
-aggregated_total_trials: 23679
+aggregated_total_trials: 44001
 best_mape: null
 best_model: null
 best_rmse: null
@@ -9,68 +9,82 @@ model_trials:
   cnn:
     completion_percentage: 0.0
     current_trial: 0
+    cycle: 1
     directional_accuracy: 0.0
     mape: null
     rmse: null
-    total_trials: 2631
+    total_trials: 4889
   lstm:
     completion_percentage: 0.0
     current_trial: 0
+    cycle: 1
     directional_accuracy: 0.0
     mape: .inf
     rmse: .inf
-    total_trials: 2631
+    total_trials: 4889
   ltc:
     completion_percentage: 0.0
     current_trial: 0
+    cycle: 1
     directional_accuracy: 0.0
     mape: .inf
     rmse: .inf
-    total_trials: 2631
+    total_trials: 4889
   nbeats:
     completion_percentage: 0.0
     current_trial: 0
+    cycle: 1
     directional_accuracy: 0.0
     mape: null
     rmse: null
-    total_trials: 2631
+    total_trials: 4889
   random_forest:
     completion_percentage: 0.0
     current_trial: 0
+    cycle: 1
     directional_accuracy: 0.0
     mape: .inf
     rmse: .inf
-    total_trials: 2631
+    total_trials: 4889
   rnn:
     completion_percentage: 0.0
     current_trial: 0
+    cycle: 1
     directional_accuracy: 0.0
     mape: .inf
     rmse: .inf
-    total_trials: 2631
+    total_trials: 4889
   tabnet:
     completion_percentage: 0.0
     current_trial: 0
+    cycle: 1
     directional_accuracy: 0.0
     mape: .inf
     rmse: .inf
-    total_trials: 2631
+    total_trials: 4889
   tft:
     completion_percentage: 0.0
     current_trial: 0
+    cycle: 1
     directional_accuracy: 0.0
     mape: .inf
     rmse: .inf
-    total_trials: 2631
+    total_trials: 4889
   xgboost:
     completion_percentage: 0.0
     current_trial: 0
+    cycle: 1
     directional_accuracy: 0.0
     mape: .inf
     rmse: .inf
-    total_trials: 2631
+    total_trials: 4889
 ticker: ETH-USD
 timeframe: 1d
-timestamp: 1742792678.7098162
-total_trials: 23679
-update_id: 1742792678709
+timestamp: 1743310768.5197954
+total_trials: 44001
+update_id: 1743310731696
+status: initializing
+current_rmse: .inf
+current_mape: .inf
+trial_progress: 1.0
+is_running: true

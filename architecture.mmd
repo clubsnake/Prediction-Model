@@ -1,0 +1,277 @@
+graph TD
+    subgraph Main ["Main Entry Points"]
+        launcher["launcher.py"]
+        run_dashboard["run_dashboard.bat"]
+        app_launcher["app/launcher.py"]
+        tuning_launcher["src/tuning/launcher.py"]
+    end
+
+    subgraph Data ["Data Layer"]
+        data_fetch["src/data/data.py<br>Data Fetching"]
+        data_preprocessing["src/data/preprocessing.py<br>Preprocessing"]
+        data_utils["src/data/data_utils.py<br>Data Utilities"]
+        data_loader["src/data/data_loader.py<br>Data Loading"]
+        data_manager["src/data/data_manager.py<br>Data Management"]
+        sequence_utils["src/data/sequence_utils.py<br>Sequence Creation"]
+        vectors["src/data/vectorized_indicators.py<br>Vectorized Indicators"]
+    end
+
+    subgraph Features ["Feature Engineering"]
+        features["src/features/features.py<br>Feature Creation"]
+        feature_selection["src/features/feature_selection.py<br>Feature Selection"]
+        indicator_tuning["src/features/indicator_tuning.py<br>Indicator Tuning"]
+        optimized_params["src/features/optimized_params.py<br>Optimization"]
+        optimized_processor["src/features/optimized_processor.py<br>Optimized Processing"]
+        vmli_indicator["src/features/vmli_indicator.py<br>VMLI Indicator"]
+    end
+
+    subgraph Models ["Model Implementations"]
+        model_base["src/models/model.py<br>Base Models"]
+        model_factory["src/models/model_factory.py<br>Model Factory"]
+        model_manager["src/models/model_manager.py<br>Model Management"]
+        
+        subgraph Neural ["Neural Network Models"]
+            lstm_rnn["LSTM/RNN Models"]
+            cnn["src/models/cnn_model.py<br>CNN Model"]
+            tft["src/models/temporal_fusion_transformer.py<br>TFT Model"]
+            nbeats["src/models/nbeats_model.py<br>N-BEATS Model"]
+            tabnet["src/models/tabnet_model.py<br>TabNet Model"]
+            ltc["src/models/ltc_model.py<br>LTC Model"]
+        end
+        
+        subgraph Tree ["Tree-based Models"]
+            rf["Random Forest"]
+            xgb["XGBoost"]
+        end
+        
+        subgraph Ensemble ["Ensemble Models"]
+            ensemble_model["src/models/ensemble_model.py<br>Ensemble Model"]
+            ensemble_utils["src/models/ensemble_utils.py<br>Ensemble Utilities"]
+            ensemble_weighting["src/models/ensemble_weighting.py<br>Ensemble Weighting"]
+        end
+    end
+
+    subgraph Training ["Training System"]
+        training_base["src/training/train.py<br>Base Training"]
+        trainer["src/training/trainer.py<br>Model Trainer"]
+        walk_forward["src/training/walk_forward.py<br>Walk-Forward Validation"]
+        callbacks["src/training/callbacks.py<br>Training Callbacks"]
+        adaptive_params["src/training/adaptive_params.py<br>Adaptive Parameters"]
+        
+        subgraph Drift ["Drift Detection"]
+            concept_drift["src/training/concept_drift.py<br>Concept Drift Detection"]
+            drift_scheduler["src/training/drift_scheduler.py<br>Drift Scheduler"]
+            market_regime["src/training/market_regime.py<br>Market Regime"]
+        end
+        
+        incremental["src/training/incremental_learning.py<br>Incremental Learning"]
+        confidence["src/training/confidence_metrics.py<br>Confidence Metrics"]
+    end
+
+    subgraph Tuning ["Hyperparameter Tuning"]
+        study_manager["src/tuning/study_manager.py<br>Optuna Study Manager"]
+        model_evaluation["src/tuning/model_evaluation.py<br>Model Evaluation"]
+        tuning_coordinator["src/tuning/tuning_coordinator.py<br>Tuning Coordinator"]
+        meta_tuning["src/tuning/meta_tuning.py<br>Meta Tuning"]
+        progress_helper["src/tuning/progress_helper.py<br>Progress Tracking"]
+        drift_optimizer["src/tuning/drift_optimizer.py<br>Drift Optimization"]
+        ensemble_tuning["src/tuning/ensemble_tuning.py<br>Ensemble Tuning"]
+        hyperparameter_integration["src/tuning/hyperparameter_integration.py<br>HP Integration"]
+    end
+
+    subgraph Dashboard ["Dashboard & Visualization"]
+        dashboard_core["src/dashboard/dashboard/dashboard_core.py<br>Dashboard Core"]
+        
+        subgraph UI ["UI Components"]
+            dashboard_ui["src/dashboard/dashboard/dashboard_ui.py<br>UI Elements"]
+            dashboard_state["src/dashboard/dashboard/dashboard_state.py<br>State Management"]
+            dashboard_model["src/dashboard/dashboard/dashboard_model.py<br>Model Integration"]
+            dashboard_data["src/dashboard/dashboard/dashboard_data.py<br>Data Integration"]
+            dashboard_viz["src/dashboard/dashboard/dashboard_visualization.py<br>Visualization"]
+            dashboard_utils["src/dashboard/dashboard/dashboard_utils.py<br>Utilities"]
+            dashboard_error["src/dashboard/dashboard/dashboard_error.py<br>Error Handling"]
+        end
+        
+        subgraph Visualization ["Visualizations"]
+            visualization["src/dashboard/visualization.py<br>Base Visualization"]
+            model_viz["src/dashboard/model_visualizations.py<br>Model Visualizations"]
+            enhanced_weight_viz["src/dashboard/enhanced_weight_viz.py<br>Weight Visualization"]
+            drift_dashboard["src/dashboard/drift_dashboard.py<br>Drift Visualization"]
+            xai_integration["src/dashboard/xai_integration.py<br>XAI Integration"]
+        end
+        
+        subgraph PatternDiscovery ["Pattern Discovery"]
+            pattern_discovery["src/dashboard/pattern_discovery/pattern_discovery_tab.py<br>Pattern Discovery"]
+            pattern_management["src/dashboard/pattern_discovery/pattern_management.py<br>Pattern Management"]
+        end
+        
+        prediction_service["src/dashboard/prediction_service.py<br>Prediction Service"]
+        reporter["src/dashboard/reporter.py<br>Reporting"]
+        monitoring["src/dashboard/monitoring.py<br>Monitoring"]
+    end
+
+    subgraph Utilities ["Utility Systems"]
+        utils["src/utils/utils.py<br>General Utilities"]
+        
+        subgraph GPU ["GPU Management"]
+            gpu_mem_management["src/utils/gpu_memory_management.py<br>GPU Memory Management"]
+            gpu_mem_manager["src/utils/gpu_memory_manager.py<br>GPU Memory Manager"]
+            training_optimizer["src/utils/training_optimizer.py<br>Training Optimization"]
+        end
+        
+        subgraph Memory ["Memory Management"]
+            memory_utils["src/utils/memory_utils.py<br>Memory Utilities"]
+            model_optimization["src/utils/model_optimization.py<br>Model Optimization"]
+        end
+        
+        subgraph ErrorHandling ["Error Handling"]
+            error_handling["src/utils/error_handling.py<br>Error Handling"]
+            robust_handler["src/utils/robust_handler.py<br>Robust Handler"]
+        end
+        
+        env_setup["src/utils/env_setup.py<br>Environment Setup"]
+        threadsafe["src/utils/threadsafe.py<br>Thread Safety"]
+        vectorized_ops["src/utils/vectorized_ops.py<br>Vectorized Operations"]
+        file_cleanup["src/utils/file_cleanup.py<br>File Cleanup"]
+        watchdog["src/utils/watchdog.py<br>Watchdog"]
+    end
+
+    subgraph Configuration ["Configuration"]
+        config_loader["config/config_loader.py<br>Configuration Loading"]
+        system_config["config/system_config.json<br>System Configuration"]
+        user_config["config/user_config.yaml<br>User Configuration"]
+        hyperparameter_config["config/hyperparameter_config.py<br>Hyperparameter Configuration"]
+        resource_config["config/resource_config.py<br>Resource Configuration"]
+        advanced_loss_config["config/advanced_loss_config.py<br>Loss Configuration"]
+        logger_config["config/logger_config.py<br>Logger Configuration"]
+        api_keys["config/api_keys.yaml<br>API Keys"]
+    end
+
+    subgraph Testing ["Testing"]
+        test_preprocessing["tests/test_preprocessing.py<br>Preprocessing Tests"]
+        test_model_layers["tests/test_model_layers.py<br>Model Layer Tests"]
+        test_tabnet["tests/test_tabnet_integration.py<br>TabNet Tests"]
+        debug_tuning["tests/debug_tuning.py<br>Tuning Debugging"]
+        check_gpu["tests/check_gpu.py<br>GPU Checks"]
+        seed_test["tests/seed_test.py<br>Seed Tests"]
+    end
+
+    %% Main connections
+    launcher --> dashboard_core
+    run_dashboard --> launcher
+    app_launcher --> dashboard_core
+    tuning_launcher --> study_manager
+
+    %% Data flow connections
+    data_fetch --> data_preprocessing
+    data_preprocessing --> features
+    features --> sequence_utils
+    sequence_utils --> model_base
+    data_utils --> data_fetch
+    data_loader --> data_manager
+    data_manager --> dashboard_data
+    vectors --> features
+
+    %% Feature connections
+    features --> feature_selection
+    indicator_tuning --> features
+    optimized_params --> features
+    optimized_processor --> features
+    vmli_indicator --> features
+
+    %% Model connections
+    model_factory --> model_base
+    model_factory --> Neural
+    model_factory --> Tree
+    model_factory --> Ensemble
+    model_manager --> model_factory
+    model_manager --> Training
+    ensemble_model --> ensemble_utils
+    ensemble_utils --> ensemble_weighting
+
+    %% Training connections
+    training_base --> trainer
+    trainer --> walk_forward
+    walk_forward --> incremental
+    walk_forward --> concept_drift
+    concept_drift --> drift_scheduler
+    drift_scheduler --> market_regime
+    callbacks --> trainer
+    adaptive_params --> trainer
+    confidence --> walk_forward
+
+    %% Tuning connections
+    study_manager --> model_evaluation
+    model_evaluation --> walk_forward
+    tuning_coordinator --> study_manager
+    meta_tuning --> tuning_coordinator
+    progress_helper --> study_manager
+    drift_optimizer --> concept_drift
+    ensemble_tuning --> ensemble_model
+    hyperparameter_integration --> tuning_coordinator
+
+    %% Dashboard connections
+    dashboard_core --> UI
+    dashboard_core --> Visualization
+    dashboard_core --> PatternDiscovery
+    dashboard_core --> prediction_service
+    dashboard_core --> reporter
+    dashboard_data --> data_fetch
+    dashboard_model --> model_factory
+    dashboard_viz --> visualization
+    model_viz --> ensemble_model
+    drift_dashboard --> concept_drift
+    xai_integration --> model_viz
+    reporter --> monitoring
+
+    %% Utility connections
+    utils --> Utilities
+    gpu_mem_management --> gpu_mem_manager
+    gpu_mem_manager --> training_optimizer
+    memory_utils --> model_optimization
+    error_handling --> robust_handler
+    env_setup --> gpu_mem_management
+    threadsafe --> error_handling
+    vectorized_ops --> data_preprocessing
+    file_cleanup --> watchdog
+
+    %% Configuration connections
+    config_loader --> Configuration
+    config_loader --> Training
+    config_loader --> Models
+    config_loader --> Dashboard
+    hyperparameter_config --> study_manager
+    resource_config --> training_optimizer
+    advanced_loss_config --> model_base
+    logger_config --> dashboard_core
+    api_keys --> data_fetch
+
+    %% Testing connections
+    test_preprocessing --> data_preprocessing
+    test_model_layers --> model_base
+    test_tabnet --> tabnet
+    debug_tuning --> study_manager
+    check_gpu --> gpu_mem_management
+    seed_test --> training_base
+
+    classDef main fill:#f4a460,stroke:#333,stroke-width:2px;
+    classDef data fill:#87cefa,stroke:#333,stroke-width:1px;
+    classDef model fill:#90ee90,stroke:#333,stroke-width:1px;
+    classDef train fill:#ff9999,stroke:#333,stroke-width:1px;
+    classDef tune fill:#ffb6c1,stroke:#333,stroke-width:1px;
+    classDef dash fill:#ffa07a,stroke:#333,stroke-width:1px;
+    classDef util fill:#d3d3d3,stroke:#333,stroke-width:1px;
+    classDef config fill:#ffe4b5,stroke:#333,stroke-width:1px;
+    classDef test fill:#e6e6fa,stroke:#333,stroke-width:1px;
+    classDef feature fill:#98fb98,stroke:#333,stroke-width:1px;
+
+    class Main main;
+    class Data,data_fetch,data_preprocessing,data_utils,data_loader,data_manager,sequence_utils,vectors data;
+    class Features,features,feature_selection,indicator_tuning,optimized_params,optimized_processor,vmli_indicator feature;
+    class Models,model_base,model_factory,model_manager,Neural,Tree,Ensemble,lstm_rnn,cnn,tft,nbeats,tabnet,ltc,rf,xgb,ensemble_model,ensemble_utils,ensemble_weighting model;
+    class Training,training_base,trainer,walk_forward,callbacks,adaptive_params,Drift,concept_drift,drift_scheduler,market_regime,incremental,confidence train;
+    class Tuning,study_manager,model_evaluation,tuning_coordinator,meta_tuning,progress_helper,drift_optimizer,ensemble_tuning,hyperparameter_integration tune;
+    class Dashboard,dashboard_core,UI,dashboard_ui,dashboard_state,dashboard_model,dashboard_data,dashboard_viz,dashboard_utils,dashboard_error,Visualization,visualization,model_viz,enhanced_weight_viz,drift_dashboard,xai_integration,PatternDiscovery,pattern_discovery,pattern_management,prediction_service,reporter,monitoring dash;
+    class Utilities,utils,GPU,gpu_mem_management,gpu_mem_manager,training_optimizer,Memory,memory_utils,model_optimization,ErrorHandling,error_handling,robust_handler,env_setup,threadsafe,vectorized_ops,file_cleanup,watchdog util;
+    class Configuration,config_loader,system_config,user_config,hyperparameter_config,resource_config,advanced_loss_config,logger_config,api_keys config;
+    class Testing,test_preprocessing,test_model_layers,test_tabnet,debug_tuning,check_gpu,seed_test test;

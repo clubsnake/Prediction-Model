@@ -6,13 +6,21 @@ This module provides functions to:
 3. Clean up GPU memory when needed
 4. Enable mixed precision training
 """
-
-import logging
+from typing import Any, Dict, List, Union
 import os
 import platform
-import sys
+import subprocess
+import logging
+import gc
+import numpy as np
+import threading
 import time
-from typing import Any, Dict, List, Union
+
+# Add thread-local storage for GPU contexts
+_thread_gpu_contexts = threading.local()
+
+# Add lock for GPU operations to prevent conflicts
+_gpu_lock = threading.RLock()
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +31,7 @@ def detect_amd_gpu() -> bool:
     """Detect if the system has an AMD GPU."""
     try:
         if platform.system() == "Windows":
-            import subprocess
-
+            
             output = subprocess.check_output(
                 "wmic path win32_VideoController get name", shell=True
             ).decode()
@@ -43,25 +50,17 @@ def check_gpu_availability():
     """
     try:
         import tensorflow as tf
-        
+                
         gpus = tf.config.list_physical_devices('GPU')
         
         # Get detailed GPU info
         gpu_info = {}
         for i, gpu in enumerate(gpus):
             try:
-                # Get memory info
-                gpu_info[i] = {
-                    'name': gpu.name,
-                    'device_type': 'GPU',
-                    'memory_limit': tf.config.experimental.get_memory_info(f'GPU:{i}')['current'] if hasattr(tf.config.experimental, 'get_memory_info') else 'Unknown'
-                }
+                details = tf.config.experimental.get_device_details(gpu)
+                gpu_info[i] = details
             except Exception as e:
-                gpu_info[i] = {
-                    'name': gpu.name,
-                    'device_type': 'GPU',
-                    'error': str(e)
-                }
+                gpu_info[i] = {"name": str(gpu), "error": str(e)}
                 
         result = {
             'gpus_available': len(gpus) > 0,
@@ -108,180 +107,130 @@ def configure_gpu_memory(config: dict = None) -> Dict[str, Any]:
     global _MEMORY_CONFIGURED
     logger = logging.getLogger("prediction_model")
     
-    logger.info("GPU Memory Configuration Attempt - Already Configured: %s", _MEMORY_CONFIGURED)
-    if config:
-        logger.info("Config keys: %s", list(config.keys()))
-
-    # Default configuration
-    DEFAULT_CONFIG = {
-        "allow_growth": True,
-        "gpu_memory_fraction": 0.95,  # Increased from "auto" to use 95% of GPU memory
-        "use_xla": True,
-        "mixed_precision": False,  # Default to False for safety
-        "visible_gpus": None,
-        "directml_enabled": True,
-        "use_gpu": True,
-    }
-
-    # Don't reconfigure if already done
-    if _MEMORY_CONFIGURED:
-        logger.warning(
-            "GPU memory already configured. Ignoring new configuration request."
-        )
-        return {"success": False, "reason": "Already configured"}
-
-    # Use default config if none provided
-    if config is None:
-        config = DEFAULT_CONFIG.copy()
-    else:
-        # Merge with defaults for missing values
-        for key, value in DEFAULT_CONFIG.items():
-            if key not in config:
-                config[key] = value
-
-    # Explicitly check for TF_FORCE_FLOAT32 environment variable
-    if "TF_FORCE_FLOAT32" in os.environ and os.environ["TF_FORCE_FLOAT32"] == "1":
-        config["mixed_precision"] = False
-        logger.info("TF_FORCE_FLOAT32 set to 1, forcing float32 precision")
-
-    results = {"success": True, "gpus_found": 0}
-
-    # Disable GPU if requested
-    if not config["use_gpu"]:
-        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-        logger.info("GPU usage disabled by configuration")
-        _MEMORY_CONFIGURED = True
-        return results
-
-    try:
-        # Check for DirectML environment
-        is_directml = False
-        if platform.system() == "Windows" and config["directml_enabled"]:
-            if (
-                "TENSORFLOW_USE_DIRECTML" in os.environ
-                or "DML_VISIBLE_DEVICES" in os.environ
-            ):
-                is_directml = True
-                logger.info("DirectML environment detected")
-                # Set environment variables for DirectML if not already set
-                if "TENSORFLOW_USE_DIRECTML" not in os.environ:
-                    os.environ["TENSORFLOW_USE_DIRECTML"] = "1"
-
-                # Configure environment for DirectML
-                os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
-
-                # Disable CUDA-specific operations
-                os.environ["TF_DIRECTML_KERNEL_SELECTION_ONLY"] = "1"
-
-        # Import TensorFlow
-        import tensorflow as tf
-
-        # Handle DirectML configuration specifically
-        if is_directml:
-            logger.info("Configuring TensorFlow for DirectML")
-            # Force TensorFlow to use compatible implementations
-            os.environ["TF_DIRECTML_KERNEL_FALLBACK"] = "1"
-
-            # Set implementation selection for LSTM to avoid CudnnRNN errors
-            # This forces TensorFlow to use the standard implementation instead of Cudnn
-            tf.keras.backend.set_session = lambda session: session
-            tf.config.optimizer.set_experimental_options(
-                {
-                    "auto_mixed_precision": config["mixed_precision"],
-                    "disable_meta_optimizer": False,
-                }
+    # Use lock to prevent multiple threads from configuring GPU simultaneously
+    with _gpu_lock:
+        logger.info("GPU Memory Configuration Attempt - Already Configured: %s", _MEMORY_CONFIGURED)
+        if config:
+            logger.info("Config keys: %s", list(config.keys()))
+    
+        # Default configuration
+        DEFAULT_CONFIG = {
+            "allow_growth": True,
+            "gpu_memory_fraction": 0.95,  # Increased from "auto" to use 95% of GPU memory
+            "use_xla": True,
+            "mixed_precision": False,  # Default to False for safety
+            "visible_gpus": None,
+            "directml_enabled": True,
+            "use_gpu": True,
+        }
+    
+        # Don't reconfigure if already done
+        if _MEMORY_CONFIGURED:
+            logger.warning(
+                "GPU memory already configured. Ignoring new configuration request."
             )
-
-            results["backend"] = "directml"
+            return {"success": False, "reason": "Already configured"}
+    
+        # Use default config if none provided
+        if config is None:
+            config = DEFAULT_CONFIG.copy()
+        else:
+            # Merge with defaults for missing values
+            for key, value in DEFAULT_CONFIG.items():
+                if key not in config:
+                    config[key] = value
+    
+        # Explicitly check for TF_FORCE_FLOAT32 environment variable
+        if "TF_FORCE_FLOAT32" in os.environ and os.environ["TF_FORCE_FLOAT32"] == "1":
+            config["mixed_precision"] = False
+            logger.info("TF_FORCE_FLOAT32 set to 1, forcing float32 precision")
+    
+        results = {"success": True, "gpus_found": 0}
+    
+        # Disable GPU if requested
+        if not config["use_gpu"]:
+            os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+            logger.info("GPU usage disabled by configuration")
             _MEMORY_CONFIGURED = True
             return results
-
-        # Find GPUs
-        gpus = tf.config.list_physical_devices("GPU")
-        results["gpus_found"] = len(gpus)
-
-        if gpus:
-            logger.info(f"Found {len(gpus)} GPU(s)")
-
-            try:
-                # Apply memory growth setting
-                if config["allow_growth"]:
-                    for gpu in gpus:
+    
+        try:
+            # Check for DirectML environment
+            is_directml = False
+            if platform.system() == "Windows" and config["directml_enabled"]:
+                if (
+                    "TENSORFLOW_USE_DIRECTML" in os.environ
+                    or "DML_VISIBLE_DEVICES" in os.environ
+                ):
+                    is_directml = True
+                    logger.info("DirectML environment detected")
+    
+            # Import TensorFlow
+            import tensorflow as tf
+    
+            # Handle DirectML configuration specifically
+            if is_directml:
+                logger.info("Configuring TensorFlow for DirectML")
+                # Force TensorFlow to use compatible implementations
+                os.environ["TF_DIRECTML_KERNEL_FALLBACK"] = "1"
+    
+                # Set implementation selection for LSTM to avoid CudnnRNN errors
+                # This forces TensorFlow to use the standard implementation instead of Cudnn
+                tf.keras.backend.set_session = lambda session: session
+    
+    
+            # Find GPUs
+            gpus = tf.config.list_physical_devices("GPU")
+            results["gpus_found"] = len(gpus)
+    
+            if gpus:
+                logger.info(f"Found {len(gpus)} GPU(s). Configuring memory growth.")
+                
+                # Always enable memory growth for all GPUs to prevent OOM errors
+                for gpu in gpus:
+                    try:
                         tf.config.experimental.set_memory_growth(gpu, True)
-                    logger.info("Memory growth enabled for all GPUs")
-                else:
-                    logger.info("Memory growth DISABLED")
-
-                # Enable XLA JIT compilation if requested
-                if config["use_xla"]:
+                        logger.info(f"Enabled memory growth for {gpu}")
+                    except RuntimeError as e:
+                        logger.warning(f"Error setting memory growth for {gpu}: {e}")
+                
+                # Set visible devices if specified
+                if config["visible_gpus"] is not None:
+                    visible_gpus = [gpus[i] for i in config["visible_gpus"] if i < len(gpus)]
+                    tf.config.set_visible_devices(visible_gpus, 'GPU')
+                    logger.info(f"Set visible GPUs to: {config['visible_gpus']}")
+                
+                # Enable XLA if requested
+                if config.get("use_xla", DEFAULT_CONFIG["use_xla"]):
                     tf.config.optimizer.set_jit(True)
-                    logger.info("XLA JIT compilation enabled")
+                    logger.info("Enabled XLA (Accelerated Linear Algebra)")
+                
+                # Configure mixed precision if requested
+                if config.get("mixed_precision", DEFAULT_CONFIG["mixed_precision"]):
+                    policy = tf.keras.mixed_precision.Policy("mixed_float16")
+                    tf.keras.mixed_precision.set_global_policy(policy)
+                    logger.info("Enabled mixed precision (float16)")
+            else:
+                logger.warning("No GPUs found, using CPU only")
+    
+            logger.info("GPU configuration complete - Found %d GPUs", len(gpus))
+            logger.info("Memory growth enabled: %s", config.get('allow_growth', False))
+            
+            # Mark as configured
+            _MEMORY_CONFIGURED = True
 
-                # Configure mixed precision - explicitly log the setting
-                logger.info(
-                    f"Mixed precision setting from config: {config['mixed_precision']}"
-                )
-
-                # This is the critical part: ensure we explicitly set the precision policy
-                if config["mixed_precision"]:
-                    tf.keras.mixed_precision.set_global_policy("mixed_float16")
-                    logger.info("Mixed precision ENABLED (float16)")
-                else:
-                    tf.keras.mixed_precision.set_global_policy("float32")
-                    logger.info("Mixed precision DISABLED (float32)")
-
-                # Verify the policy was applied
-                actual_policy = tf.keras.mixed_precision.global_policy()
-                logger.info(f"Active precision policy: {actual_policy.name}")
-
-                # NEW: Optimize thread settings for better GPU utilization
-                try:
-                    import multiprocessing
-                    cpu_count = multiprocessing.cpu_count()
-                    # Configure inter-op and intra-op parallelism
-                    tf.config.threading.set_inter_op_parallelism_threads(min(cpu_count, 8))
-                    tf.config.threading.set_intra_op_parallelism_threads(min(cpu_count, 8)) 
-                    logger.info(f"Configured threading for {min(cpu_count, 8)} threads")
-                except Exception as e:
-                    logger.warning(f"Error setting thread parallelism: {e}")
-
-                results["backend"] = "cuda" if len(gpus) > 0 else "cpu"
-                _MEMORY_CONFIGURED = True
-
-            except RuntimeError as e:
-                logger.error(f"Error configuring GPU memory: {e}")
-                results["success"] = False
-                results["error"] = str(e)
-
-                # Try a fallback configuration
-                try:
-                    for gpu in gpus:
-                        tf.config.experimental.set_memory_growth(gpu, True)
-                    logger.info("Fallback to basic memory growth configuration")
-                    _MEMORY_CONFIGURED = True
-                    results["success"] = True
-                    results["fallback"] = True
-                except Exception as e2:
-                    logger.error(f"Fallback configuration failed: {e2}")
-        else:
-            logger.warning("No GPUs detected. Running on CPU only.")
-            results["backend"] = "cpu"
-
-        logger.info("GPU configuration complete - Found %d GPUs", len(gpus))
-        logger.info("Memory growth enabled: %s", config.get('allow_growth', False))
-
-    except ImportError:
-        logger.error("TensorFlow not installed")
-        results["success"] = False
-        results["error"] = "TensorFlow not installed"
-    except Exception as e:
-        logger.error(f"Unexpected error configuring GPU memory: {e}")
-        results["success"] = False
-        results["error"] = str(e)
-
-    logger.info("Memory configuration results: success=%s", results.get('success', False))
-
-    return results
+        except ImportError:
+            logger.error("TensorFlow not installed")
+            results["success"] = False
+            results["error"] = "TensorFlow not installed"
+        except Exception as e:
+            logger.error(f"Unexpected error configuring GPU memory: {e}")
+            results["success"] = False
+            results["error"] = str(e)
+    
+        logger.info("Memory configuration results: success=%s", results.get('success', False))
+    
+        return results
 
 def configure_mixed_precision(use_mixed_precision=None):
     """
@@ -296,45 +245,39 @@ def configure_mixed_precision(use_mixed_precision=None):
     """
     try:
         import tensorflow as tf
-
-        # TF_FORCE_FLOAT32 takes highest priority
-        if "TF_FORCE_FLOAT32" in os.environ and os.environ["TF_FORCE_FLOAT32"] == "1":
-            use_mixed_precision = False
-            logger.info("TF_FORCE_FLOAT32 is set - forcing float32 precision")
-
-        # If not specified, try to get from config
-        if use_mixed_precision is None:
-            try:
-                # Avoid circular imports
-                sys.path.append(
-                    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
-                )
-                from config.config_loader import get_value
-
-                use_mixed_precision = get_value("hardware.use_mixed_precision", False)
-                logger.info(f"Mixed precision from config: {use_mixed_precision}")
-            except ImportError:
-                use_mixed_precision = False
-                logger.warning(
-                    "Could not import config_loader, defaulting to float32 precision"
-                )
-
-        # Apply the policy and log it clearly
-        if use_mixed_precision:
-            policy = tf.keras.mixed_precision.Policy("mixed_float16")
-            logger.info("Setting mixed_float16 precision policy")
-        else:
-            policy = tf.keras.mixed_precision.Policy("float32")
-            logger.info("Setting float32 precision policy")
-
-        # Apply the policy
-        tf.keras.mixed_precision.set_global_policy(policy)
-
-        # Verify and log the current policy
-        current_policy = tf.keras.mixed_precision.global_policy()
-        logger.info(f"Verified active precision policy: {current_policy.name}")
-
-        return current_policy
+        
+        # Use lock to prevent multiple threads from configuring simultaneously
+        with _gpu_lock:
+            # TF_FORCE_FLOAT32 takes highest priority
+            if "TF_FORCE_FLOAT32" in os.environ and os.environ["TF_FORCE_FLOAT32"] == "1":
+                policy = tf.keras.mixed_precision.Policy("float32")
+                logger.info("Using float32 precision (forced by TF_FORCE_FLOAT32)")
+    
+            # If not specified, try to get from config
+            if use_mixed_precision is None:
+                try:
+                    from config.config_loader import get_value
+                    use_mixed_precision = get_value("hardware.use_mixed_precision", False)
+                except ImportError:
+                    use_mixed_precision = False
+                    logger.info("Config not available, defaulting to float32 precision")
+    
+            # Apply the policy and log it clearly
+            if use_mixed_precision:
+                policy = tf.keras.mixed_precision.Policy("mixed_float16")
+                logger.info("Using mixed_float16 precision for better performance")
+            else:
+                policy = tf.keras.mixed_precision.Policy("float32")
+                logger.info("Using float32 precision for maximum compatibility")
+    
+            # Apply the policy
+            tf.keras.mixed_precision.set_global_policy(policy)
+    
+            # Verify and log the current policy
+            current_policy = tf.keras.mixed_precision.global_policy()
+            logger.info(f"Verified active precision policy: {current_policy.name}")
+    
+            return current_policy
 
     except Exception as e:
         logger.error(f"Error configuring mixed precision: {e}")
@@ -345,19 +288,21 @@ def clean_gpu_memory(force_gc=True):
     Clean GPU memory by clearing TensorFlow caches and running garbage collection.
     """
     try:
-        import gc
-
         import tensorflow as tf
-
-        # Clear TensorFlow session
-        if hasattr(tf.keras.backend, "clear_session"):
-            tf.keras.backend.clear_session()
-
-        # Run garbage collection if requested
-        if force_gc:
-            gc.collect()
-
-        return True
+        
+        # Use lock to prevent multiple threads from cleaning simultaneously
+        with _gpu_lock:
+            # Clear TensorFlow session
+            if hasattr(tf.keras.backend, "clear_session"):
+                tf.keras.backend.clear_session()
+                logger.debug("Cleared TensorFlow session")
+    
+            # Run garbage collection if requested
+            if force_gc:
+                gc.collect()
+                logger.debug("Ran garbage collection")
+    
+            return True
     except Exception as e:
         logger.error(f"Error cleaning GPU memory: {e}")
         return False
@@ -412,11 +357,22 @@ def get_memory_info(device_idx=0):
         logger.error(f"Error getting memory info: {e}")
         return {"error": str(e)}
 
+# Add function to make GPU operations thread-safe
+def thread_safe_gpu_operation(func):
+    """
+    Decorator to make GPU operations thread-safe.
+    Ensures only one thread accesses GPU resources at a time.
+    """
+    def wrapper(*args, **kwargs):
+        with _gpu_lock:
+            return func(*args, **kwargs)
+    return wrapper
+
+@thread_safe_gpu_operation
 def get_gpu_utilization(device_idx=0):
     """Get current GPU utilization percentage (compute usage, not just memory)"""
     try:
-        import subprocess
-        
+                
         result = subprocess.run(
             ["nvidia-smi", 
              f"--id={device_idx}", 
@@ -434,19 +390,21 @@ def get_gpu_utilization(device_idx=0):
         try:
             import GPUtil
             gpus = GPUtil.getGPUs()
-            if device_idx < len(gpus):
-                return gpus[device_idx].load * 100  # Convert to percentage
+            if len(gpus) > device_idx:
+                return gpus[device_idx].load * 100
+            return 0
         except ImportError:
-            pass
+            logger.debug("GPUtil not installed, cannot get detailed GPU utilization")
             
         # If all else fails, return an estimate based on memory usage
         mem_info = get_memory_info(device_idx)
         total = mem_info.get("total_mb", 0)
         used = mem_info.get("used_mb", 0)
         if total > 0:
-            return (used / total) * 100
+            return int((used / total) * 100)
         return 0
 
+@thread_safe_gpu_operation
 def stress_test_gpu(duration_seconds=10, intensity=0.9):
     """
     Run a stress test on the GPU to check stability and maximum performance.
@@ -460,9 +418,7 @@ def stress_test_gpu(duration_seconds=10, intensity=0.9):
     """
     try:
         import tensorflow as tf
-        import time
-        import numpy as np
-        
+                
         # Create a large tensor to fill GPU memory
         memory_info = get_memory_info(0)
         total_gb = memory_info.get("total_mb", 8192) / 1024  # Convert to GB
@@ -482,96 +438,85 @@ def stress_test_gpu(duration_seconds=10, intensity=0.9):
         side_length = int(np.sqrt(elements // 4))  # 4 dims for matrix multiplication
         
         # Create a stress test model - matrix multiplications are compute-intensive
-        @tf.function(jit_compile=True)  # Use XLA for faster execution
-        def stress_op(x):
-            for _ in range(5):  # Multiple iterations increases compute intensity
-                x = tf.matmul(x, x)
-            return x
+        @tf.function(jit_compile=True)
+        def stress_function(a, b):
+            # Matrix multiplication is compute-intensive
+            c = tf.matmul(a, b)
+            # Add more operations to increase complexity
+            d = tf.nn.relu(c)
+            e = tf.matmul(d, a)
+            return tf.reduce_sum(e)
         
         # Create a large tensor
         with tf.device("/gpu:0"):
-            # Use random data to prevent optimization shortcuts
-            x = tf.random.normal([side_length, side_length], dtype=dtype)
+            # Create tensors with appropriate dimensions
+            a = tf.random.normal([side_length, side_length], dtype=dtype)
+            b = tf.random.normal([side_length, side_length], dtype=dtype)
             
-            # Record start time and initial utilization
+            # Track utilization
             start_time = time.time()
-            initial_util = get_gpu_utilization(0)
-            utilization_samples = [initial_util]
-            temperature_samples = []
+            max_utilization = 0
+            total_utilization = 0
+            readings = 0
             
-            # Try to get initial temperature if available
+            # Get initial temperature if available
+            initial_temp = None
             try:
-                import subprocess
                 result = subprocess.run(
                     ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
                     stdout=subprocess.PIPE, check=True, universal_newlines=True
                 )
                 initial_temp = int(result.stdout.strip())
-                temperature_samples.append(initial_temp)
-                has_temp = True
             except:
-                has_temp = False
-                
-            logger.info(f"Starting stress test - initial GPU utilization: {initial_util}%")
+                pass
             
-            # Run the stress test loop
+            # Run computation for specified duration
             while time.time() - start_time < duration_seconds:
-                # Run compute-intensive operations
-                result = stress_op(x)
+                # Run computation
+                result = stress_function(a, b)
                 
-                # Force execution of the op (prevent optimization removing it)
-                tf.debugging.check_numerics(result, "Stress test error")
+                # Force result evaluation
+                _ = result.numpy()
                 
-                # Sample utilization every second
-                if int(time.time() - start_time) != len(utilization_samples) - 1:
-                    utilization_samples.append(get_gpu_utilization(0))
-                    
-                    # Sample temperature if available
-                    if has_temp:
-                        try:
-                            result = subprocess.run(
-                                ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
-                                stdout=subprocess.PIPE, check=True, universal_newlines=True
-                            )
-                            temperature_samples.append(int(result.stdout.strip()))
-                        except:
-                            pass
-            
-            # Calculate results
-            end_time = time.time()
-            duration = end_time - start_time
-            max_util = max(utilization_samples)
-            avg_util = sum(utilization_samples) / len(utilization_samples)
-            
-            # Temperature changes if available
-            temp_info = {}
-            if has_temp and len(temperature_samples) >= 2:
-                temp_info = {
-                    "initial_temp": temperature_samples[0],
-                    "final_temp": temperature_samples[-1],
-                    "temp_increase": temperature_samples[-1] - temperature_samples[0],
-                    "max_temp": max(temperature_samples)
-                }
+                # Check utilization
+                try:
+                    current_util = get_gpu_utilization(0)
+                    max_utilization = max(max_utilization, current_util)
+                    total_utilization += current_util
+                    readings += 1
+                except:
+                    pass
                 
-            logger.info(f"Stress test complete - max GPU utilization: {max_util}%, avg: {avg_util:.1f}%")
-            if temp_info:
-                logger.info(f"Temperature increased from {temp_info['initial_temp']}°C to {temp_info['final_temp']}°C")
+                # Small sleep to allow other processes
+                time.sleep(0.1)
             
-            # Clean up and return results
-            clean_gpu_memory(True)
+            # Get final temperature if available
+            final_temp = None
+            try:
+                result = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
+                    stdout=subprocess.PIPE, check=True, universal_newlines=True
+                )
+                final_temp = int(result.stdout.strip())
+            except:
+                pass
             
-            # Prepare results
-            results = {
-                "duration": duration,
-                "initial_utilization": initial_util,
-                "max_utilization": max_util,
-                "avg_utilization": avg_util,
-                "utilization_samples": utilization_samples,
-                "fans_spinning": avg_util > 80,  # Fan threshold
-                **temp_info  # Add temperature info if available
+            # Calculate average utilization
+            avg_utilization = total_utilization / max(1, readings)
+            
+            # Check if fans are likely spinning (utilization > 70% or temperature increased)
+            fans_spinning = max_utilization > 70
+            if initial_temp is not None and final_temp is not None:
+                fans_spinning = fans_spinning or (final_temp - initial_temp) > 5
+            
+            return {
+                "max_utilization": max_utilization,
+                "avg_utilization": avg_utilization,
+                "initial_temp": initial_temp,
+                "final_temp": final_temp,
+                "fans_spinning": fans_spinning,
+                "duration": duration_seconds
             }
-            
-            return results
             
     except Exception as e:
         logger.error(f"Error during GPU stress test: {e}")
@@ -580,7 +525,6 @@ def stress_test_gpu(duration_seconds=10, intensity=0.9):
 # Define HAS_GPUTIL for use above
 try:
     import GPUtil
-
     HAS_GPUTIL = True
 except ImportError:
     logger.warning("GPUtil not installed. Detailed GPU monitoring will be limited.")
@@ -985,3 +929,39 @@ def optimize_model_for_gpu(model):
     except Exception as e:
         logger.warning(f"Could not optimize model for GPU: {e}")
         return model
+
+def ensure_tensor_on_device(tensor, device=None):
+    """
+    Ensure a tensor is on the specified device.
+    Works with both TensorFlow and PyTorch tensors.
+    
+    Args:
+        tensor: Input tensor (TensorFlow or PyTorch)
+        device: Target device (if None, uses GPU if available)
+        
+    Returns:
+        Tensor on the specified device
+    """
+    try:
+        # Determine if it's a PyTorch tensor
+        is_torch = hasattr(tensor, 'to') and callable(tensor.to)
+        
+        if is_torch:
+            import torch
+            if device is None:
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            return tensor.to(device)
+        
+        # If it's a TensorFlow tensor, TF handles device placement automatically
+        # But we can be explicit:
+        import tensorflow as tf
+        if device is None:
+            device = '/GPU:0' if tf.config.list_physical_devices('GPU') else '/CPU:0'
+            
+        with tf.device(device):
+            # Create a new tensor on the target device
+            return tf.identity(tensor)
+        
+    except Exception as e:
+        logger.warning(f"Error placing tensor on device: {e}")
+        return tensor  # Return original tensor if anything fails

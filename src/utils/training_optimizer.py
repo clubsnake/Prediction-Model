@@ -105,6 +105,91 @@ MODEL_RESOURCE_PROFILES = {
     },
 }
 
+# Replace the thread-safe device context cache with DeviceContextManager
+class DeviceContextManager:
+    """Thread-safe device context management"""
+    
+    def __init__(self):
+        self._contexts = {}
+        self._lock = threading.RLock()
+        self._thread_local = threading.local()
+        
+    def get_device_context(self, device_path):
+        """Get or create a device context for the specified path"""
+        # Check thread-local storage first
+        if not hasattr(self._thread_local, 'contexts'):
+            self._thread_local.contexts = {}
+            
+        # If this thread already has the context, return it
+        if device_path in self._thread_local.contexts:
+            return self._thread_local.contexts[device_path]
+            
+        # Otherwise, create a new context with the lock
+        with self._lock:
+            context = tf.device(device_path)
+            # Store in both global and thread-local storage
+            self._contexts[device_path] = context
+            self._thread_local.contexts[device_path] = context
+            return context
+            
+    def clear_all(self):
+        """Clear all device contexts"""
+        with self._lock:
+            self._contexts.clear()
+            if hasattr(self._thread_local, 'contexts'):
+                self._thread_local.contexts.clear()
+
+# Create singleton instance
+device_context_manager = DeviceContextManager()
+
+# Replace the old globals with a reference to the manager for backward compatibility
+_thread_local_storage = threading.local()
+
+def configure_thread_for_gpu(thread_id=None):
+    """
+    Configure the current thread for GPU operations.
+    Call this at the beginning of any worker thread that needs GPU access.
+    
+    Args:
+        thread_id: Optional thread identifier for logging
+    """
+    thread_name = threading.current_thread().name
+    logger.info(f"Configuring thread {thread_name} (ID: {thread_id}) for GPU")
+    
+    # Enable memory growth for all GPUs in this thread
+    if tf.config.list_physical_devices('GPU'):
+        for gpu in tf.config.list_physical_devices('GPU'):
+            try:
+                tf.config.experimental.set_memory_growth(gpu, True)
+                logger.debug(f"Thread {thread_name}: Enabled memory growth for {gpu}")
+            except Exception as e:
+                logger.warning(f"Thread {thread_name}: Could not set memory growth: {e}")
+    
+    # Set thread-specific TensorFlow options
+    try:
+        tf.config.threading.set_inter_op_parallelism_threads(2)
+        tf.config.threading.set_intra_op_parallelism_threads(2)
+        logger.debug(f"Thread {thread_name}: Set TensorFlow threading options")
+    except Exception as e:
+        logger.warning(f"Thread {thread_name}: Could not set TensorFlow threading options: {e}")
+    
+    # Create a device context for this thread
+    device_path = "/GPU:0" if tf.config.list_physical_devices('GPU') else "/CPU:0"
+    device_context = device_context_manager.get_device_context(device_path)
+    
+    # Also store in thread local storage for backward compatibility
+    if not hasattr(_thread_local_storage, 'current_device'):
+        _thread_local_storage.current_device = device_path
+    
+    # Get training optimizer and update its thread local storage
+    try:
+        optimizer = get_training_optimizer()
+        if not hasattr(optimizer.thread_local, 'current_device'):
+            optimizer.thread_local.current_device = device_path
+    except Exception as e:
+        logger.warning(f"Thread {thread_name}: Could not update optimizer thread storage: {e}")
+    
+    return device_path
 
 @dataclass
 class ModelTask:
@@ -119,6 +204,7 @@ class ModelTask:
     error: str = None
     runtime: float = 0.0
     status: str = "pending"  # pending, running, completed, error
+    device: str = None       # Store device assignment
 
 
 class TrainingOptimizer:
@@ -189,11 +275,36 @@ class TrainingOptimizer:
         self.memory_snapshots = []
         self.high_memory_threshold = 0.85  # 85% threshold for high memory warning
 
+        # Add thread-local storage for device contexts
+        self.thread_local = threading.local()
+
         logger.info(
             f"TrainingOptimizer initialized: {self.cpu_count} CPUs, "
             f"{self.gpu_count} GPUs ({self.gpu_memory_gb:.1f} GB), "
             f"{self.system_memory_gb:.1f} GB RAM"
         )
+
+        # Configure GPU memory growth for all GPUs to avoid OOM errors
+        if self.has_gpu:
+            self._configure_gpu_memory_growth()
+
+    def _configure_gpu_memory_growth(self):
+        """Enable memory growth for all GPUs to prevent OOM errors"""
+        try:
+            for gpu in self.gpus:
+                try:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+                    logger.info(f"Enabled memory growth for {gpu}")
+                except Exception as e:
+                    logger.warning(f"Could not enable memory growth for {gpu}: {e}")
+                    
+            # Set thread options to avoid contention
+            tf.config.threading.set_inter_op_parallelism_threads(2)
+            tf.config.threading.set_intra_op_parallelism_threads(2)
+            logger.info("Configured TensorFlow threading options")
+            
+        except Exception as e:
+            logger.warning(f"Error configuring GPU memory growth: {e}")
 
     def _create_cpu_affinity_map(self) -> Dict[int, List[int]]:
         """Create a map of optimal CPU core groupings for affinity settings."""
@@ -271,9 +382,9 @@ class TrainingOptimizer:
         """Auto-configure based on available hardware for optimal performance."""
         # Count actual CPU and GPU models from the resource profiles
         gpu_models = sum(1 for model, profile in MODEL_RESOURCE_PROFILES.items() 
-                         if profile.get("gpu_memory_fraction", 0) > 0)
+                        if profile.get("gpu_memory_fraction", 0) > 0)
         cpu_models = sum(1 for model, profile in MODEL_RESOURCE_PROFILES.items() 
-                         if profile.get("gpu_memory_fraction", 0) == 0)
+                        if profile.get("gpu_memory_fraction", 0) == 0)
         
         # Verify our counts
         logger.info(f"Auto-configuring for {gpu_models} GPU models and {cpu_models} CPU-only models")
@@ -332,7 +443,6 @@ class TrainingOptimizer:
             "cpu_headroom_pct": 5,  # Minimal headroom for maximum CPU utilization
             "dynamic_allocation": True,  # Flag to indicate we support dynamic allocation
         }
-
 
     def get_model_settings(
         self, model_type: str, model_complexity: str = "medium"
@@ -730,6 +840,10 @@ class TrainingOptimizer:
 
     def _run_task_thread(self, task: ModelTask, results_dict: Dict):
         """Thread worker function to run a single task with resource management."""
+        # Create thread-local storage for this thread if it doesn't exist
+        if not hasattr(self.thread_local, 'device_context'):
+            self.thread_local.device_context = {}
+        
         # Acquire appropriate semaphore
         if task.resources["gpu_fraction"] > 0:
             self.gpu_semaphore.acquire()
@@ -745,6 +859,13 @@ class TrainingOptimizer:
 
         # Setup thread environment (CPU/GPU allocation) without modifying model parameters
         self._setup_thread_environment(task)
+
+        # CRITICAL CHANGE: Add device to the config for model creation
+        if hasattr(task, 'device'):
+            task.config["device"] = task.device
+            # If we have model params, add it there too for deeper propagation
+            if "params" in task.config:
+                task.config["params"]["device"] = task.device
 
         # Log start
         logger.info(f"Starting {task.model_type} model training (Task {task.id})")
@@ -802,7 +923,7 @@ class TrainingOptimizer:
     def _setup_thread_environment(self, task: ModelTask):
         """
         Setup isolated hardware environment for a task thread.
-
+        
         This only configures thread and memory allocation without modifying
         any model parameters. ALWAYS enables dynamic memory growth for TensorFlow.
         """
@@ -812,31 +933,51 @@ class TrainingOptimizer:
 
         try:
             # For TensorFlow models, set up an isolated thread environment
-
-            # Set thread-specific TensorFlow configuration
             hw_settings = task.config.get("hardware_settings", {})
 
             if task.resources["gpu_fraction"] > 0 and self.has_gpu:
-                # Set up GPU environment - ALWAYS enable memory growth for all GPUs
-                # This ensures TensorFlow can dynamically manage memory
-                for gpu in self.gpus:
-                    tf.config.experimental.set_memory_growth(gpu, True)
-
+                # Set up GPU environment
+                # The global memory growth setting is already configured in __init__
+                
                 # Set mixed precision if enabled
                 if hw_settings.get("mixed_precision", False):
-                    policy = tf.keras.mixed_precision.Policy("mixed_float16")
-                    tf.keras.mixed_precision.set_global_policy(policy)
+                    try:
+                        import tensorflow as tf
+                        policy = tf.keras.mixed_precision.Policy("mixed_float16")
+                        tf.keras.mixed_precision.set_global_policy(policy)
+                        logger.info(f"Enabled mixed precision for task {task.id}")
+                    except Exception as e:
+                        logger.warning(f"Could not set mixed precision: {e}")
+                    
+                # Use improved device context management
+                device_path = '/GPU:0'
+            else:
+                # For CPU-only tasks
+                device_path = '/CPU:0'
+            
+            # Get device context from manager
+            device_context = device_context_manager.get_device_context(device_path)
+            
+            # Store device in task
+            task.device = device_path
+            
+            # Store in thread-local storage
+            if not hasattr(self.thread_local, 'current_device'):
+                self.thread_local.current_device = device_path
 
             # Set thread-specific CPU config
             if "threads" in hw_settings and all(
                 k in hw_settings["threads"] for k in ["inter_op", "intra_op"]
             ):
+                import tensorflow as tf
                 tf.config.threading.set_inter_op_parallelism_threads(
                     hw_settings["threads"]["inter_op"]
                 )
                 tf.config.threading.set_intra_op_parallelism_threads(
                     hw_settings["threads"]["intra_op"]
                 )
+
+            logger.info(f"Thread environment configured with device: {task.device}")
 
         except Exception as e:
             logger.warning(f"Error setting up thread environment: {e}")
@@ -846,7 +987,12 @@ class TrainingOptimizer:
         try:
             # For TensorFlow models, clean up session
             if task.config.get("hardware_settings", {}).get("is_tf_model", False):
-                tf.keras.backend.clear_session()
+                import tensorflow as tf
+                # Use a try-except block to avoid errors if session is already cleared
+                try:
+                    tf.keras.backend.clear_session()
+                except Exception as e:
+                    logger.debug(f"Error clearing session: {e}")
 
             # Force garbage collection
             gc.collect()
@@ -857,25 +1003,29 @@ class TrainingOptimizer:
     def _global_memory_cleanup(self):
         """Perform a more thorough memory cleanup between groups."""
         try:
-            # More aggressive TensorFlow cleanup
-            tf.keras.backend.clear_session()
-
-            # Force garbage collection
-            import gc
-
-            gc.collect()
-
-            # On Linux, try to release memory back to the OS
-            if platform.system() == "Linux":
-                import ctypes
-
+            # Use lock to prevent multiple threads from cleaning simultaneously
+            with self.resource_lock:
+                # More aggressive TensorFlow cleanup
+                import tensorflow as tf
                 try:
-                    ctypes.CDLL("libc.so.6").malloc_trim(0)
-                    logger.debug("Released memory back to the OS")
-                except:
-                    pass
+                    tf.keras.backend.clear_session()
+                except Exception as e:
+                    logger.debug(f"Error clearing session: {e}")
 
-            logger.debug("Global memory cleanup complete")
+                # Force garbage collection
+                gc.collect()
+
+                # On Linux, try to release memory back to the OS
+                if platform.system() == "Linux":
+                    import ctypes
+
+                    try:
+                        ctypes.CDLL("libc.so.6").malloc_trim(0)
+                        logger.debug("Released memory back to the OS")
+                    except:
+                        pass
+
+                logger.debug("Global memory cleanup complete")
         except Exception as e:
             logger.warning(f"Error in global memory cleanup: {e}")
 
@@ -1524,6 +1674,46 @@ class TrainingOptimizer:
         
         return metrics
 
+    def get_device(self):
+        """Get the appropriate device (GPU/CPU) for model training"""
+        # Use device context manager for improved thread safety
+        if self.has_gpu:
+            device_path = '/GPU:0'
+        else:
+            device_path = '/CPU:0'
+            
+        # Get context from manager
+        device_context_manager.get_device_context(device_path)
+        
+        # Also store in thread local for consistency
+        if not hasattr(self.thread_local, 'current_device'):
+            self.thread_local.current_device = device_path
+        
+        return device_path
+
+    def place_model_on_device(self, model):
+        """Place a model on the appropriate device"""
+        try:
+            # Handle PyTorch models
+            if hasattr(model, 'to') and callable(model.to):
+                import torch
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                model = model.to(device)
+                logger.info(f"Placed PyTorch model on {device}")
+                return model, device
+                
+            # TensorFlow models handled differently
+            device = self.get_device()
+            
+            # Use device context manager
+            logger.info(f"Using TensorFlow device: {device}")
+            # Store device in thread-local storage
+            if not hasattr(self.thread_local, 'current_device'):
+                self.thread_local.current_device = device
+            return model, device
+        except Exception as e:
+            logger.warning(f"Error placing model on device: {e}")
+            return model, None
 
 # Streamlit Dashboard Components
 def render_optimizer_dashboard(optimizer):

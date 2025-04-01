@@ -1,0 +1,16 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "files.associations": {
+            "*.mmd": "markdown",
+            "*.md": "markdown"
+        },
+        "mermaid.preview.theme": "default",
+        "mermaid.preview.backgroundColor": "white",
+        "editor.formatOnSave": true
+    }
+}

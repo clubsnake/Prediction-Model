@@ -247,8 +247,8 @@ def calculate_indicators(df):
                         df.loc[mask, "Volume"] / df.loc[mask, "Volume_MA"]
                     )
 
-                # Handle any infinity values
-                df["Volume_Ratio"].replace([np.inf, -np.inf], np.nan, inplace=True)
+                # Handle any infinity values - fix chained assignment warning
+                df.loc[:, "Volume_Ratio"] = df["Volume_Ratio"].replace([np.inf, -np.inf], np.nan)
 
             except Exception as e:
                 logger.error(f"Error calculating volume indicators: {e}", exc_info=True)

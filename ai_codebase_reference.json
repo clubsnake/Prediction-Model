@@ -1,0 +1,411 @@
+{
+  "project_name": "Prediction Model",
+  "version": "1.0.0",
+  "last_updated": "2025-03-28",
+  "description": "A machine learning system for financial price prediction with ensemble models and adaptive capabilities",
+  
+  "directory_structure": {
+    "app": "Streamlit application entry points",
+    "checkpoints": "Model checkpoints storage",
+    "config": "Configuration files",
+    "data_cache": "Cache for fetched data",
+    "dependencies_setup": "Environment setup scripts",
+    "docs": "Documentation",
+    "model_weights": "Saved model weights",
+    "saved_models": "Saved model artifacts",
+    "src": {
+      "dashboard": "Dashboard UI and visualization",
+      "data": "Data fetching and preprocessing",
+      "features": "Feature engineering",
+      "models": "Model implementations",
+      "training": "Training and validation logic",
+      "tuning": "Hyperparameter optimization",
+      "utils": "Utility functions"
+    },
+    "static": "Static assets (CSS, images)",
+    "tests": "Testing modules"
+  },
+  
+  "core_components": {
+    "data_pipeline": {
+      "description": "Fetches financial data, performs preprocessing, and creates features",
+      "key_modules": [
+        "src/data/data.py",
+        "src/data/preprocessing.py",
+        "src/data/data_utils.py",
+        "src/data/data_loader.py",
+        "src/data/data_manager.py",
+        "src/data/sequence_utils.py",
+        "src/data/vectorized_indicators.py"
+      ],
+      "key_functions": {
+        "fetch_data": "Fetches data from various sources with fallback mechanisms",
+        "validate_data": "Validates and cleans data",
+        "preprocess_data": "Preprocesses raw data",
+        "create_sequences": "Creates sequences for time series models"
+      },
+      "data_sources": [
+        "CoinGecko API (crypto)",
+        "Finnhub API (stocks/crypto)",
+        "Alpha Vantage API (stocks/crypto)",
+        "YFinance (fallback)"
+      ]
+    },
+    
+    "feature_engineering": {
+      "description": "Creates and selects features for model training",
+      "key_modules": [
+        "src/features/features.py",
+        "src/features/feature_selection.py",
+        "src/features/indicator_tuning.py",
+        "src/features/optimized_params.py",
+        "src/features/optimized_processor.py",
+        "src/features/vmli_indicator.py"
+      ],
+      "key_functions": {
+        "feature_engineering": "Creates features from raw data",
+        "add_indicators": "Adds technical indicators to data"
+      }
+    },
+    
+    "model_system": {
+      "description": "Implementations of various model architectures",
+      "key_modules": [
+        "src/models/model.py",
+        "src/models/model_factory.py",
+        "src/models/model_manager.py",
+        "src/models/cnn_model.py",
+        "src/models/temporal_fusion_transformer.py",
+        "src/models/nbeats_model.py",
+        "src/models/tabnet_model.py",
+        "src/models/ltc_model.py",
+        "src/models/ensemble_model.py",
+        "src/models/ensemble_utils.py",
+        "src/models/ensemble_weighting.py"
+      ],
+      "key_functions": {
+        "create_model": "Factory method to create models",
+        "build_model_by_type": "Builds neural models by type",
+        "EnhancedEnsembleModel": "Ensemble model implementation"
+      },
+      "model_types": {
+        "neural_network": [
+          "LSTM",
+          "RNN",
+          "CNN",
+          "TabNet",
+          "TFT (Temporal Fusion Transformer)",
+          "N-BEATS",
+          "LTC (Liquid Time-Constant)"
+        ],
+        "tree_based": [
+          "Random Forest",
+          "XGBoost"
+        ],
+        "ensemble": [
+          "Enhanced Ensemble Model"
+        ]
+      }
+    },
+    
+    "training_system": {
+      "description": "Training and validation logic",
+      "key_modules": [
+        "src/training/train.py",
+        "src/training/trainer.py",
+        "src/training/walk_forward.py",
+        "src/training/callbacks.py",
+        "src/training/adaptive_params.py",
+        "src/training/concept_drift.py",
+        "src/training/drift_scheduler.py",
+        "src/training/market_regime.py",
+        "src/training/incremental_learning.py",
+        "src/training/confidence_metrics.py"
+      ],
+      "key_functions": {
+        "train_model": "Main training function",
+        "ModelTrainer.fit": "Model training implementation",
+        "unified_walk_forward": "Walk-forward validation implementation",
+        "MultiDetectorDriftSystem.update_error": "Drift detection"
+      },
+      "validation_approach": "Walk-forward validation for time series data"
+    },
+    
+    "tuning_system": {
+      "description": "Hyperparameter optimization using Optuna",
+      "key_modules": [
+        "src/tuning/study_manager.py",
+        "src/tuning/model_evaluation.py",
+        "src/tuning/tuning_coordinator.py",
+        "src/tuning/meta_tuning.py",
+        "src/tuning/progress_helper.py",
+        "src/tuning/drift_optimizer.py",
+        "src/tuning/ensemble_tuning.py",
+        "src/tuning/hyperparameter_integration.py",
+        "src/tuning/launcher.py"
+      ],
+      "key_functions": {
+        "StudyManager.run_all_studies": "Runs all tuning studies",
+        "create_model_objective": "Creates objective function for Optuna",
+        "evaluate_model_with_walkforward": "Evaluates models during tuning"
+      }
+    },
+    
+    "dashboard": {
+      "description": "Interactive visualization and monitoring using Streamlit",
+      "key_modules": [
+        "src/dashboard/dashboard/dashboard_core.py",
+        "src/dashboard/dashboard/dashboard_ui.py",
+        "src/dashboard/dashboard/dashboard_state.py",
+        "src/dashboard/dashboard/dashboard_model.py",
+        "src/dashboard/dashboard/dashboard_data.py",
+        "src/dashboard/dashboard/dashboard_visualization.py",
+        "src/dashboard/dashboard/dashboard_utils.py",
+        "src/dashboard/dashboard/dashboard_error.py",
+        "src/dashboard/visualization.py",
+        "src/dashboard/model_visualizations.py",
+        "src/dashboard/enhanced_weight_viz.py",
+        "src/dashboard/drift_dashboard.py",
+        "src/dashboard/xai_integration.py",
+        "src/dashboard/pattern_discovery/pattern_discovery_tab.py",
+        "src/dashboard/pattern_discovery/pattern_management.py",
+        "src/dashboard/prediction_service.py",
+        "src/dashboard/reporter.py",
+        "src/dashboard/monitoring.py"
+      ],
+      "key_functions": {
+        "main_dashboard": "Main dashboard function",
+        "create_ui_components": "Creates UI components",
+        "create_interactive_price_chart": "Creates price chart"
+      }
+    },
+    
+    "utility_systems": {
+      "description": "Utility functions and systems",
+      "key_modules": [
+        "src/utils/utils.py",
+        "src/utils/gpu_memory_management.py",
+        "src/utils/gpu_memory_manager.py",
+        "src/utils/training_optimizer.py",
+        "src/utils/memory_utils.py",
+        "src/utils/model_optimization.py",
+        "src/utils/error_handling.py",
+        "src/utils/robust_handler.py",
+        "src/utils/env_setup.py",
+        "src/utils/threadsafe.py",
+        "src/utils/vectorized_ops.py",
+        "src/utils/file_cleanup.py",
+        "src/utils/watchdog.py"
+      ],
+      "key_functions": {
+        "configure_gpu_memory": "Configures GPU memory",
+        "robust_error_boundary": "Error handling decorator",
+        "adaptive_memory_clean": "Memory management"
+      }
+    },
+    
+    "configuration": {
+      "description": "Configuration system",
+      "key_modules": [
+        "config/config_loader.py",
+        "config/system_config.json",
+        "config/user_config.yaml",
+        "config/hyperparameter_config.py",
+        "config/resource_config.py",
+        "config/advanced_loss_config.py",
+        "config/logger_config.py",
+        "config/api_keys.yaml"
+      ],
+      "key_functions": {
+        "get_config": "Gets configuration values"
+      }
+    }
+  },
+  
+  "key_workflows": {
+    "data_acquisition": {
+      "description": "Process of acquiring and preprocessing data",
+      "flow": [
+        "Request data",
+        "Try primary data source",
+        "Fall back to alternative sources if needed",
+        "Process and validate data",
+        "Store in cache",
+        "Return DataFrame"
+      ]
+    },
+    
+    "model_training": {
+      "description": "Process of training models",
+      "flow": [
+        "Preprocessed Data",
+        "Walk-Forward Validation",
+        "Train Models",
+        "Hyperparameter Tuning",
+        "Evaluate Models",
+        "Create Ensemble",
+        "Generate Forecast",
+        "Update Dashboard"
+      ]
+    },
+    
+    "hyperparameter_tuning": {
+      "description": "Process of tuning hyperparameters",
+      "flow": [
+        "Create study for each model type",
+        "Define model-specific parameter spaces",
+        "Use TPE sampler",
+        "Evaluate models using walk-forward validation",
+        "Prune underperforming trials",
+        "Track trial history and metrics"
+      ]
+    },
+    
+    "concept_drift_detection": {
+      "description": "Process of detecting and adapting to concept drift",
+      "flow": [
+        "Monitor error patterns in predictions",
+        "Detect various types of drift",
+        "Adapt ensemble weights",
+        "Adjust window sizes dynamically",
+        "Optimize drift hyperparameters"
+      ]
+    }
+  },
+  
+  "design_patterns": {
+    "factory_pattern": {
+      "description": "Used for model creation",
+      "implementation": "ModelFactory in src/models/model_factory.py"
+    },
+    "strategy_pattern": {
+      "description": "Used for algorithmic variations",
+      "implementation": "Various model implementations"
+    },
+    "observer_pattern": {
+      "description": "Used for event notification in dashboard",
+      "implementation": "Dashboard state management"
+    },
+    "decorator_pattern": {
+      "description": "Used for robust error handling",
+      "implementation": "robust_error_boundary in src/dashboard/dashboard_error.py"
+    },
+    "singleton_pattern": {
+      "description": "Used for managers and shared resources",
+      "implementation": "Various manager classes"
+    }
+  },
+  
+  "architectural_principles": [
+    "Modularity: Components are logically separated",
+    "Extensibility: New models can be easily added",
+    "Robustness: Multiple fallback mechanisms",
+    "Scalability: Parallel processing capabilities",
+    "Adaptability: Dynamic adaptation to changing data"
+  ],
+  
+  "potential_issues": [
+    "Some circular dependencies between modules",
+    "Some configuration duplication",
+    "Tight coupling between dashboard and model components",
+    "Limited automated testing coverage"
+  ],
+  
+  "function_dependencies": {
+    "launcher.py:main": ["dashboard_core.py:main_dashboard"],
+    "dashboard_core.py:main_dashboard": [
+      "dashboard_state.py:init_session_state",
+      "dashboard_ui.py:create_ui_components",
+      "dashboard_data.py:load_data"
+    ],
+    "dashboard_data.py:load_data": ["data.py:fetch_data"],
+    "data.py:fetch_data": [
+      "data.py:validate_data",
+      "data.py:_download_data_coingecko",
+      "data.py:_download_data_alphavantage",
+      "data.py:_download_data_finnhub",
+      "data.py:_download_data_cached",
+      "preprocessing.py:preprocess_data"
+    ],
+    "preprocessing.py:preprocess_data": ["features.py:feature_engineering"],
+    "features.py:feature_engineering": [
+      "sequence_utils.py:create_sequences",
+      "vectorized_indicators.py:add_indicators"
+    ],
+    "dashboard_model.py:create_model": ["model_factory.py:create_model"],
+    "model_factory.py:create_model": [
+      "model.py:build_model_by_type",
+      "model_factory.py:_create_tree_models",
+      "ensemble_model.py:EnhancedEnsembleModel"
+    ],
+    "model.py:build_model_by_type": [
+      "model.py:build_lstm_model",
+      "model.py:build_rnn_model",
+      "cnn_model.py:CNNPricePredictor",
+      "temporal_fusion_transformer.py:build_tft_model",
+      "nbeats_model.py:build_nbeats_model",
+      "ltc_model.py:build_ltc_model",
+      "tabnet_model.py:TabNetPricePredictor"
+    ],
+    "model_factory.py:_create_tree_models": [
+      "model_factory.py:_create_random_forest_model",
+      "model_factory.py:_create_xgboost_model"
+    ],
+    "ensemble_model.py:EnhancedEnsembleModel": [
+      "ensemble_utils.py:create_ensemble_model",
+      "ensemble_weighting.py:calculate_weights"
+    ],
+    "dashboard_model.py:create_model": ["training/train.py:train_model"],
+    "training/train.py:train_model": ["training/trainer.py:ModelTrainer.fit"],
+    "training/trainer.py:ModelTrainer.fit": ["training/walk_forward.py:unified_walk_forward"],
+    "training/walk_forward.py:unified_walk_forward": [
+      "walk_forward.py:train_model_function",
+      "walk_forward.py:calculate_mse/calculate_mape",
+      "walk_forward.py:update_forecast_in_session_state",
+      "walk_forward.py:get_ensemble_model",
+      "incremental_learning.py:ModelRegistry.register",
+      "concept_drift.py:MultiDetectorDriftSystem.update_error",
+      "confidence_metrics.py:calculate_confidence"
+    ],
+    "concept_drift.py:MultiDetectorDriftSystem.update_error": ["drift_scheduler.py:DriftTuningScheduler.record"],
+    "drift_scheduler.py:DriftTuningScheduler.record": ["market_regime.py:MarketRegimeManager.get_current_regime"],
+    "tuning/launcher.py:main": ["study_manager.py:StudyManager.run_all_studies"],
+    "study_manager.py:StudyManager.run_all_studies": [
+      "study_manager.py:StudyManager.create_study",
+      "study_manager.py:suggest_model_hyperparameters",
+      "study_manager.py:create_model_objective"
+    ],
+    "study_manager.py:create_model_objective": ["study_manager.py:evaluate_model_with_walkforward"],
+    "study_manager.py:evaluate_model_with_walkforward": ["training/walk_forward.py:unified_walk_forward"],
+    "study_manager.py:StudyManager.run_all_studies": ["model_evaluation.py:evaluate_models"],
+    "model_evaluation.py:evaluate_models": ["training/walk_forward.py:unified_walk_forward"],
+    "tuning_coordinator.py:run_tuning": ["study_manager.py:StudyManager.run_all_studies"],
+    "meta_tuning.py:meta_tune": ["tuning_coordinator.py:run_tuning"],
+    "drift_optimizer.py:optimize_drift_hyperparameters": ["concept_drift.py:MultiDetectorDriftSystem.update_error"],
+    "dashboard_ui.py:create_ui_components": [
+      "dashboard_visualization.py:create_interactive_price_chart",
+      "pattern_discovery/pattern_discovery_tab.py:render_tab",
+      "model_visualizations.py:ModelVisualizationDashboard",
+      "drift_dashboard.py:show_drift_visualization",
+      "xai_integration.py:create_xai_explorer"
+    ],
+    "dashboard_visualization.py:create_interactive_price_chart": ["visualization.py:create_plotly_figure"],
+    "pattern_discovery/pattern_discovery_tab.py:render_tab": ["pattern_discovery/pattern_management.py:identify_patterns"],
+    "model_visualizations.py:ModelVisualizationDashboard": ["enhanced_weight_viz.py:plot_weights"],
+    "dashboard_core.py:main_dashboard": [
+      "gpu_memory_management.py:configure_gpu_memory",
+      "dashboard_error.py:robust_error_boundary",
+      "memory_utils.py:adaptive_memory_clean",
+      "config_loader.py:get_config"
+    ],
+    "gpu_memory_management.py:configure_gpu_memory": ["gpu_memory_manager.py:GPUMemoryManager"],
+    "dashboard_error.py:robust_error_boundary": ["robust_handler.py:handle_error"],
+    "memory_utils.py:adaptive_memory_clean": ["training_optimizer.py:TrainingOptimizer"],
+    "model_factory.py:create_model": ["threadsafe.py:FileLock"],
+    "config_loader.py:get_config": [
+      "system_config.json",
+      "user_config.yaml",
+      "hyperparameter_config.py"
+    ]
+  }
+}

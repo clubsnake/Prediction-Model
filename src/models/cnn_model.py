@@ -20,15 +20,19 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, Dataset
 
+from src.utils.gpu_memory_manager import GPUMemoryManager
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# Device configuration
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-logger.info(f"Using device: {device}")
+# Replace the global device configuration with GPU manager
+gpu_manager = GPUMemoryManager(allow_growth=True)
+gpu_manager.initialize()
+device = gpu_manager.get_torch_device()
+logger.info(f"CNN model using device: {device}")
 
 # Suppress specific warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.functional")
@@ -473,8 +477,11 @@ class CNNPricePredictor(BaseEstimator, RegressorMixin):
         )
         val_loader = DataLoader(val_dataset, batch_size=self.batch_size, shuffle=False)
 
-        # Create model
+        # Create model and place on device
         self.model_ = self._create_model(self.input_dim)
+        # Ensure model is on the right device
+        self.model_ = self.model_.to(device)
+        logger.info(f"CNN model placed on device: {device}")
 
         # Define loss function and optimizer
         criterion = nn.MSELoss()

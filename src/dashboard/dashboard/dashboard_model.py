@@ -97,9 +97,46 @@ except ImportError as e:
     # even when full tuning capabilities aren't available
     def update_progress_in_yaml(progress_data):
         logger.warning("Using fallback update_progress_in_yaml")
+        
+    def read_tuning_status():
+        logger.warning("Using fallback read_tuning_status")
+        status_file = os.path.join(DATA_DIR, "tuning_status.txt")
+        status = {"is_running": False, "status": "idle"}
+        if os.path.exists(status_file):
+            try:
+                with open(status_file, "r") as f:
+                    lines = f.readlines()
+                for line in lines:
+                    if ":" in line:
+                        key, value = line.strip().split(":", 1)
+                        status[key.strip()] = value.strip()
+            except Exception as e:
+                logger.error(f"Error reading fallback tuning status: {e}")
+        return status
+        
+    def write_tuning_status(status_dict):
+        logger.warning("Using fallback write_tuning_status")
+        status_file = os.path.join(DATA_DIR, "tuning_status.txt")
+        try:
+            os.makedirs(os.path.dirname(status_file), exist_ok=True)
+            with open(status_file, "w") as f:
+                for key, value in status_dict.items():
+                    f.write(f"{key}: {value}\n")
+        except Exception as e:
+            logger.error(f"Error writing fallback tuning status: {e}")
 
     def is_stop_requested():
         return False
+    
+    def set_stop_requested(val):
+        logger.warning("Using fallback set_stop_requested")
+        if val:
+            # Write to a simple stop file as fallback
+            try:
+                with open(os.path.join(DATA_DIR, "stop_requested.txt"), "w") as f:
+                    f.write("true")
+            except Exception:
+                pass
     
     def get_progress_file_path(file_type, model_type=None):
         return os.path.join(DATA_DIR, f"{file_type}.yaml")
@@ -212,7 +249,7 @@ def start_tuning(ticker, timeframe, multipliers=None):
                     if st.button("Force Reset Tuning Status"):
                         if reset_tuning_status():
                             st.success("Tuning status has been reset. You can now start a new tuning process.")
-                            time.sleep(1)  # Short delay before rerun
+                            time.sleep(2)  # Longer delay before rerun to prevent UI conflicts
                             st.experimental_rerun()
                         else:
                             st.error("Failed to reset tuning status.")
@@ -234,10 +271,17 @@ def start_tuning(ticker, timeframe, multipliers=None):
         }
         print(f"Using default n_startup_trials: {N_STARTUP_TRIALS}")
     
-    # FIXED: Set up a flag to avoid recursive reruns
-    if st.session_state.get("_tuning_starting", False):
-        logger.warning("Tuning startup is already in progress - preventing loop")
-        return True
+        # FIXED: Set up a flag to avoid recursive reruns and check for recent reruns
+        if st.session_state.get("_tuning_starting", False):
+            logger.warning("Tuning startup is already in progress - preventing loop")
+            return True
+            
+        # Add protection against rapid re-triggers
+        last_start_time = st.session_state.get("_last_tuning_start_time", 0)
+        if time.time() - last_start_time < 5:  # Prevent restarts within 5 seconds
+            logger.warning("Tuning attempted to restart too quickly - throttling")
+            st.warning("Please wait a moment before starting tuning again.")
+            return False
         
     # Mark that we are starting tuning
     st.session_state["_tuning_starting"] = True
@@ -268,16 +312,57 @@ def start_tuning(ticker, timeframe, multipliers=None):
     
     logger.info(f"Starting tuning for {ticker}/{timeframe} after status update")
     
+    # Import dependencies for tuning
     try:
         logger.info("Importing start_tuning_process from meta_tuning")
         from src.tuning.meta_tuning import start_tuning_process
         logger.debug("Successfully imported start_tuning_process")
+    except Exception as e:
+        logger.error(f"Error importing required modules: {e}")
+        st.error(f"Failed to import required modules: {e}")
+        return False
         
-        # Create a progress placeholder
-        progress_ph = st.empty()
-        with progress_ph.container():
-            st.info(f"Starting tuning process for {ticker}/{timeframe}...")
-            progress_bar = st.progress(0)
+    # Create a progress placeholder
+    progress_ph = st.empty()
+    with progress_ph.container():
+        st.info(f"Starting tuning process for {ticker}/{timeframe}...")
+        progress_bar = st.progress(0)
+    
+    # Get the current cycle from progress or status
+    current_cycle = 1
+    try:
+        from src.tuning.progress_helper import read_progress_from_yaml, read_tuning_status
+        progress_data = read_progress_from_yaml()
+        status_data = read_tuning_status()
+        
+        # Check if ticker/timeframe match previous ones
+        same_ticker_timeframe = True
+        if progress_data:
+            prev_ticker = progress_data.get("ticker")
+            prev_timeframe = progress_data.get("timeframe")
+            
+            if prev_ticker and prev_timeframe:
+                if prev_ticker != ticker or prev_timeframe != timeframe:
+                    same_ticker_timeframe = False
+                    logger.info(f"Ticker/timeframe changed from {prev_ticker}/{prev_timeframe} to {ticker}/{timeframe}")
+        
+        # Only increment cycle if ticker/timeframe changed
+        if same_ticker_timeframe:
+            # Continue with existing cycle
+            if progress_data and "cycle" in progress_data:
+                current_cycle = progress_data.get("cycle", 1)
+            elif status_data and "cycle" in status_data:
+                current_cycle = status_data.get("cycle", 1)
+            logger.info(f"Continuing with existing cycle: {current_cycle}")
+        else:
+            # Increment cycle for new ticker/timeframe
+            if progress_data and "cycle" in progress_data:
+                current_cycle = progress_data.get("cycle", 1) + 1
+            elif status_data and "cycle" in status_data:
+                current_cycle = status_data.get("cycle", 1) + 1
+            logger.info(f"Starting new cycle for different ticker/timeframe: {current_cycle}")
+    except Exception as e:
+        logger.warning(f"Could not determine current cycle: {e}")
         
         # Update progress while waiting for completion
         update_progress_in_yaml({
@@ -286,7 +371,7 @@ def start_tuning(ticker, timeframe, multipliers=None):
             "status": "initializing",
             "timestamp": time.time(),
             "is_running": True,
-            "cycle": 1
+            "cycle": current_cycle
         })
         
         # CRITICAL FIX: Use threading to prevent blocking the Streamlit UI
@@ -294,23 +379,63 @@ def start_tuning(ticker, timeframe, multipliers=None):
         
         def run_tuning_process():
             try:
-                # FIXED: Clear the starting flag at the beginning of the thread
-                if "_tuning_starting" in st.session_state:
-                    del st.session_state["_tuning_starting"]
+                # Create status placeholder for thread-safe updates
+                status_placeholder = None
+                try:
+                    # Create a thread-local status placeholder
+                    global _thread_status_placeholder
+                    _thread_status_placeholder = st.empty()
+                    status_placeholder = _thread_status_placeholder
+                except Exception:
+                    pass
                     
-                logger.info("Starting tuning process via start_tuning_process (threaded)")
-                result = start_tuning_process(ticker=ticker, timeframe=timeframe, multipliers=multipliers, force_start=True)
-                logger.info(f"Tuning process completed with result: {result}")
-                
-                # Update status when complete
-                write_tuning_status({
-                    "is_running": False,
-                    "status": "completed",
-                    "ticker": ticker,
-                    "timeframe": timeframe,
-                    "timestamp": datetime.now().isoformat(),
-                    "completion_time": time.time()
-                })
+                try:
+                    # FIXED: Clear the starting flag at the beginning of the thread
+                    if "_tuning_starting" in st.session_state:
+                        del st.session_state["_tuning_starting"]
+                    
+                    # Thread-safe UI update
+                    if status_placeholder:
+                        with status_placeholder.container():
+                            st.info(f"Starting tuning process for {ticker}/{timeframe}...")
+                    
+                    logger.info("Starting tuning process via start_tuning_process (threaded)")
+                    result = start_tuning_process(ticker=ticker, timeframe=timeframe, multipliers=multipliers, force_start=True)
+                    logger.info(f"Tuning process completed with result: {result}")
+                    
+                    # Update status when complete
+                    write_tuning_status({
+                        "is_running": False,
+                        "status": "completed",
+                        "ticker": ticker,
+                        "timeframe": timeframe,
+                        "timestamp": datetime.now().isoformat(),
+                        "completion_time": time.time()
+                    })
+                    
+                    # Thread-safe UI update on completion
+                    if status_placeholder:
+                        with status_placeholder.container():
+                            st.success(f"Tuning process for {ticker}/{timeframe} completed successfully!")
+                except Exception as e:
+                    logger.error(f"Error in tuning thread: {e}", exc_info=True)
+                    # Reset status on error
+                    write_tuning_status({
+                        "is_running": False,
+                        "error": str(e),
+                        "ticker": ticker,
+                        "timeframe": timeframe,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    
+                    # Thread-safe UI update on error
+                    if status_placeholder:
+                        with status_placeholder.container():
+                            st.error(f"Error in tuning process: {e}")
+                    
+                    # FIXED: Also clear the starting flag on exception
+                    if "_tuning_starting" in st.session_state:
+                        del st.session_state["_tuning_starting"]
                 
             except Exception as e:
                 logger.error(f"Error in tuning thread: {e}", exc_info=True)
@@ -327,18 +452,26 @@ def start_tuning(ticker, timeframe, multipliers=None):
                 if "_tuning_starting" in st.session_state:
                     del st.session_state["_tuning_starting"]
         
+        # Create a persistent placeholder for UI feedback
+        progress_placeholder = st.empty()
+        with progress_placeholder.container():
+            st.info(f"Preparing to start tuning for {ticker}/{timeframe}...")
+            
+        # Record the start time to prevent rapid re-triggers
+        st.session_state["_last_tuning_start_time"] = time.time()
+        
         # Start the tuning in a separate thread
         tuning_thread = threading.Thread(target=run_tuning_process)
         tuning_thread.daemon = False  # FIXED: Keep as False for proper cleanup
         tuning_thread.start()
         
-        # FIXED: Sleep briefly to allow the thread to initialize
+        # FIXED: Sleep longer to allow the thread to initialize
         # This prevents immediate reruns while the thread is still setting up
-        time.sleep(0.5)
+        time.sleep(1.0)
         
-        # Show success message
-        logger.info(f"Tuning thread started for {ticker}/{timeframe}")
-        st.success(f"Tuning process for {ticker}/{timeframe} has been launched in the background. Check the 'Model Progress' tab for updates.")
+        # Show success message in the persistent placeholder
+        with progress_placeholder.container():
+            st.success(f"Tuning process for {ticker}/{timeframe} has been launched in the background. Check the 'Model Progress' tab for updates.")
         
         # Force flush all logger handlers to ensure logs are written
         for handler in logger.handlers:
@@ -374,40 +507,69 @@ def start_tuning(ticker, timeframe, multipliers=None):
 def stop_tuning():
     """Stop the currently running hyperparameter tuning process."""
     try:
+        # Create a placeholder for status messages
+        status_placeholder = st.empty()
+        with status_placeholder.container():
+            st.info("Stopping tuning process...")
+        
         # Set stop flag in session state immediately
         st.session_state["tuning_in_progress"] = False
         st.session_state["stopping_tuning"] = True  # Add a stopping flag to prevent reruns
         
-        # Try using the progress_helper to set stop flags
-        from src.tuning.progress_helper import set_stop_requested, write_tuning_status
-        from src.tuning.meta_tuning import stop_tuning_process
-        
-        # Use centralized tuning stop function if available
+        # Try using the progress_helper to set stop flags (with robust fallback)
         try:
-            stop_tuning_process()
-            logger.info("Called stop_tuning_process() from meta_tuning")
-        except Exception as e:
-            logger.warning(f"Could not call stop_tuning_process: {e}")
-            # Set the stop flag as fallback
-            set_stop_requested(True)
-            logger.info("Set stop_requested flag as fallback")
-        
-        # Update the tuning status file using the global datetime import
-        write_tuning_status({
-            "is_running": False,
-            "stopped_manually": True,
-            "stop_time": time.time(),
-            "timestamp": datetime.now().isoformat()
-        })
+            from src.tuning.progress_helper import set_stop_requested, write_tuning_status
+            from src.tuning.meta_tuning import stop_tuning_process
+            
+            # Use centralized tuning stop function if available
+            try:
+                stop_tuning_process()
+                logger.info("Called stop_tuning_process() from meta_tuning")
+            except Exception as e:
+                logger.warning(f"Could not call stop_tuning_process: {e}")
+                # Set the stop flag as fallback
+                set_stop_requested(True)
+                logger.info("Set stop_requested flag as fallback")
+            
+            # Update the tuning status file using the global datetime import
+            write_tuning_status({
+                "is_running": False,
+                "stopped_manually": True,
+                "stop_time": time.time(),
+                "message": "Manually stopped by user",
+                "timestamp": datetime.now().isoformat(),
+                "stopped_by_event": True
+            })
+        except ImportError as e:
+            logger.warning(f"Could not import tuning modules: {e}")
+            # Direct fallback approach without imports
+            try:
+                # Write stop request file
+                with open(os.path.join(DATA_DIR, "stop_requested.txt"), "w") as f:
+                    f.write("true")
+                
+                # Write directly to tuning status file
+                status_file = os.path.join(DATA_DIR, "tuning_status.txt")
+                with open(status_file, "w") as f:
+                    f.write("is_running: False\n")
+                    f.write("status: stopped_manually\n")
+                    f.write(f"timestamp: {datetime.now().isoformat()}\n")
+                    f.write("force_stop: True\n")
+                    f.write("message: Manually stopped by user\n")
+                    f.write("stopped_by_event: True\n")
+                    f.write(f"stop_time: {time.time()}\n")
+            except Exception as e2:
+                logger.error(f"Error with direct fallback stopping: {e2}")
         
         # Log the stop
         logger.info("Tuning process manually stopped")
         
-        # Add a slight delay to allow messages to propagate
-        time.sleep(0.5)
+        # Add a longer delay to allow messages to propagate and prevent UI conflicts
+        time.sleep(1.0)
         
-        # Show success message but without causing a rerun
-        st.success("Tuning process stopped. You can start a new tuning process now.")
+        # Show success message in the placeholder
+        with status_placeholder.container():
+            st.success("Tuning process stopped. You can start a new tuning process now.")
         
         return True
     except Exception as e:
@@ -442,40 +604,87 @@ def reset_tuning_status():
     incorrectly shows tuning is running when it's not.
     """
     try:
+        # Create a placeholder for status messages
+        status_placeholder = st.empty()
+        with status_placeholder.container():
+            st.info("Resetting tuning status...")
+        
         # Reset session state
         st.session_state["tuning_in_progress"] = False
         if "_tuning_starting" in st.session_state:
             del st.session_state["_tuning_starting"]
+            
+        # Clear any other problematic state flags
+        for key in ["stopping_tuning", "_last_tuning_start_time"]:
+            if key in st.session_state:
+                del st.session_state[key]
         
-        # Reset the tuning status file
-        from src.tuning.progress_helper import write_tuning_status
-        
-        # Write a clean status
-        write_tuning_status({
-            "is_running": False,
-            "status": "reset_manually",
-            "reset_time": time.time(),
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        # Also try to reset stop_requested flag
+        # Reset the tuning status file (with robust fallback)
         try:
-            from src.tuning.progress_helper import set_stop_requested
+            from src.tuning.progress_helper import write_tuning_status, set_stop_requested
+            
+            # Write a clean status
+            write_tuning_status({
+                "is_running": False,
+                "status": "reset_manually",
+                "reset_time": time.time(),
+                "timestamp": datetime.now().isoformat(),
+                "reset": True
+            })
+            
+            # Also reset stop_requested flag
             set_stop_requested(False)
-        except Exception as e:
-            logger.warning(f"Could not reset stop_requested flag: {e}")
+        except ImportError:
+            # Direct fallback if imports fail
+            try:
+                # Remove stop request file if it exists
+                stop_file = os.path.join(DATA_DIR, "stop_requested.txt")
+                if os.path.exists(stop_file):
+                    os.remove(stop_file)
+                
+                # Write clean status file
+                status_file = os.path.join(DATA_DIR, "tuning_status.txt")
+                with open(status_file, "w") as f:
+                    f.write("is_running: False\n")
+                    f.write("status: reset_manually\n")
+                    f.write(f"reset_time: {time.time()}\n")
+                    f.write(f"timestamp: {datetime.now().isoformat()}\n")
+                    f.write("reset: True\n")
+            except Exception as e:
+                logger.error(f"Error with direct fallback reset: {e}")
         
-        # Clean any lock files
+        # Clean any lock files - more thorough cleanup
+        lock_extensions = [".lock", ".tmp", ".temp"]
+        lock_patterns = ["tuning_status", "progress", "cycle_metrics"]
+        cleaned_files = 0
+        
         try:
-            status_lock = os.path.join(DATA_DIR, "tuning_status.txt.lock")
-            if os.path.exists(status_lock):
-                os.remove(status_lock)
-                logger.info("Removed tuning_status.txt.lock file")
+            for pattern in lock_patterns:
+                for ext in lock_extensions:
+                    pattern_path = os.path.join(DATA_DIR, f"{pattern}*{ext}*")
+                    import glob
+                    for lock_file in glob.glob(pattern_path):
+                        try:
+                            os.remove(lock_file)
+                            cleaned_files += 1
+                            logger.info(f"Removed lock file: {lock_file}")
+                        except Exception as lock_err:
+                            logger.warning(f"Could not remove {lock_file}: {lock_err}")
+            
+            if cleaned_files > 0:
+                logger.info(f"Reset removed {cleaned_files} lock/temp files")
         except Exception as e:
-            logger.warning(f"Could not remove lock file: {e}")
+            logger.warning(f"Could not clean lock files: {e}")
         
         # Log the reset
         logger.info("Tuning status manually reset")
+        
+        # Show success message in the placeholder
+        with status_placeholder.container():
+            st.success("Tuning status has been reset. You can now start a new tuning process.")
+        
+        # Add a delay to prevent UI conflicts
+        time.sleep(1.0)
         
         return True
     except Exception as e:
@@ -726,161 +935,20 @@ def ensemble_with_walkforward_objective(trial, ticker, timeframe, range_cat):
     return rmse
 
 
-def tune_for_combo(
-    ticker, timeframe, range_cat="all", n_trials=None, cycle=1, tuning_multipliers=None
-):
+def tune_for_combo(ticker, timeframe, range_cat="all", n_trials=None, cycle=1, tuning_multipliers=None):
     """Run hyperparameter optimization for a specific ticker-timeframe combination."""
-
-    # Define storage_name based on your requirements
-    storage_name = "sqlite:///example.db"  # Replace with actual storage path
-
-    # Create a unique study name based on ticker and timeframe
-    study_name = f"study_{ticker}_{timeframe}_{range_cat}_cycle{cycle}"
-
-    # Determine number of startup trials
-    adjusted_startup_trials = (
-        N_STARTUP_TRIALS if "N_STARTUP_TRIALS" in globals() else 5000
+    # Import the function from meta_tuning to avoid duplication
+    from src.tuning.meta_tuning import tune_for_combo as meta_tune_for_combo
+    
+    # Call the meta_tuning.py implementation
+    return meta_tune_for_combo(
+        ticker=ticker,
+        timeframe=timeframe,
+        range_cat=range_cat,
+        n_trials=n_trials,
+        cycle=cycle,
+        tuning_multipliers=tuning_multipliers
     )
-
-    # Initialize tuning_multipliers if None
-    if tuning_multipliers is None:
-        tuning_multipliers = {}
-
-    study = create_resilient_study(
-        study_name=study_name,
-        storage_name=storage_name,
-        direction="minimize",
-        n_startup_trials=adjusted_startup_trials,
-    )
-    study.set_user_attr("cycle", cycle)
-    study.set_user_attr("n_trials", n_trials)
-    study.set_user_attr("tuning_multipliers", tuning_multipliers)  # Store for reference
-    study.set_user_attr("ticker", ticker)
-    study.set_user_attr(
-        "using_multipliers", tuning_multipliers is not None and bool(tuning_multipliers)
-    )
-    study.set_user_attr("timeframe", timeframe)
-
-    # Safely check for best trial using a try-except block
-    try:
-        if study.best_trial:
-            logger.info(
-                f"Current best: {study.best_value:.6f} (Trial {study.best_trial.number})"
-            )
-    except (ValueError, AttributeError, RuntimeError):
-        logger.info(f"No trials completed yet for study {study_name}")
-
-    # Define callbacks
-    stop_callback = StopStudyCallback()
-    progress_callback = create_progress_callback(cycle=cycle)
-
-    # Set timeout based on multiplier
-    timeout_seconds = None
-    if tuning_multipliers.get("timeout_multiplier", 1.0) > 0:
-        base_timeout_seconds = 3600  # 1 hour baseline
-        timeout_seconds = int(
-            base_timeout_seconds * tuning_multipliers.get("timeout_multiplier", 1.0)
-        )
-
-    # Run optimization
-    try:
-        study.optimize(
-            robust_objective_wrapper(
-                lambda trial: ensemble_with_walkforward_objective(
-                    trial, ticker, timeframe, range_cat
-                )
-            ),
-            n_trials=n_trials,
-            callbacks=[progress_callback, stop_callback],
-            timeout=timeout_seconds,
-        )
-    except Exception as e:
-        logger.error(f"Error during optimization: {e}")
-    finally:
-        # Clean memory after optimization
-        adaptive_memory_clean("large")
-
-        # Update cycle metrics with summary information
-        try:
-            # Get best trial info
-            best_trial_info = None
-            try:
-                if study.best_trial:
-                    best_trial = study.best_trial
-                    best_trial_info = {
-                        "trial_number": best_trial.number,
-                        "rmse": best_trial.user_attrs.get("rmse", None),
-                        "mape": best_trial.user_attrs.get("mape", None),
-                        "model_type": best_trial.params.get("model_type", "unknown"),
-                        "value": best_trial.value,
-                    }
-            except (ValueError, AttributeError, RuntimeError):
-                logger.warning("No best trial available for study")
-
-            # Count completed and pruned trials
-            completed_trials = len(
-                [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-            )
-            pruned_trials = len(
-                [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
-            )
-
-            # Prepare cycle summary
-            cycle_summary = {
-                "cycle": cycle,
-                "ticker": ticker,
-                "timeframe": timeframe,
-                "total_trials": len(study.trials),
-                "completed_trials": completed_trials,
-                "pruned_trials": pruned_trials,
-                "best_trial": best_trial_info,
-                "timestamp": datetime.now().isoformat(),
-            }
-
-            # Save cycle metrics
-            update_cycle_metrics(cycle_summary, cycle_num=cycle)
-
-            # Update final progress to indicate completion
-            final_progress = {
-                "current_trial": len(study.trials),
-                "total_trials": n_trials,
-                "current_rmse": best_trial_info["rmse"] if best_trial_info else None,
-                "current_mape": best_trial_info["mape"] if best_trial_info else None,
-                "cycle": cycle,
-                "trial_progress": 1.0,  # Set to 100% complete
-                "timestamp": time.time(),
-                "ticker": ticker,
-                "timeframe": timeframe,
-                "status": "completed",
-            }
-            update_progress_in_yaml(final_progress)
-
-        except Exception as e:
-            logger.error(f"Error updating cycle metrics: {e}")
-
-    # Register the best model if study wasn't interrupted
-    try:
-        if not is_stop_requested() and study.best_trial:
-            model_id = register_best_model(study, study.best_trial, ticker, timeframe)
-
-            # If successful, save model ID to best_params.yaml
-            if model_id:
-                from src.utils.threadsafe import safe_read_yaml, safe_write_yaml
-
-                best_params_data = safe_read_yaml(BEST_PARAMS_FILE) or {}
-                if "best_models" not in best_params_data:
-                    best_params_data["best_models"] = {}
-
-                # Store by ticker and timeframe
-                if ticker not in best_params_data["best_models"]:
-                    best_params_data["best_models"][ticker] = {}
-
-                best_params_data["best_models"][ticker][timeframe] = model_id
-                safe_write_yaml(BEST_PARAMS_FILE, best_params_data)
-    except (ValueError, AttributeError, RuntimeError) as e:
-        logger.warning(f"Could not register best model: {e}")
-
-    return study
 
 
 @robust_error_boundary
@@ -1131,4 +1199,3 @@ def display_model_metrics(filter_by_cycle=None):
     except Exception as e:
         st.error(f"Error displaying model metrics: {e}")
         logger.error(f"Error in display_model_metrics: {e}", exc_info=True)
-

@@ -24,6 +24,7 @@ try:
         configure_gpu_memory,
         configure_mixed_precision,
     )
+    from src.utils.gpu_memory_manager import place_on_device
 
     logger.info("Successfully imported GPU memory management")
 except ImportError as e:
@@ -110,6 +111,17 @@ class ModelFactory:
 
             # Create model using appropriate function
             model = creation_map[model_type](params)
+            
+            # Place model on appropriate device (GPU for neural networks, CPU for tree-based)
+            try:
+                model, device = place_on_device(model, model_type)
+                logger.info(f"Model placed on device: {device}")
+                
+                # Add device info to params for future reference
+                if params is not None and isinstance(params, dict):
+                    params['device'] = device
+            except Exception as e:
+                logger.warning(f"Could not place model on device: {e}")
 
             return model
 
@@ -148,17 +160,36 @@ class ModelFactory:
         # Architecture parameters can be passed directly
         architecture_params = params.get("architecture_params", {})
         
-        model = build_model_by_type(
-            model_type=model_type,
-            num_features=num_features,
-            horizon=horizon,
-            learning_rate=learning_rate,
-            dropout_rate=dropout_rate,
-            loss_function=loss_function,
-            lookback=lookback,
-            architecture_params=architecture_params,
-            batch_size=batch_size
-        )
+        # Get device information from params if available
+        device = params.get("device", None)
+        
+        # Create model with device context for TensorFlow if available
+        if device:
+            with tf.device(device):
+                model = build_model_by_type(
+                    model_type=model_type,
+                    num_features=num_features,
+                    horizon=horizon,
+                    learning_rate=learning_rate,
+                    dropout_rate=dropout_rate,
+                    loss_function=loss_function,
+                    lookback=lookback,
+                    architecture_params=architecture_params,
+                    batch_size=batch_size
+                )
+        else:
+            # Create model without explicit device context
+            model = build_model_by_type(
+                model_type=model_type,
+                num_features=num_features,
+                horizon=horizon,
+                learning_rate=learning_rate,
+                dropout_rate=dropout_rate,
+                loss_function=loss_function,
+                lookback=lookback,
+                architecture_params=architecture_params,
+                batch_size=batch_size
+            )
 
         return model
 

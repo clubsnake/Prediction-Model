@@ -24,6 +24,8 @@ from tensorflow.keras.regularizers import l2  # type: ignore
 
 from src.models.nbeats_model import build_nbeats_model
 from src.models.temporal_fusion_transformer import TemporalFusionTransformer
+from src.utils.gpu_memory_manager import GPUMemoryManager
+
 
 # Fix the import from config
 try:
@@ -1697,3 +1699,23 @@ def build_optimization_metrics(trial=None):
         weights = default_weights
 
     return weights
+
+
+# Remove import of place_on_device if it exists
+from src.utils.gpu_memory_manager import GPUMemoryManager
+
+# Add this function to properly redirect to the real implementation
+def place_on_device(model, model_type=None):
+    """
+    Delegate to the implementation in gpu_memory_manager.
+    This prevents circular imports while maintaining compatibility.
+    
+    Args:
+        model: The model to place on a device
+        model_type: Type of model
+        
+    Returns:
+        tuple: (model, device)
+    """
+    from src.utils.gpu_memory_manager import place_on_device as pod
+    return pod(model, model_type)

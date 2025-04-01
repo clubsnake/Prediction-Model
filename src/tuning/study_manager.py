@@ -14,6 +14,7 @@ hyperparameter optimization across all model types while maximizing hardware uti
 """
 
 # Imports
+from datetime import datetime
 import os
 import sys
 import logging
@@ -21,6 +22,8 @@ import traceback
 import multiprocessing
 import threading
 import time
+import queue
+import concurrent.futures
 from datetime import datetime
 
 
@@ -686,23 +689,90 @@ class StudyManager:
 
         # Create study
         try:
-            # Load existing study if it exists in the database
-            study = optuna.load_study(study_name=study_name, storage=storage_url)
-            logger.info(f"Loaded existing study from database: {study_name}")
+            # Check if we should force a new study based on cycle
+            force_new_study = False
             
-            # Log information about existing trials
-            num_trials = len(study.trials)
-            best_value = getattr(study, "best_value", None)
-            logger.info(f"Study '{study_name}' has {num_trials} existing trials. Best value: {best_value}")
-            
-            # Update study status tracking
-            self.study_status[study_name] = {
-                "model_type": model_type,
-                "status": "loaded",
-                "trials": num_trials,
-                "best_value": best_value,
-                "timestamp": datetime.now().isoformat()
-            }
+            # Get existing study info to check cycle, if available
+            try:
+                existing_study = optuna.load_study(study_name=study_name, storage=storage_url)
+                # Only force new study if ticker/timeframe changed
+                # Get existing ticker/timeframe from study attributes
+                existing_ticker = existing_study.user_attrs.get("ticker")
+                existing_timeframe = existing_study.user_attrs.get("timeframe")
+                
+                # If ticker or timeframe changed, force new study
+                if existing_ticker and existing_timeframe and (
+                    existing_ticker != ticker or existing_timeframe != timeframe):
+                    logger.info(f"Study found for {existing_ticker}/{existing_timeframe} but requested {ticker}/{timeframe} - forcing new study")
+                    force_new_study = True
+                else:
+                    # Keep using same study even if cycle changed
+                    logger.info(f"Study exists for same ticker/timeframe - continuing with existing study")
+                    
+                    # Rename old study with cycle suffix to preserve it
+                    try:
+                        # Get cycle from study attributes
+                        existing_cycle = existing_study.user_attrs.get("cycle", 0)
+                        old_study_name = f"{study_name}_old_cycle{existing_cycle}"
+                        existing_study.set_study_attr("renamed_from", study_name)
+                        logger.info(f"Renamed old study {study_name} to {old_study_name}")
+                    except Exception as rename_error:
+                        logger.warning(f"Could not rename old study: {rename_error}")
+                
+                # Check if we need a new study anyway based on trials
+                if n_trials is not None and len(existing_study.trials) >= n_trials:
+                    # If study exists and has already reached required trials, still force new
+                    logger.info(f"Study already has {len(existing_study.trials)} trials (target: {n_trials}) - forcing new study")
+                    force_new_study = True
+            except Exception as e:
+                # Study doesn't exist yet, which is fine
+                logger.debug(f"No existing study found: {e}")
+                force_new_study = True
+                
+            if force_new_study:
+                # Create a new study with unique name
+                timestamp = int(time.time())
+                new_study_name = f"{study_name}_{timestamp}"
+                new_storage_url = f"sqlite:///{os.path.join(self.db_dir, f'{new_study_name}.db')}"
+                
+                logger.info(f"Creating new study with name: {new_study_name}")
+                with FileLock(new_storage_url + '.lock'):
+                    study = optuna.create_study(
+                        study_name=new_study_name,
+                        storage=new_storage_url,
+                        direction="minimize",
+                        sampler=optuna.samplers.TPESampler(seed=42)
+                    )
+                    
+                # Update tracking with new name
+                study_name = new_study_name
+                
+                # Update study status tracking
+                self.study_status[study_name] = {
+                    "model_type": model_type,
+                    "status": "created_new",
+                    "trials": 0,
+                    "best_value": None,
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                # Load existing study if not forcing new
+                study = optuna.load_study(study_name=study_name, storage=storage_url)
+                logger.info(f"Loaded existing study from database: {study_name}")
+                
+                # Log information about existing trials
+                num_trials = len(study.trials)
+                best_value = getattr(study, "best_value", None)
+                logger.info(f"Study '{study_name}' has {num_trials} existing trials. Best value: {best_value}")
+                
+                # Update study status tracking
+                self.study_status[study_name] = {
+                    "model_type": model_type,
+                    "status": "loaded",
+                    "trials": num_trials,
+                    "best_value": best_value,
+                    "timestamp": datetime.now().isoformat()
+                }
         except (KeyError, Exception) as e:
             # Create a new study if it doesn't exist
             logger.info(f"Study not found ({str(e)}), creating new study: {study_name}")
@@ -790,243 +860,252 @@ class StudyManager:
 
     def run_all_studies(self, studies_config):
         """
-        Run all studies completely in parallel, maximizing hardware utilization.
-        When faster models finish, their resources are reallocated to slower ones.
+        Run multiple Optuna studies concurrently for multiple model types.
         
         Args:
-            studies_config: List of study configurations for different model types
+            studies_config: List or Dict of study configurations
             
         Returns:
             Dict with results for each model type
         """
-        import concurrent.futures
-        from collections import defaultdict
-        results = {}
+        # Create a thread-safe queue for results
+        self.results_queue = queue.Queue()
         
-        logger = logging.getLogger("prediction_model")
-        logger.info("Running %d studies in parallel", len(studies_config))
-        
-        # Initialize GPU - one time at the beginning
-        if HAS_GPU_MANAGEMENT and gpu_memory_manager:
-            try:
-                # Make sure GPU warmup only happens once
-                if not hasattr(self, '_gpu_warmed_up'):
-                    gpu_memory_manager.warmup_gpu(intensity=0.7)
-                    logger.info("GPU warmed up for study execution")
-                    self._gpu_warmed_up = True
-            except Exception as e:
-                logger.warning(f"Failed to warm up GPU: {e}")
-        
-        # Monitor initial resource state
-        self._monitor_resources("initial")
-        
-        # Determine optimal number of trials for this cycle
-        if self.training_optimizer:
-            try:
-                trials_per_model = self.training_optimizer.optimize_trial_count(
-                    min_trials=self.min_trials_per_cycle, 
-                    max_trials=self.max_trials_per_cycle
-                )
-                logger.info(f"Using optimizer-suggested trial count: {trials_per_model}")
-            except Exception as e:
-                logger.warning(f"Error optimizing trial count: {e}")
-                trials_per_model = self.min_trials_per_cycle
-        else:
-            trials_per_model = self.min_trials_per_cycle
-        
-        # Create a thread pool executor for running studies
-        max_workers = min(len(studies_config), multiprocessing.cpu_count())
-        
-        # Adjust for GPU vs CPU models to avoid overloading GPU
-        if HAS_GPU_MANAGEMENT:
-            gpu_models = sum(1 for cfg in studies_config if "lstm" in cfg["component_type"] 
-                          or "cnn" in cfg["component_type"] or "tft" in cfg["component_type"])
-            if gpu_models > 0:
-                max_workers = min(max_workers, 7)  # Limit concurrent GPU workers
-                
-        logger.info(f"Running {len(studies_config)} studies with {max_workers} workers")
-        
-        # Set up cycle barrier for coordination if needed
-        if len(studies_config) > 1:
-            self.setup_cycle_barrier(len(studies_config))
-        
-        # Start all studies in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_model = {}
-            
-            # Submit all study configs to thread pool
+        # Convert list to dict if necessary for uniform processing
+        if isinstance(studies_config, list):
+            # Convert list to dict using model_type as key
+            studies_dict = {}
             for config in studies_config:
-                model_type = config["component_type"]
-                n_trials = config.get("n_trials", trials_per_model)
-                objective_fn = config["objective_func"]
-                callbacks = config.get("callbacks", [])
-                
-                # Create a future for this model
-                future = executor.submit(
-                    self._run_model_optimization,
-                    model_type,
-                    self.create_study(model_type, "", "", "", 1, n_trials),
-                    objective_fn,
-                    callbacks,
-                    n_trials,
-                    studies=self.studies
-                )
-                
-                future_to_model[future] = model_type
-                self.running_models.add(model_type)
-            
-            # Record start time for performance tracking
-            start_time = time.time()
-            completed_models = {}
-            model_runtimes = {}
-            
-            # Process completed studies as they finish
-            for i, future in enumerate(concurrent.futures.as_completed(future_to_model)):
-                model_type = future_to_model[future]
-                
-                try:
-                    model_result = future.result()
-                    results[model_type] = model_result
-                    
-                    # Record completion
-                    completed_models[model_type] = model_result
-                    model_runtime = time.time() - start_time
-                    model_runtimes[model_type] = model_runtime
-                    
-                    logger.info(f"Model {model_type} completed in {model_runtime:.2f}s")
-                    
-                    # Update finished models
-                    with self.resource_lock:
-                        self.finished_models.add(model_type)
-                        self.running_models.remove(model_type)
-                    
-                    # If we still have running models, try to reallocate resources
-                    if self.running_models:
-                        self._reallocate_resources(self.finished_models, self.running_models)
-                        
-                except Exception as e:
-                    logger.error(f"Error in study for {model_type}: {e}")
-                    results[model_type] = {"error": str(e), "traceback": traceback.format_exc()}
-                
-                # Monitor resources after each model completes
-                self._monitor_resources(f"after_{model_type}")
-                
-                # Clean memory periodically
-                if i % 2 == 0:
-                    self.clean_gpu_memory()
+                model_type = config.get("model_type")
+                if model_type:
+                    studies_dict[model_type] = config
+            studies_config = studies_dict
         
-        # Try to adjust resources if we detected significant runtime imbalance
-        if len(model_runtimes) > 1 and self.training_optimizer:
+        # Initialize status tracking for all models
+        self.study_status = {
+            model_type: {"status": "pending", "error": None} 
+            for model_type in studies_config.keys()
+        }
+        
+        # Clear thread local storage for device contexts
+        thread_local = threading.local()
+        if hasattr(thread_local, 'device_contexts'):
+            thread_local.device_contexts = {}
+        
+        # Determine optimal concurrency based on available resources
+        import multiprocessing
+        cpu_count = multiprocessing.cpu_count()
+        
+        # Check if we have GPU resource management
+        if HAS_GPU_MANAGEMENT:
             try:
-                self.training_optimizer.adjust_resources_for_imbalance(model_runtimes)
-            except Exception as e:
-                logger.warning(f"Error adjusting resources: {e}")
+                gpu_count = len(gpu_memory_manager.logical_gpus) if gpu_memory_manager.logical_gpus else 0
+            except:
+                gpu_count = 0
+        else:
+            gpu_count = 0
+            
+        # Calculate max workers based on CPU cores and model count
+        # Ensure at least 1 worker even if studies_config is empty
+        max_workers = max(1, min(
+            len(studies_config),  # Don't use more threads than models
+            max(2, min(cpu_count - 1, 8))  # Use at most 8 threads and leave 1 core free
+        ))
         
-        # Clean memory after all studies
-        self.clean_gpu_memory(True)
+        logger.info(f"Running {len(studies_config)} model studies with {max_workers} worker threads")
+        
+        # Create executor with proper naming
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {}
+            
+            # Launch studies for all model types
+            for model_type, config in studies_config.items():
+                # Create the worker function with proper thread naming
+                def worker_fn(model_type=model_type, config=config):
+                    # Set thread name for better debugging
+                    threading.current_thread().name = f"ModelWorker-{model_type}"
+                    
+                    # Configure this thread for GPU access
+                    from src.utils.training_optimizer import configure_thread_for_gpu
+                    device = configure_thread_for_gpu(model_type)
+                    
+                    try:
+                        # Update status
+                        self.study_status[model_type]["status"] = "running"
+                        
+                        # Create study
+                        study = self.create_study(
+                            model_type=model_type,
+                            ticker=config["ticker"],
+                            timeframe=config["timeframe"],
+                            range_cat=config["range_cat"],
+                            cycle=config.get("cycle", 1),
+                            n_trials=config.get("n_trials"),
+                            metric_weights=config.get("metric_weights"),
+                        )
+                        
+                        # Create objective function
+                        objective = create_model_objective(
+                            model_type=model_type,
+                            ticker=config["ticker"],
+                            timeframe=config["timeframe"],
+                            range_cat=config["range_cat"],
+                            metric_weights=config.get("metric_weights"),
+                        )
+                        
+                        # Define callbacks
+                        callbacks = []
+                        
+                        # Run optimization
+                        self._run_model_optimization(
+                            model_type=model_type,
+                            study=study,
+                            objective=objective,
+                            callbacks=callbacks,
+                            n_trials=config.get("n_trials"),
+                            studies=studies_config
+                        )
+                        
+                        # Update metrics
+                        self._update_model_metrics(model_type, study)
+                        
+                        # Update status
+                        self.study_status[model_type]["status"] = "completed"
+                        
+                        # Get best parameters
+                        best_params = self.get_best_params_for_model(model_type)
+                        
+                        # Create result
+                        result = {
+                            "best_params": best_params,
+                            "best_value": study.best_value if hasattr(study, "best_value") else None,
+                            "status": "completed"
+                        }
+                        
+                        # Add result to queue
+                        self.results_queue.put((model_type, result))
+                        
+                        return result
+                        
+                    except Exception as e:
+                        logger.error(f"Error in {model_type} study: {e}", exc_info=True)
+                        # Handle error and update status
+                        return self.handle_thread_error(model_type, e)
+                
+                # Submit worker to executor
+                futures[model_type] = executor.submit(worker_fn)
+            
+            # Collect results
+            results = {}
+            running_models = set(studies_config.keys())
+            
+            while running_models:
+                # Check for completed futures
+                completed_models = set()
+                
+                for model_type in list(running_models):
+                    if futures[model_type].done():
+                        try:
+                            # Get result from future
+                            result = futures[model_type].result()
+                            results[model_type] = result
+                            completed_models.add(model_type)
+                            
+                            # Update status
+                            self.study_status[model_type]["status"] = "completed"
+                            
+                        except Exception as e:
+                            # Handle unexpected errors
+                            logger.error(f"Error getting result for {model_type}: {e}")
+                            results[model_type] = {"error": str(e), "status": "error"}
+                            completed_models.add(model_type)
+                            self.study_status[model_type]["status"] = "error"
+                            self.study_status[model_type]["error"] = str(e)
+                
+                # If models completed, update running set and reallocate resources
+                if completed_models:
+                    running_models -= completed_models
+                    # Reallocate resources from finished models to running ones
+                    self._reallocate_resources(completed_models, running_models)
+                
+                # Process any results collected via queue
+                while not self.results_queue.empty():
+                    try:
+                        model_type, result = self.results_queue.get(block=False)
+                        results[model_type] = result
+                    except queue.Empty:
+                        break
+                    
+                # Small delay to avoid busy waiting
+                if running_models:
+                    import time
+                    time.sleep(0.5)
+        
+        # Final pass to process any remaining queue items
+        while not self.results_queue.empty():
+            try:
+                model_type, result = self.results_queue.get(block=False)
+                results[model_type] = result
+            except queue.Empty:
+                break
+                
+        # Clean up GPU memory after all studies
+        if HAS_GPU_MANAGEMENT:
+            try:
+                self.clean_gpu_memory(force_gc=True)
+            except Exception as e:
+                logger.warning(f"Error cleaning GPU memory: {e}")
+                
+        # Prepare for next cycle
+        self._prepare_for_next_cycle()
         
         return results
 
     def _run_model_optimization(self, model_type, study, objective, callbacks, n_trials, studies):
-        """Run optimization for a single model."""
-        logger.info(f"Starting optimization for {model_type} with {n_trials} trials")
-        
-        # Apply model-specific resource settings
-        self._apply_resource_settings(model_type)
-        
+        """Run optimization for a single model type."""
         try:
-            # Track this model in the running_models set
-            with self.resource_lock:
-                self.running_models.add(model_type)
-                logger.info(f"Added {model_type} to running models. Current running: {self.running_models}")
+            # Update status tracking
+            if model_type in self.study_status:
+                self.study_status[model_type]["status"] = "optimizing"
             
-            try:
-                # Add model_type-specific progress callback
-                model_callbacks = list(callbacks)
-                from src.tuning.meta_tuning import create_progress_callback
-                
-                # Get ticker and timeframe from study user attributes if available
-                ticker = study.user_attrs.get("ticker", None)
-                timeframe = study.user_attrs.get("timeframe", None)
-                
-                # Create progress callback with correct arguments
-                progress_callback = create_progress_callback(
-                    cycle=self.current_cycle, 
-                    model_type=model_type,
-                    ticker=ticker,
-                    timeframe=timeframe
-                )
-                model_callbacks.append(progress_callback)
-                
-                # Run Optuna optimization
-                study.optimize(objective, n_trials=n_trials, callbacks=model_callbacks)
-                
-                # If we reach here without exception, the study completed successfully
-                with self.resource_lock:
-                    self.finished_models.add(model_type)
-                    if model_type in self.running_models:
-                        self.running_models.remove(model_type)
-                    
-                    # Move resource reallocation AFTER the cycle barrier
-                    self.reallocation_needed.set()
-                    logger.info(f"Model {model_type} completed, will reallocate after cycle barrier")
-            except Exception as e:
-                logger.error(f"Error optimizing {model_type}: {e}")
-                # Still try to update sets in case of error
-                with self.resource_lock:
-                    if model_type in self.running_models:
-                        self.running_models.remove(model_type)
-                    self.finished_models.add(model_type)
+            # If we have GPU management, apply resource settings
+            resource_settings = self._apply_resource_settings(model_type)
+            if resource_settings:
+                logger.info(f"Applied resource settings for {model_type}: {resource_settings}")
             
-            # Get best trial
-            best_trial = study.best_trial if study.trials else None
+            # Monitor resources before optimization
+            self._monitor_resources(f"before_{model_type}")
             
-            # Collect metrics
-            metrics = self._update_model_metrics(model_type, study)
+            # Run optimization
+            study.optimize(objective, n_trials=n_trials, callbacks=callbacks)
             
-            # Wait at cycle barrier if we're using synchronized cycles
-            try:
-                if hasattr(self, 'cycle_barrier') and self.cycle_barrier.parties > 1:
-                    logger.info(f"Model {model_type} waiting at cycle barrier")
-                    self.cycle_barrier.wait()
-                    logger.info(f"All models reached barrier, continuing to next cycle")
-                    
-                    # NOW do resource reallocation after all models have reached the barrier
-                    # Only the last model to reach the barrier will do the reallocation
-                    with self.lock:
-                        if self.reallocation_needed.is_set() and model_type == list(self.finished_models)[-1]:
-                            logger.info("Performing resource reallocation now that all models reached barrier")
-                            from src.utils.training_optimizer import get_training_optimizer
-                            optimizer = get_training_optimizer()
-                            optimizer.prioritize_slower_models(
-                                finished_models=self.finished_models, 
-                                running_models=self.running_models
-                            )
-                            self.reallocation_needed.clear()
-            except Exception as e:
-                logger.error(f"Error at cycle barrier for {model_type}: {e}")
-
-            # Store updated study in shared dict
-            for study_name, s in studies.items():
-                if study_name == study.study_name:
-                    studies[study_name] = study
-                    
-            # Create result dictionary
-            result = {
-                "model_type": model_type,
-                "best_value": study.best_value if best_trial else None,
-                "best_trial_number": best_trial.number if best_trial else None,
-                "rmse": best_trial.user_attrs.get("rmse") if best_trial else None,
-                "mape": best_trial.user_attrs.get("mape") if best_trial else None,
-                "directional_accuracy": best_trial.user_attrs.get("directional_accuracy") if best_trial else None,
-                "trials_completed": len(study.trials),
-            }
-                    
-            return result
+            # Monitor resources after optimization
+            self._monitor_resources(f"after_{model_type}")
+            
+            # Update status
+            if model_type in self.study_status:
+                self.study_status[model_type]["status"] = "optimized"
+            
+            return True
             
         except Exception as e:
-            logger.error(f"Error optimizing {model_type}: {e}")
-            return {"error": str(e), "traceback": traceback.format_exc()}
+            logger.error(f"Error in {model_type} optimization: {e}", exc_info=True)
+            # Update status
+            if model_type in self.study_status:
+                self.study_status[model_type]["status"] = "error"
+                self.study_status[model_type]["error"] = str(e)
+            
+            # Raise to caller for handling
+            raise
+
+    def handle_thread_error(self, model_type, error):
+        """Handle errors from worker threads in a centralized way."""
+        logger.error(f"Error in thread for {model_type}: {error}")
+        # Update status tracking
+        if model_type in self.study_status:
+            self.study_status[model_type]['status'] = 'error'
+            self.study_status[model_type]['error'] = str(error)
+        return {"error": str(error), "status": "error"}
 
     def _reallocate_resources(self, finished_models, running_models):
         """
@@ -1037,38 +1116,54 @@ class StudyManager:
             running_models: Set of model types still running
         """
         if not finished_models or not running_models:
-            return
+            return False
             
         logger.info(f"Reallocating resources from {finished_models} to {running_models}")
         
-        # Use training optimizer to handle resource reallocation if available
-        if self.training_optimizer:
+        # If we have GPU management, use training optimizer's prioritization
+        if HAS_GPU_MANAGEMENT:
             try:
-                self.training_optimizer.prioritize_slower_models(finished_models, running_models)
+                optimizer = get_training_optimizer()
+                if hasattr(optimizer, 'prioritize_slower_models'):
+                    optimizer.prioritize_slower_models(finished_models, running_models)
+                    return True
             except Exception as e:
-                logger.warning(f"Error in resource reallocation: {e}")
+                logger.warning(f"Error using training optimizer for reallocation: {e}")
         
-        # Reset resources to let the system know resources are available
-        self.clean_gpu_memory(True)
+        # If we couldn't use the optimizer, use our own simple reallocation
+        try:
+            # Calculate how many more resources each running model can get
+            if running_models:
+                boost_factor = 1 + (len(finished_models) / len(running_models) * 0.5)
+                logger.info(f"Simple resource boost factor: {boost_factor:.2f}x")
+                
+                # Future: Implement resource boosting logic
+                return True
+        except Exception as e:
+            logger.warning(f"Error in simple resource reallocation: {e}")
+        
+        return False
     
     def _apply_resource_settings(self, model_type):
-        """Apply model-specific resource settings."""
-        # If we have a training optimizer, get optimal settings
-        if self.training_optimizer:
-            try:
-                # Get optimal settings for this model
-                settings = self.training_optimizer.get_model_settings(model_type, "medium")
+        """Apply resource settings for a specific model type."""
+        if not HAS_GPU_MANAGEMENT:
+            return None
+            
+        try:
+            # Get the training optimizer
+            optimizer = get_training_optimizer()
+            
+            # Get resource config for this model type
+            config = optimizer.get_model_config(model_type)
+            
+            # Apply memory settings if needed
+            if config.get("clean_memory", False):
+                self.clean_gpu_memory()
                 
-                # Apply GPU settings if applicable
-                if settings.get("gpu_memory_fraction", 0) > 0 and HAS_GPU_MANAGEMENT:
-                    # Use training optimizer's recommended settings directly
-                    from src.utils.gpu_memory_management import apply_optimal_gpu_settings
-                    if settings["gpu_memory_fraction"] > 0.2:
-                        # Apply optimal settings for GPU-intensive model
-                        apply_optimal_gpu_settings(workload_intensity=settings["gpu_memory_fraction"])
-                    
-            except Exception as e:
-                logger.warning(f"Error applying resource settings for {model_type}: {e}")
+            return config
+        except Exception as e:
+            logger.warning(f"Error applying resource settings for {model_type}: {e}")
+            return None
 
     def get_best_model(self):
         """

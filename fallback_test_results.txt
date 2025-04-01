@@ -1,0 +1,6 @@
+FALLBACK FUNCTION TEST RESULTS
+=============================
+
+Testing read_tuning_status...
+Current tuning status: {'is_running': False, 'status': 'test_status', 'timestamp': '2025-03-31T02:08:00', 'test_key': 'test_value'}
+Error in read_tuning_status: 'charmap' codec can't encode character '\u2713' in position 0: character maps to <undefined>

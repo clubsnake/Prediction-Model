@@ -4,6 +4,9 @@ import time
 import sys
 import numpy as np
 import tensorflow as tf
+import threading
+from contextlib import contextmanager
+import gc
 
 logger = logging.getLogger("GPU_Memory_Manager")
 
@@ -19,6 +22,83 @@ from src.utils.gpu_memory_management import (
 # Import adaptive_memory_clean from memory_utils instead of duplicating it
 from src.utils.memory_utils import adaptive_memory_clean
 
+# Add thread lock to prevent concurrent GPU memory modifications
+_manager_lock = threading.RLock()
+
+# Thread-local storage for device contexts
+_thread_local_context = threading.local()
+
+class DeviceContextScope:
+    """
+    Context manager for TensorFlow device operations.
+    Ensures operations run on the specified device and cleans up properly.
+    
+    Example:
+        with DeviceContextScope('/GPU:0', memory_manager):
+            # All TensorFlow operations here will run on GPU:0
+            model = tf.keras.models.Sequential(...)
+            model.fit(...)
+    """
+    
+    def __init__(self, device_path, memory_manager=None):
+        """
+        Initialize with device path and optional memory manager
+        
+        Args:
+            device_path: TensorFlow device path (e.g., '/GPU:0', '/CPU:0')
+            memory_manager: Optional GPUMemoryManager instance for optimization
+        """
+        self.device_path = device_path
+        self.memory_manager = memory_manager
+        self.device_context = None
+        
+    def __enter__(self):
+        """Enter the device context"""
+        # Import tensorflow here to avoid circular imports
+        import tensorflow as tf
+        
+        # Create device context
+        self.device_context = tf.device(self.device_path)
+        
+        # Store old context if needed for nesting
+        if not hasattr(_thread_local_context, 'stack'):
+            _thread_local_context.stack = []
+            
+        # Save previous context
+        _thread_local_context.stack.append(self.device_path)
+        
+        # Store in thread-local for proper nesting
+        _thread_local_context.current_device = self.device_path
+        
+        # Enter TF device context
+        self.device_context.__enter__()
+        
+        # Optimize settings if memory manager provided
+        if self.memory_manager:
+            self.memory_manager.optimize_for_context(self.device_path)
+            
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the device context and clean up"""
+        # Exit TF device context
+        self.device_context.__exit__(exc_type, exc_val, exc_tb)
+        
+        # Restore previous context if there was one
+        if hasattr(_thread_local_context, 'stack') and _thread_local_context.stack:
+            _thread_local_context.stack.pop()
+            if _thread_local_context.stack:
+                _thread_local_context.current_device = _thread_local_context.stack[-1]
+            else:
+                if hasattr(_thread_local_context, 'current_device'):
+                    delattr(_thread_local_context, 'current_device')
+        
+        # Clean up memory if requested and no exception occurred
+        if self.memory_manager and exc_type is None:
+            self.memory_manager.post_operation_cleanup(aggressive=False)
+        
+        # Return False to propagate any exceptions
+        return False
 
 class GPUMemoryManager:
 
@@ -44,6 +124,7 @@ class GPUMemoryManager:
         self.batch_size_log = []
         self.performance_mode = False  # Default to standard mode
         self.gpu_utilization_history = []  # Track GPU utilization
+        self.has_gpu = False  # Default to False until initialized
 
         # Enhanced DirectML detection
         self.is_directml = (
@@ -71,6 +152,37 @@ class GPUMemoryManager:
             
         if self.is_directml:
             self.logger.info("DirectML environment detected in GPUMemoryManager")
+            
+        # Add thread-local context for GPU operations
+        self.thread_local = threading.local()
+
+    def _configure_directml_compatibility(self):
+        """
+        Configure TensorFlow for DirectML compatibility
+        
+        This method sets necessary options to make LSTM and other layers work with DirectML
+        """
+        try:
+            import tensorflow as tf
+            
+            # Force LSTM implementation to standard (avoid CuDNN implementation)
+            if hasattr(tf.keras.layers, 'LSTM'):
+                tf.keras.layers.LSTM._use_implementation = 1
+                self.logger.info("Configured LSTM for DirectML compatibility")
+                
+            # Set GPU memory growth to prevent OOM errors
+            for gpu in tf.config.list_physical_devices('GPU'):
+                try:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+                except Exception as e:
+                    self.logger.warning(f"Could not set memory growth for DirectML: {e}")
+                    
+            # Disable XLA compilation which may not be compatible
+            os.environ['TF_XLA_FLAGS'] = '--tf_xla_auto_jit=0'
+            self.logger.info("Disabled XLA compilation for DirectML compatibility")
+            
+        except Exception as e:
+            self.logger.error(f"Error configuring DirectML compatibility: {e}")
 
     def initialize(self):
         """
@@ -79,32 +191,49 @@ class GPUMemoryManager:
         Returns:
             List of logical devices available after configuration
         """
-        config = {
-            "allow_growth": self.allow_growth,
-            "visible_gpus": self.visible_devices,
-            "directml_enabled": self.is_directml,  # Pass DirectML flag to configuration
-        }
-        configure_gpu_memory(config)
-        self.initialized = True
-
-        # Get list of GPUs after configuration
-        try:
-            import tensorflow as tf
-
-            self.original_gpus = tf.config.list_physical_devices("GPU")
-            self.logical_gpus = tf.config.list_logical_devices("GPU")
-            self.logger.info(f"Available logical GPUs: {len(self.logical_gpus)}")
-
-            # Handle LSTM implementation for DirectML to avoid CudnnRNN errors
-            if self.is_directml:
-                self._configure_directml_compatibility()
-        except Exception as e:
-            self.logger.error(f"Error getting GPU list: {e}")
-
-        return self.logical_gpus
+        # Use lock to prevent concurrent initialization
+        with _manager_lock:
+            config = {
+                "allow_growth": self.allow_growth,
+                "visible_gpus": self.visible_devices,
+                "directml_enabled": self.is_directml,  # Pass DirectML flag to configuration
+            }
+            configure_gpu_memory(config)
+            self.initialized = True
+    
+            # Get list of GPUs after configuration
+            try:
+                import tensorflow as tf
+    
+                self.original_gpus = tf.config.list_physical_devices("GPU")
+                self.logical_gpus = tf.config.list_logical_devices("GPU")
+                self.has_gpu = len(self.logical_gpus) > 0  # Set has_gpu based on detected GPUs
+                self.logger.info(f"Available logical GPUs: {len(self.logical_gpus)}")
+    
+                # Handle LSTM implementation for DirectML to avoid CudnnRNN errors
+                if self.is_directml:
+                    self._configure_directml_compatibility()
+                    
+                # Store device contexts in thread-local storage
+                if not hasattr(self.thread_local, 'device_contexts'):
+                    self.thread_local.device_contexts = {}
+                    for i, gpu in enumerate(self.logical_gpus):
+                        # Create device context for each GPU
+                        self.thread_local.device_contexts[f'/GPU:{i}'] = tf.device(f'/GPU:{i}')
+                    # Create CPU device context
+                    self.thread_local.device_contexts['/CPU:0'] = tf.device('/CPU:0')
+                    
+            except Exception as e:
+                self.logger.error(f"Error getting GPU list: {e}")
+    
+            return self.logical_gpus
 
     def run_gpu_stress_test(self, duration=10, intensity=0.9):
         """Run a GPU stress test to check performance and get those fans spinning!"""
+        # Initialize if needed
+        if not self.initialized:
+            self.initialize()
+            
         self.logger.info("Running GPU stress test to get fans spinning...")
         results = stress_test_gpu(duration_seconds=duration, intensity=intensity)
         
@@ -124,116 +253,141 @@ class GPUMemoryManager:
         return results
 
     # New method for rapid warmup to get GPU going
-    def warmup_gpu(self, intensity=0.7):
+    def warmup_gpu(self, intensity=0.7, unique_prefix=None):
         """
         Quickly warm up the GPU to get it ready for compute-intensive operations.
         This helps "get those fans spinning" by raising GPU temperature to operating levels.
         
         Args:
             intensity: How hard to push the GPU during warmup (0.1 to 1.0)
+            unique_prefix: Optional prefix to make layer names unique
         
         Returns:
             Peak GPU utilization achieved
         """
+        # Initialize if needed
+        if not self.initialized:
+            self.initialize()
+            
         try:
             import tensorflow as tf
             import time
             
-            self.logger.info(f"Warming up GPU with {intensity:.0%} intensity...")
-            
-            # Check if we're using DirectML
-            if self.is_directml:
-                self.logger.info("Using DirectML-compatible GPU warmup method")
-                return self._directml_warmup(intensity)
+            # Use lock to ensure exclusive GPU access during warmup
+            with _manager_lock:
+                self.logger.info(f"Warming up GPU with {intensity:.0%} intensity...")
                 
-            # Create a compute-intensive model using a large convolution
-            input_shape = (256, 256, 3)
-            input_tensor = tf.keras.layers.Input(shape=input_shape)
-            x = input_tensor
-            
-            # Add compute-intensive layers
-            for i in range(5):  # Multiple layers increase compute intensity
-                x = tf.keras.layers.Conv2D(
-                    filters=64 * (i+1), 
-                    kernel_size=(3, 3),
-                    activation='relu',
-                    padding='same'
-                )(x)
-                if i % 2 == 0:
-                    x = tf.keras.layers.MaxPooling2D()(x)
-            
-            # Add a final dense layer
-            x = tf.keras.layers.GlobalAveragePooling2D()(x)
-            x = tf.keras.layers.Dense(1000, activation='relu')(x)
-            output = tf.keras.layers.Dense(10, activation='softmax')(x)
-            
-            model = tf.keras.Model(inputs=input_tensor, outputs=output)
-            
-            # IMPORTANT: DO NOT use jit_compile=True with DirectML
-            # Even though we're in the non-DirectML path, remove it to be safe
-            # since DirectML detection might be incorrect in some environments
-            @tf.function
-            def training_step(x):
-                with tf.GradientTape() as tape:
-                    pred = model(x, training=True)
-                    loss = tf.reduce_mean(pred)
-                gradients = tape.gradient(loss, model.trainable_variables)
-                # Apply or store gradients to prevent unused variable warning
-                if any(g is not None for g in gradients):
-                    logger.debug(f"Computed gradients for {len(gradients)} variables")
-                return gradients
-            
-            # Create random input data
-            batch_size = max(1, int(32 * intensity))
-            input_data = tf.random.normal([batch_size, *input_shape])
-            
-            # Track utilization
-            peak_util = 0
-            start_util = get_gpu_utilization(0)
-            
-            self.logger.info(f"Starting GPU warmup (initial utilization: {start_util}%)...")
-            
-            # Run the warmup
-            start_time = time.time()
-            iterations = int(10 * intensity)  # Scale iterations by intensity
-            
-            for i in range(iterations):
-                _ = training_step(input_data)
+                # Set default unique prefix if not provided
+                if unique_prefix is None:
+                    unique_prefix = f"warmup_{int(time.time())}__"
                 
-                # Check utilization every other iteration
-                if i % 2 == 0:
-                    current_util = get_gpu_utilization(0)
-                    peak_util = max(peak_util, current_util)
-                    self.logger.info(f"Iteration {i+1}/{iterations}: GPU at {current_util}%")
+                # Check if we're using DirectML
+                if self.is_directml:
+                    self.logger.info("Using DirectML-compatible GPU warmup method")
+                    return self._directml_warmup(intensity, unique_prefix)
                     
-                    # Store in history
-                    self.gpu_utilization_history.append({
-                        "timestamp": time.time(),
-                        "utilization": current_util,
-                        "operation": "warmup",
-                        "iteration": i
-                    })
-            
-            duration = time.time() - start_time
-            
-            self.logger.info(f"GPU warmup complete! Reached {peak_util}% utilization")
-            self.logger.info(f"Took {duration:.1f} seconds, fans should be spinning now!")
-            
-            # Clean up
-            self.clean_memory()
-            
-            return peak_util
+                # Create a compute-intensive model using a large convolution
+                input_shape = (256, 256, 3)
+                input_tensor = tf.keras.layers.Input(shape=input_shape)
+                x = input_tensor
+                
+                # Add compute-intensive layers with unique names
+                for i in range(5):  # Multiple layers increase compute intensity
+                    x = tf.keras.layers.Conv2D(
+                        filters=64 * (i+1), 
+                        kernel_size=(3, 3),
+                        activation='relu',
+                        padding='same',
+                        name=f"{unique_prefix}conv2d_{i}"  # Add unique prefix and index
+                    )(x)
+                    if i % 2 == 0:
+                        x = tf.keras.layers.MaxPooling2D(
+                            name=f"{unique_prefix}maxpool_{i}"
+                        )(x)
+                
+                # Add a final dense layer
+                x = tf.keras.layers.GlobalAveragePooling2D(
+                    name=f"{unique_prefix}global_avg_pool"
+                )(x)
+                x = tf.keras.layers.Dense(
+                    1000, 
+                    activation='relu',
+                    name=f"{unique_prefix}dense_1000"
+                )(x)
+                output = tf.keras.layers.Dense(
+                    10, 
+                    activation='softmax',
+                    name=f"{unique_prefix}dense_output"
+                )(x)
+                
+                model = tf.keras.Model(inputs=input_tensor, outputs=output)
+                
+                # IMPORTANT: DO NOT use jit_compile=True with DirectML
+                # Even though we're in the non-DirectML path, remove it to be safe
+                # since DirectML detection might be incorrect in some environments
+                @tf.function
+                def training_step(x):
+                    with tf.GradientTape() as tape:
+                        pred = model(x, training=True)
+                        loss = tf.reduce_mean(pred)
+                    gradients = tape.gradient(loss, model.trainable_variables)
+                    # Apply or store gradients to prevent unused variable warning
+                    if any(g is not None for g in gradients):
+                        logger.debug(f"Computed gradients for {len(gradients)} variables")
+                    return gradients
+                
+                # Create random input data
+                batch_size = max(1, int(32 * intensity))
+                input_data = tf.random.normal([batch_size, *input_shape])
+                
+                # Track utilization
+                peak_util = 0
+                start_util = get_gpu_utilization(0)
+                
+                self.logger.info(f"Starting GPU warmup (initial utilization: {start_util}%)...")
+                
+                # Run the warmup
+                start_time = time.time()
+                iterations = int(10 * intensity)  # Scale iterations by intensity
+                
+                for i in range(iterations):
+                    _ = training_step(input_data)
+                    
+                    # Check utilization every other iteration
+                    if i % 2 == 0:
+                        current_util = get_gpu_utilization(0)
+                        peak_util = max(peak_util, current_util)
+                        self.logger.info(f"Iteration {i+1}/{iterations}: GPU at {current_util}%")
+                        
+                        # Store in history
+                        self.gpu_utilization_history.append({
+                            "timestamp": time.time(),
+                            "utilization": current_util,
+                            "operation": "warmup",
+                            "iteration": i
+                        })
+                
+                duration = time.time() - start_time
+                
+                self.logger.info(f"GPU warmup complete! Reached {peak_util}% utilization")
+                self.logger.info(f"Took {duration:.1f} seconds, fans should be spinning now!")
+                
+                # Clean up
+                self.clean_memory()
+                
+                return peak_util
             
         except Exception as e:
             self.logger.error(f"Error warming up GPU: {e}")
             return 0
-            
-    def _directml_warmup(self, intensity=0.7):
+
+    def _directml_warmup(self, intensity=0.7, unique_prefix=None):
         """
         DirectML-compatible GPU warmup that uses simpler operations.
         
         Args:
             intensity: Warmup intensity (0.1 to 1.0)
+            unique_prefix: Optional prefix to make layer names unique
             
         Returns:
             Peak GPU utilization achieved
@@ -311,8 +465,8 @@ class GPUMemoryManager:
             # Attempt to clean memory
             try:
                 self.clean_memory()
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"Error cleaning memory: {e}")
                 
             return peak_util
             
@@ -487,7 +641,51 @@ class GPUMemoryManager:
         Args:
             force_gc: Whether to force Python garbage collection
         """
-        return clean_gpu_memory(force_gc)
+        # Use the manager lock to prevent concurrent cleanup
+        with _manager_lock:
+            return clean_gpu_memory(force_gc)
+            
+    def optimize_for_context(self, device_path):
+        """
+        Optimize GPU settings for the current operation context
+        
+        Args:
+            device_path: Device path (e.g. '/GPU:0')
+        """
+        if not device_path.startswith('/GPU:'):
+            # Nothing to optimize for CPU
+            return
+            
+        try:
+            # Extract GPU index from device path
+            gpu_idx = int(device_path.split(':')[1])
+            
+            # Ensure memory growth is enabled
+            gpus = tf.config.list_physical_devices('GPU')
+            if gpu_idx < len(gpus):
+                try:
+                    tf.config.experimental.set_memory_growth(gpus[gpu_idx], True)
+                except Exception as e:
+                    self.logger.debug(f"Could not set memory growth for GPU:{gpu_idx}: {e}")
+                    
+            # Set thread-local device context
+            if not hasattr(self.thread_local, 'current_device'):
+                self.thread_local.current_device = device_path
+        except Exception as e:
+            self.logger.warning(f"Error optimizing for device context {device_path}: {e}")
+            
+    def post_operation_cleanup(self, aggressive=False):
+        """
+        Perform cleanup after an operation completes
+        
+        Args:
+            aggressive: If True, perform more aggressive cleanup
+        """
+        if aggressive:
+            self.clean_memory(force_gc=True)
+        else:
+            # Lighter cleanup - just garbage collection
+            gc.collect()
 
     def enable_mixed_precision(self):
         """
@@ -628,70 +826,79 @@ class GPUMemoryManager:
             )
             total_params = trainable_params + non_trainable_params
 
-            # Estimate memory usage
+            # Estimate memory usage (in bytes)
             param_memory = total_params * 4  # 4 bytes per float32 parameter
             gradient_memory = trainable_params * 4  # 4 bytes per gradient
             optimizer_memory = trainable_params * 8  # 8 bytes per parameter for Adam
 
             # Calculate activation memory (rough estimate)
             activation_memory = 0
+            # Basic calculation - estimate 4 bytes for each activation value
+            for layer in model.layers:
+                if hasattr(layer, "output_shape") and layer.output_shape:
+                    # Calculate size based on output shape
+                    if isinstance(layer.output_shape, tuple):
+                        # Single output
+                        shape_list = list(layer.output_shape)
+                        if shape_list[0] is None:  # Batch dimension
+                            shape_list[0] = sample_batch_size
+                        # Calculate number of elements
+                        num_elements = 1
+                        for dim in shape_list:
+                            if dim is not None:
+                                num_elements *= dim
+                        # 4 bytes per float32 element
+                        activation_memory += num_elements * 4
+                    elif isinstance(layer.output_shape, list):
+                        # Multiple outputs
+                        for out_shape in layer.output_shape:
+                            if isinstance(out_shape, tuple):
+                                shape_list = list(out_shape)
+                                if shape_list[0] is None:
+                                    shape_list[0] = sample_batch_size
+                                num_elements = 1
+                                for dim in shape_list:
+                                    if dim is not None:
+                                        num_elements *= dim
+                                activation_memory += num_elements * 4
+
+            # Print detailed breakdown if requested
             if detailed:
                 self.logger.info("Layer-by-layer breakdown:")
                 self.logger.info(
-                    f"{'Layer':<30} {'Output Shape':<20} {'Params':<10} {'Memory (MB)':<15}"
+                    f"{'Layer':<30} {'Output Shape':<20} {'Params':<10}"
                 )
-                self.logger.info("-" * 75)
+                self.logger.info("-" * 60)
+                
+                for layer in model.layers:
+                    params = layer.count_params()
+                    shape_str = str(layer.output_shape)
+                    # Truncate long shape strings
+                    if len(shape_str) > 20:
+                        shape_str = shape_str[:17] + "..."
+                    
+                    self.logger.info(
+                        f"{layer.name:<30} {shape_str:<20} {params:<10,}"
+                    )
 
-            for layer in model.layers:
-                if hasattr(layer, "output_shape") and layer.output_shape:
-                    shape = layer.output_shape
-                    if isinstance(shape, list):
-                        # Multiple outputs
-                        layer_act_memory = sum(
-                            np.prod(
-                                [
-                                    dim if dim is not None else sample_batch_size
-                                    for dim in output_shape
-                                ]
-                            )
-                            * 4
-                            for output_shape in shape
-                        )
-                    else:
-                        # Single output
-                        layer_act_memory = (
-                            np.prod(
-                                [
-                                    dim if dim is not None else sample_batch_size
-                                    for dim in shape
-                                ]
-                            )
-                            * 4
-                        )
-
-                    activation_memory += layer_act_memory
-
-                    if detailed:
-                        layer_params = layer.count_params()
-                        layer_memory_mb = layer_act_memory / (1024 * 1024)
-                        self.logger.info(
-                            f"{layer.name:<30} {str(shape):<20} {layer_params:<10} {layer_memory_mb:<15.2f}"
-                        )
-
-            # Convert to MB
+            # Convert all memory values from bytes to MB for easier reading
             param_memory_mb = param_memory / (1024 * 1024)
             gradient_memory_mb = gradient_memory / (1024 * 1024)
             optimizer_memory_mb = optimizer_memory / (1024 * 1024)
             activation_memory_mb = activation_memory / (1024 * 1024)
-            total_memory_mb = (
-                param_memory_mb
-                + gradient_memory_mb
-                + optimizer_memory_mb
-                + activation_memory_mb
-            )
+            total_memory_mb = param_memory_mb + gradient_memory_mb + optimizer_memory_mb + activation_memory_mb
 
-            # Create profile
-            profile = {
+            # Log final results
+            self.logger.info(f"Model memory profile for {model.name}:")
+            self.logger.info(f"- Total parameters: {total_params:,} ({trainable_params:,} trainable)")
+            self.logger.info(f"- Parameter memory: {param_memory_mb:.2f} MB")
+            self.logger.info(f"- Gradient memory: {gradient_memory_mb:.2f} MB")
+            self.logger.info(f"- Optimizer memory: {optimizer_memory_mb:.2f} MB")
+            self.logger.info(f"- Activation memory: {activation_memory_mb:.2f} MB")
+            self.logger.info(f"- Total estimated memory: {total_memory_mb:.2f} MB")
+
+            # Return results as a dictionary
+            return {
                 "trainable_params": trainable_params,
                 "non_trainable_params": non_trainable_params,
                 "total_params": total_params,
@@ -700,488 +907,124 @@ class GPUMemoryManager:
                 "optimizer_memory_mb": optimizer_memory_mb,
                 "activation_memory_mb": activation_memory_mb,
                 "total_memory_mb": total_memory_mb,
-                "batch_size": sample_batch_size,
             }
-
-            # Log memory stats
-            self.logger.info(
-                f"Model Memory Profile (batch size = {sample_batch_size}):"
-            )
-            self.logger.info(
-                f"  Parameters: {total_params:,} ({param_memory_mb:.2f} MB)"
-            )
-            self.logger.info(
-                f"  Gradients: {trainable_params:,} ({gradient_memory_mb:.2f} MB)"
-            )
-            self.logger.info(
-                f"  Optimizer state: {trainable_params:,} ({optimizer_memory_mb:.2f} MB)"
-            )
-            self.logger.info(f"  Activations: ~ {activation_memory_mb:.2f} MB")
-            self.logger.info(f"  Total estimated memory: {total_memory_mb:.2f} MB")
-
-            # Clean up
-            self.clean_memory()
-
-            # Get GPU utilization monitoring
-            try:
-                # Get initial GPU utilization
-                initial_util = get_gpu_utilization(0)
-                
-                # Run a forward and backward pass for more realistic utilization
-                if hasattr(model, 'train_on_batch'):
-                    with tf.GradientTape() as tape:
-                        predictions = model(dummy_inputs)
-                        loss = tf.reduce_mean(predictions)  # Dummy loss
-                        
-                        # Calculate gradients
-                        if hasattr(model, 'trainable_variables'):
-                            gradients = tape.gradient(loss, model.trainable_variables)
-                    
-                    # Get peak GPU utilization
-                    peak_util = get_gpu_utilization(0)
-                    
-                    # Add to profile
-                    profile["initial_gpu_utilization"] = initial_util
-                    profile["peak_gpu_utilization"] = peak_util
-                    
-                    self.logger.info(f"  GPU Utilization: {initial_util}% → {peak_util}%")
-                
-                return profile
             
-            except Exception as e:
-                self.logger.error(f"Error in model memory profile: {e}")
-                return {}
-
         except Exception as e:
-            self.logger.error(f"Error in model memory profile: {e}")
-            return {}
-
-    def setup_checkpointing(self, model, checkpoint_dir, save_freq="epoch"):
+            self.logger.error(f"Error profiling model memory: {e}")
+            return {
+                "error": str(e),
+                "trainable_params": 0,
+                "total_memory_mb": 0,
+            }
+    
+    def get_torch_device(self):
         """
-        Set up model checkpointing for safe recovery from OOM errors.
-
-        Args:
-            model: TensorFlow model to checkpoint
-            checkpoint_dir: Directory to save checkpoints
-            save_freq: How often to save ('epoch' or number of batches)
-
-        Returns:
-            TensorFlow callback for checkpointing
-        """
-        os.makedirs(checkpoint_dir, exist_ok=True)
-
-        # Create a unique model path with timestamp
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        checkpoint_path = os.path.join(
-            checkpoint_dir, f"model_{timestamp}", "cp-{epoch:04d}.ckpt"
-        )
-
-        # Create the checkpoint callback
-        checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
-            filepath=checkpoint_path,
-            save_weights_only=True,
-            save_freq=save_freq,
-            verbose=1,
-        )
-
-        self.logger.info(f"Checkpoint callback created. Saving to {checkpoint_dir}")
-        return checkpoint_callback
-
-    def create_memory_monitoring_callback(self, log_frequency=100):
-        """
-        Create a Keras callback for monitoring GPU memory during training.
-
-        Args:
-            log_frequency: How often to log memory usage (in batches)
-
-        Returns:
-            Keras callback for memory monitoring
-        """
-
-        class MemoryMonitorCallback(tf.keras.callbacks.Callback):
-            def __init__(self, memory_manager, log_frequency):
-                super().__init__()
-                self.memory_manager = memory_manager
-                self.log_frequency = log_frequency
-                self.batch_logs = []
-
-            def on_train_begin(self, logs=None):
-                self.memory_manager.log_memory_usage("train_begin")
-
-            def on_train_end(self, logs=None):
-                self.memory_manager.log_memory_usage("train_end")
-
-            def on_epoch_begin(self, epoch, logs=None):
-                self.memory_manager.log_memory_usage(f"epoch_{epoch}_begin")
-
-            def on_epoch_end(self, epoch, logs=None):
-                self.memory_manager.log_memory_usage(f"epoch_{epoch}_end")
-
-            def on_batch_begin(self, batch, logs=None):
-                if batch % self.log_frequency == 0:
-                    self.memory_manager.log_memory_usage(f"batch_{batch}_begin")
-
-            def on_batch_end(self, batch, logs=None):
-                if batch % self.log_frequency == 0:
-                    self.memory_manager.log_memory_usage(f"batch_{batch}_end")
-
-                    # Store batch metrics
-                    if logs:
-                        self.batch_logs.append(
-                            {
-                                "batch": batch,
-                                "memory_mb": self.memory_manager.get_available_memory(),
-                                **logs,
-                            }
-                        )
-
-        return MemoryMonitorCallback(self, log_frequency)
-
-    def get_memory_usage_report(self, save_path=None):
-        """
-        Generate a report of memory usage during training.
-
-        Args:
-            save_path: Path to save the report (or None to return as string)
-
-        Returns:
-            Report as a string if save_path is None
-        """
-        if not self.memory_usage_log:
-            return "No memory usage data available."
-
-        # Convert log to DataFrame for analysis
-        import pandas as pd
-
-        df = pd.DataFrame(self.memory_usage_log)
-
-        # Generate report
-        report = []
-        report.append("GPU MEMORY USAGE REPORT")
-        report.append("=" * 80)
-
-        # Summary statistics
-        report.append("\nSummary Statistics:")
-        report.append("-" * 80)
-
-        for device_idx in df["device_idx"].unique():
-            device_df = df[df["device_idx"] == device_idx]
-            report.append(f"\nGPU {device_idx}:")
-            report.append(f"  Min memory: {device_df['memory_mb'].min():.2f} MB")
-            report.append(f"  Max memory: {device_df['memory_mb'].max():.2f} MB")
-            report.append(f"  Mean memory: {device_df['memory_mb'].mean():.2f} MB")
-            report.append(
-                f"  Memory range: {device_df['memory_mb'].max() - device_df['memory_mb'].min():.2f} MB"
-            )
-
-        # Peak memory usage
-        report.append("\nPeak Memory Usage:")
-        report.append("-" * 80)
-
-        peak_usage = df.loc[df["memory_mb"].idxmax()]
-        report.append(f"Peak memory: {peak_usage['memory_mb']:.2f} MB")
-        report.append(f"At: {peak_usage['tag']}")
-        report.append(f"On device: GPU {peak_usage['device_idx']}")
-
-        # Memory by operation
-        report.append("\nMemory by Operation:")
-        report.append("-" * 80)
-
-        for tag in sorted(set([t for t in df["tag"] if t])):
-            tag_df = df[df["tag"] == tag]
-            report.append(f"{tag:30s}: {tag_df['memory_mb'].mean():.2f} MB (mean)")
-
-        # Batch size information
-        if self.batch_size_log:
-            report.append("\nBatch Size Information:")
-            report.append("-" * 80)
-
-            for entry in self.batch_size_log:
-                report.append(f"Device GPU {entry['device_idx']}:")
-                report.append(f"  Optimal batch size: {entry['optimal_batch']}")
-                report.append(f"  Safe batch size: {entry['safe_batch']}")
-                report.append(f"  Input shape: {entry['input_shape']}")
-
-        full_report = "\n".join(report)
-
-        # Save if needed
-        if save_path:
-            with open(save_path, "w") as f:
-                f.write(full_report)
-
-        return full_report
-
-
-# Helper functions for gradient accumulation
-def train_with_gradient_accumulation(
-    model,
-    train_dataset,
-    steps_per_epoch,
-    accumulation_steps=1,
-    optimizer=None,
-    loss_fn=None,
-    metrics=None,
-    callbacks=None,
-    epochs=1,
-):
-    """
-    Train a model with gradient accumulation to simulate larger batch sizes.
-
-    Args:
-        model: TensorFlow model to train
-        train_dataset: Dataset for training
-        steps_per_epoch: Number of steps per epoch
-        accumulation_steps: Number of gradient accumulation steps
-        optimizer: Optimizer to use (default: model.optimizer)
-        loss_fn: Loss function (required if model is not compiled)
-        metrics: Metrics to track (default: model.metrics)
-        callbacks: List of callbacks
-        epochs: Number of epochs to train
-
-    Returns:
-        History object
-    """
-    # Use model's optimizer if not provided
-    optimizer = optimizer or model.optimizer
-    if optimizer is None:
-        raise ValueError("Optimizer must be provided or model must be compiled")
-
-    # Use model's metrics if not provided
-    metrics = metrics or model.metrics
-
-    # Check if loss function is available
-    if loss_fn is None and not hasattr(model, "loss"):
-        raise ValueError("Loss function must be provided or model must be compiled")
-    loss_fn = loss_fn or model.loss
-
-    # Initialize variables to track metrics
-    history = {"loss": []}
-    for metric in metrics:
-        history[metric.name] = []
-
-    # Run callbacks if provided
-    if callbacks:
-        for callback in callbacks:
-            if hasattr(callback, "on_train_begin"):
-                callback.on_train_begin()
-
-    # Training loop
-    for epoch in range(epochs):
-        # Reset metrics
-        for metric in metrics:
-            metric.reset_states()
-
-        # Run epoch callbacks
-        if callbacks:
-            for callback in callbacks:
-                if hasattr(callback, "on_epoch_begin"):
-                    callback.on_epoch_begin(epoch)
-
-        epoch_loss = 0
-
-        # Create a reference variable to store gradients
-        all_gradients = None
-        num_accumulated = 0
-
-        # Iterate through dataset
-        for step, (x_batch, y_batch) in enumerate(train_dataset):
-            # Run batch callbacks
-            if callbacks:
-                for callback in callbacks:
-                    if hasattr(callback, "on_batch_begin"):
-                        callback.on_batch_begin(step)
-
-            with tf.GradientTape() as tape:
-                # Forward pass
-                predictions = model(x_batch, training=True)
-
-                # Calculate loss
-                batch_loss = loss_fn(y_batch, predictions)
-
-                # Add regularization losses if any
-                if model.losses:
-                    batch_loss += sum(model.losses)
-
-                # Scale the loss by accumulation steps (to keep gradients comparable)
-                batch_loss = batch_loss / accumulation_steps
-
-            # Calculate gradients
-            gradients = tape.gradient(batch_loss, model.trainable_variables)
-
-            # Accumulate gradients
-            if all_gradients is None:
-                all_gradients = [tf.Variable(tf.zeros_like(g)) for g in gradients]
-
-            for i, grad in enumerate(gradients):
-                if grad is not None:
-                    all_gradients[i].assign_add(grad)
-
-            num_accumulated += 1
-
-            # Update weights when we've accumulated enough gradients
-            if num_accumulated >= accumulation_steps or step == steps_per_epoch - 1:
-                # Apply accumulated gradients
-                optimizer.apply_gradients(zip(all_gradients, model.trainable_variables))
-
-                # Update metrics
-                for metric in metrics:
-                    metric.update_state(y_batch, predictions)
-
-                # Reset accumulated gradients
-                all_gradients = None
-                num_accumulated = 0
-
-            # Update epoch loss
-            epoch_loss += batch_loss * accumulation_steps
-
-            # Run batch end callbacks
-            if callbacks:
-                logs = {"loss": batch_loss.numpy()}
-                for metric in metrics:
-                    logs[metric.name] = metric.result().numpy()
-
-                for callback in callbacks:
-                    if hasattr(callback, "on_batch_end"):
-                        callback.on_batch_end(step, logs)
-
-        # Calculate epoch metrics
-        epoch_loss /= steps_per_epoch
-        history["loss"].append(
-            epoch_loss.numpy() if hasattr(epoch_loss, "numpy") else epoch_loss
-        )
-
-        for metric in metrics:
-            metric_value = metric.result().numpy()
-            history[metric.name].append(metric_value)
-
-        # Print epoch results
-        metrics_str = " - ".join([f"{k}: {v[-1]:.4f}" for k, v in history.items()])
-        print(f"\nEpoch {epoch+1}/{epochs} - {metrics_str}")
-
-        # Run epoch end callbacks
-        if callbacks:
-            logs = {"loss": history["loss"][-1]}
-            for metric in metrics:
-                logs[metric.name] = history[metric.name][-1]
-
-            for callback in callbacks:
-                if hasattr(callback, "on_epoch_end"):
-                    callback.on_epoch_end(epoch, logs)
-
-    # Run train end callbacks
-    if callbacks:
-        for callback in callbacks:
-            if hasattr(callback, "on_train_end"):
-                callback.on_train_end()
-
-    return history
-
-
-# Example usage
-def example_usage():
-    # Initialize the GPU memory manager
-    memory_manager = GPUMemoryManager(
-        allow_growth=True,  # Allow memory growth
-    )
-
-    # Configure GPUs
-    memory_manager.initialize()
-
-    # Enable mixed precision for better performance and lower memory usage
-    memory_manager.enable_mixed_precision()
-
-    # Create a simple model for demonstration
-    model = tf.keras.Sequential(
-        [
-            tf.keras.layers.Input(shape=(28, 28, 1)),
-            tf.keras.layers.Conv2D(32, kernel_size=(3, 3), activation="relu"),
-            tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
-            tf.keras.layers.Conv2D(64, kernel_size=(3, 3), activation="relu"),
-            tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
-            tf.keras.layers.Flatten(),
-            tf.keras.layers.Dense(128, activation="relu"),
-            tf.keras.layers.Dense(10, activation="softmax"),
-        ]
-    )
-
-    # Compile the model
-    model.compile(
-        optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"]
-    )
-
-    # Profile the model's memory usage
-    memory_profile = memory_manager.model_memory_profile(model, sample_batch_size=32)
-
-    # Estimate optimal batch size
-    optimal_batch = memory_manager.estimate_optimal_batch_size(
-        model, sample_input_shape=(28, 28, 1), min_batch=1, max_batch=512
-    )
-
-    # Set up gradient accumulation
-    desired_batch = 256  # What we want
-    actual_batch = optimal_batch  # What fits in memory
-    accumulation_steps = memory_manager.get_gradient_accumulation_steps(
-        desired_batch, actual_batch
-    )
-
-    print(
-        f"Using actual batch size of {actual_batch} with {accumulation_steps} "
-        f"accumulation steps to simulate batch size of {desired_batch}"
-    )
-
-    # Set up distribution strategy for multi-GPU training
-    memory_manager.create_training_strategy()
-
-    # Create memory monitoring callback
-    memory_callback = memory_manager.create_memory_monitoring_callback(log_frequency=10)
-
-    # Set up checkpointing
-    checkpoint_callback = memory_manager.setup_checkpointing(
-        model, checkpoint_dir="checkpoints"
-    )
-
-    # Load some example data
-    (x_train, y_train), _ = tf.keras.datasets.mnist.load_data()
-    x_train = x_train[..., tf.newaxis].astype("float32") / 255.0
-
-    # Prepare the dataset
-    buffer_size = len(x_train)
-    train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
-    train_dataset = train_dataset.shuffle(buffer_size).batch(actual_batch)
-
-    # Train with gradient accumulation
-    train_with_gradient_accumulation(
-        model=model,
-        train_dataset=train_dataset,
-        steps_per_epoch=len(x_train) // actual_batch,
-        accumulation_steps=accumulation_steps,
-        callbacks=[memory_callback, checkpoint_callback],
-        epochs=3,
-    )
-
-    # Generate memory usage report
-    report = memory_manager.get_memory_usage_report(save_path="memory_report.txt")
-    print("Memory report saved to memory_report.txt")
-
-
-if __name__ == "__main__":
-    example_usage()
-
-def _configure_directml_compatibility(self):
-    """Handle LSTM implementation for DirectML to avoid CudnnRNN errors."""
-    try:
-        import tensorflow as tf
-        # Configure TensorFlow for DirectML compatibility
-        os.environ["TF_DIRECTML_KERNEL_FALLBACK"] = "1"
-        os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
+        Get the appropriate PyTorch device (CUDA/GPU if available, otherwise CPU).
+        Also handles DirectML detection for proper device placement.
         
-        # Force TensorFlow to use compatible implementations
-        if hasattr(tf.keras.layers, 'LSTM'):
-            logger.info("Configuring LSTM layer for DirectML compatibility")
-            # Use non-Cudnn implementation for LSTM
-            tf.keras.layers.LSTM._supports_cudnn = False
+        Returns:
+            torch.device: PyTorch device object, or string 'cpu' as fallback if PyTorch is not available
+        """
+        # Ensure initialization before checking GPU availability
+        if not self.initialized:
+            self.initialize()
             
-        logger.info("DirectML compatibility configuration complete")
-    except Exception as e:
-        logger.error(f"Failed to configure DirectML compatibility: {e}", exc_info=True)
-        raise  # Re-raise to ensure caller knows configuration failed
+        try:
+            import torch
+            
+            # Debug info to help identify the problem
+            cuda_available = torch.cuda.is_available()
+            self.logger.info(f"PyTorch CUDA available: {cuda_available}, TensorFlow GPUs detected: {self.has_gpu}")
+            
+            # Check for DirectML GPU
+            directml_available = False
+            torch_directml_device = None
+            
+            # Try to detect if torch-directml is installed
+            try:
+                import torch_directml
+                directml_available = True
+                dml_device_count = torch_directml.device_count()
+                if dml_device_count > 0:
+                    torch_directml_device = torch_directml.device(0)  # Use first DirectML device
+                    self.logger.info(f"Detected {dml_device_count} DirectML device(s) for PyTorch")
+            except ImportError:
+                if self.is_directml:
+                    self.logger.warning("DirectML detected for TensorFlow but torch-directml not installed for PyTorch")
+            except Exception as e:
+                self.logger.warning(f"Error initializing DirectML for PyTorch: {e}")
+                
+            # First choice: CUDA if available
+            if cuda_available:
+                device = torch.device("cuda")
+                device_name = torch.cuda.get_device_name(0) if torch.cuda.device_count() > 0 else "Unknown"
+                self.logger.info(f"Using PyTorch CUDA device: {device} ({device_name})")
+                
+                # Get and log available GPU memory
+                try:
+                    if hasattr(torch.cuda, 'memory_reserved'):
+                        reserved = torch.cuda.memory_reserved(0) / 1024**2
+                        allocated = torch.cuda.memory_allocated(0) / 1024**2
+                        self.logger.info(f"CUDA memory: {allocated:.0f}MB allocated, {reserved:.0f}MB reserved")
+                except Exception as e:
+                    self.logger.debug(f"Could not get CUDA memory stats: {e}")
+                    
+                return device
+                
+            # Second choice: DirectML if available
+            elif directml_available and torch_directml_device is not None:
+                self.logger.info(f"Using PyTorch DirectML device: {torch_directml_device}")
+                return torch_directml_device
+                
+            # Fallback: CPU
+            else:
+                # No GPU available, check if we need to warn about mismatch
+                if self.has_gpu:
+                    if self.is_directml:
+                        self.logger.warning("DirectML detected for TensorFlow but not available for PyTorch. Models will use CPU.")
+                    else:
+                        self.logger.warning("TensorFlow detected GPUs but PyTorch can't access them. This may indicate a CUDA/driver version mismatch.")
+                
+                device = torch.device("cpu")
+                self.logger.info(f"Using PyTorch CPU device: {device}")
+                return device
+                
+        except ImportError:
+            self.logger.warning("PyTorch not installed. Returning string 'cpu' as fallback.")
+            return "cpu"  # Return string as fallback
+        except Exception as e:
+            self.logger.error(f"Error getting PyTorch device: {e}")
+            return "cpu"  # Return string as fallback in case of error
+            
+    def place_on_device(self, model):
+        """
+        Place a model on the appropriate device (GPU or CPU).
+        Works with both TensorFlow and PyTorch models.
+        
+        Args:
+            model: A TensorFlow or PyTorch model
+            
+        Returns:
+            Tuple of (model on device, device name string)
+        """
+        try:
+            # Check if it's a PyTorch model (has 'to' method)
+            if hasattr(model, 'to') and callable(model.to):
+                device = self.get_torch_device()
+                model = model.to(device)
+                return model, str(device)
+                
+            # If it's not PyTorch, assume it's TensorFlow
+            # TensorFlow handles device placement automatically
+            device = '/GPU:0' if self.has_gpu else '/CPU:0'
+            
+            # For TensorFlow, we just need to ensure the device is available
+            # The model placement happens automatically during operations
+            self.logger.info(f"Using TensorFlow device: {device}")
+            
+            return model, device
+            
+        except Exception as e:
+            self.logger.warning(f"Error placing model on device: {e}")
+            # Return original model with CPU device if anything fails
+            return model, "cpu"

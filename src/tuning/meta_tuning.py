@@ -18,6 +18,7 @@ import signal
 import time
 from datetime import datetime
 import warnings
+from typing import Dict
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -79,6 +80,7 @@ import optuna
 import streamlit as st
 import yaml
 import torch
+from src.utils.training_optimizer import ModelTask
 
 # Set optimized environment variables early
 from src.utils.env_setup import setup_tf_environment
@@ -833,34 +835,41 @@ def check_sqlite_availability():
 
 def verify_directories():
     """Verify all required directories exist and are writable"""
+    # Define the base directories needed
+    # Make sure to properly format paths without timestamps appended
+    # Fixed: Use normalized paths with proper separators
     required_dirs = {
         "DATA_DIR": DATA_DIR,
         "DB_DIR": DB_DIR,
         "MODELS_DIR": MODELS_DIR,
-        "HYPERPARAMS_DIR": os.path.join(MODELS_DIR, "Hyperparameters"),
+        "HYPERPARAMS_DIR": os.path.join(MODELS_DIR, "Hyperparameters")  # Fixed: Keep as a clean path
     }
 
     all_ok = True
     logger.info("Verifying directories...")
     
     for name, directory in required_dirs.items():
+        # Clean the path to avoid issues with separators
+        clean_dir = os.path.normpath(directory)
+        
         # Check directory exists
-        if not os.path.exists(directory):
+        if not os.path.exists(clean_dir):
             try:
-                os.makedirs(directory, exist_ok=True)
-                logger.info(f"Created directory: {directory}")
+                os.makedirs(clean_dir, exist_ok=True)
+                logger.info(f"Created directory: {clean_dir}")
             except Exception as e:
-                logger.error(f"ERROR: Failed to create {name} directory ({directory}): {e}")
+                logger.error(f"ERROR: Failed to create {name} directory ({clean_dir}): {e}")
                 all_ok = False
                 continue
 
         # Check directory is writable
         try:
-            test_file = os.path.join(directory, ".write_test")
+            # Use a unique test file name that won't conflict
+            test_file = os.path.join(clean_dir, f".write_test_{int(time.time())}")
             with open(test_file, "w") as f:
                 f.write("test")
             os.remove(test_file)
-            logger.info(f"✓ {name} directory is writable: {directory}")
+            logger.info(f"✓ {name} directory is writable: {clean_dir}")
         except Exception as e:
             logger.error(f"ERROR: {name} directory is not writable ({directory}): {e}")
             all_ok = False
@@ -1781,3 +1790,71 @@ def stop_tuning_process():
         
     logger.info("Stop request for tuning process has been set")
     return True
+
+
+
+def _run_task_thread(self, task: ModelTask, results_dict: Dict):
+    """Thread worker function to run a single task with resource management."""
+    # Configure this thread for GPU access
+    from src.utils.training_optimizer import configure_thread_for_gpu
+    device = configure_thread_for_gpu(task.model_type)
+    
+    # Create thread-local storage for this thread if it doesn't exist
+    if not hasattr(self.thread_local, 'device_context'):
+        self.thread_local.device_context = {}
+    
+    # Acquire appropriate semaphore
+    if task.resources["gpu_fraction"] > 0:
+        self.gpu_semaphore.acquire()
+        using_gpu = True
+    else:
+        self.cpu_semaphore.acquire()
+        using_gpu = False
+
+    # Acquire resource lock for tracking
+    with self.resource_lock:
+        self.active_tasks[task.id] = task
+        task.status = "running"
+
+    # Setup thread environment (CPU/GPU allocation) without modifying model parameters
+    self._setup_thread_environment(task)
+
+    # Store the device we configured
+    task.device = device
+    
+    # CRITICAL CHANGE: Add device to the config for model creation
+    if hasattr(task, 'device'):
+        task.config["device"] = task.device
+        # If we have model params, add it there too for deeper propagation
+        if "params" in task.config:
+            task.config["params"]["device"] = task.device
+
+    # Log start
+    logger.info(f"Starting {task.model_type} model training (Task {task.id}) on device {device}")
+    start_time = time.time()
+
+    try:
+        # Run the task function with original parameters
+        result = task.function(task.config)
+        # Store result in the results dictionary
+        results_dict[task.id] = result
+        task.status = "completed"
+    except Exception as e:
+        logger.error(f"Error in task {task.id}: {e}")
+        task.status = "failed"
+        results_dict[task.id] = None
+    finally:
+        # Release semaphore
+        if using_gpu:
+            self.gpu_semaphore.release()
+        else:
+            self.cpu_semaphore.release()
+
+        # Remove from active tasks
+        with self.resource_lock:
+            if task.id in self.active_tasks:
+                del self.active_tasks[task.id]
+
+        # Log completion
+        elapsed_time = time.time() - start_time
+        logger.info(f"Completed {task.model_type} model training (Task {task.id}) in {elapsed_time:.2f} seconds")

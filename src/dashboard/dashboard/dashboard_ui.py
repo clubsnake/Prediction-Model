@@ -11,6 +11,69 @@ This module provides UI components for the main dashboard, including:
 The components are designed to be imported and used by dashboard_core.py.
 """
 
+# Add thread-local storage and context preservation
+import threading
+import streamlit as st
+
+# Create a thread-local storage for each thread
+thread_local = threading.local()
+
+# Store the original run function if it exists and hasn't been overridden yet
+if not hasattr(st, '_original_run') and hasattr(st, 'run'):
+    st._original_run = st.run
+    
+    # Override the run function to ensure each thread has proper context
+    def run_with_context_wrapper(*args, **kwargs):
+        # Check if we already attached context to this thread
+        if not hasattr(thread_local, 'has_context'):
+            # Set the context flag
+            thread_local.has_context = True
+        
+        # Call the original function
+        return st._original_run(*args, **kwargs)
+
+    # Replace the original function with our wrapper
+    st.run = run_with_context_wrapper
+
+# Fix for ThreadPoolExecutor to maintain context
+import concurrent.futures
+
+# Save the original ThreadPoolExecutor if not already saved
+if not hasattr(concurrent.futures, '_original_ThreadPoolExecutor'):
+    concurrent.futures._original_ThreadPoolExecutor = concurrent.futures.ThreadPoolExecutor
+    
+    # Create a wrapper that preserves context
+    def ThreadPoolExecutorWithContext(*args, **kwargs):
+        """ThreadPoolExecutor that preserves Streamlit context."""
+        
+        # Create the executor
+        executor = concurrent.futures._original_ThreadPoolExecutor(*args, **kwargs)
+        
+        # Save the original submit method
+        _original_submit = executor.submit
+        
+        # Override submit to preserve context
+        def submit_with_context(fn, *args, **kwargs):
+            # Wrap the function to ensure it has context
+            def wrapped_fn(*args, **kwargs):
+                # Set thread context if needed
+                if not hasattr(thread_local, 'has_context'):
+                    thread_local.has_context = True
+                
+                # Run the original function
+                return fn(*args, **kwargs)
+            
+            # Submit the wrapped function
+            return _original_submit(wrapped_fn, *args, **kwargs)
+        
+        # Replace the submit method
+        executor.submit = submit_with_context
+        
+        return executor
+
+    # Replace the original ThreadPoolExecutor
+    concurrent.futures.ThreadPoolExecutor = ThreadPoolExecutorWithContext
+
 import time
 
 def diagnose_imports():
@@ -70,8 +133,23 @@ def fix_import_paths():
             sys.path.insert(0, path)
             print(f"Added path to sys.path: {path}")
 
-# Call at the beginning of your app
 fix_import_paths()
+
+def cleanup_stale_locks_on_startup():
+    """Clean up any stale lock files at application startup."""
+    try:
+        from src.utils.threadsafe import cleanup_stale_locks
+        from src.utils.threadsafe import cleanup_stale_temp_files
+        
+        # Use a more aggressive timeout for startup cleanup
+        lock_count = cleanup_stale_locks(max_age=60, force=True)  
+        temp_count = cleanup_stale_temp_files(max_age=60)
+        
+        print(f"Startup cleanup: Removed {lock_count} stale lock files and {temp_count} temporary files")
+    except Exception as e:
+        print(f"Error during startup cleanup: {e}")
+
+cleanup_stale_locks_on_startup()
 
 # Add this function to dashboard_ui.py to always run at startup
 def reset_tuning_status_at_startup():
@@ -1169,7 +1247,7 @@ def display_tuning_status():
             current = progress.get("current_trial", 0)
             total = progress.get("total_trials", 0)
             
-            # Use aggregated values if available
+            # Explicitly prefer aggregated values if available
             if "aggregated_current_trial" in progress:
                 current = progress.get("aggregated_current_trial", current)
             
@@ -1212,13 +1290,28 @@ def display_tuning_status():
         if isinstance(model_progress, dict) and model_progress:
             # Create a progress bar for each model
             for model_type, info in model_progress.items():
+                # Extract trial information
                 current = info.get("current_trial", 0)
                 total = info.get("total_trials", 1)
-                percentage = info.get("completion_percentage", 0)
+                pct = current / max(1, total) * 100
                 
-                # Display model type and progress
-                st.write(f"**{model_type}**: Trial {current}/{total}")
-                st.progress(min(1.0, percentage / 100))
+                # Display model progress with color coding
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    st.write(f"**{model_type}**:")
+                with col2:
+                    st.progress(pct/100)
+                    st.caption(f"{current}/{total} trials ({pct:.1f}%) - Cycle: {info.get('cycle', 'N/A')}")
+                    
+                    # Display metrics if available
+                    metrics_text = []
+                    if "current_rmse" in info and info["current_rmse"] is not None:
+                        metrics_text.append(f"RMSE: {info['current_rmse']:.4f}")
+                    if "current_mape" in info and info["current_mape"] is not None:
+                        metrics_text.append(f"MAPE: {info['current_mape']:.2f}%")
+                    
+                    if metrics_text:
+                        st.caption(" | ".join(metrics_text))
         else:
             st.info("No individual model progress information available")
     except Exception as e:
@@ -1256,83 +1349,117 @@ def display_trials_table(max_trials=20):
     Args:
         max_trials: Maximum number of trials to display
     """
-    # Initialize trial_logs if it doesn't exist
-    if "trial_logs" not in st.session_state:
-        st.session_state["trial_logs"] = []
+    # Import required definitions
+    try:
+        from config.config_loader import ACTIVE_MODEL_TYPES
+    except ImportError:
+        # Fallback if import fails
+        ACTIVE_MODEL_TYPES = ["lstm", "rnn", "cnn", "xgboost", "random_forest", "ltc", "nbeats", "tabnet", "tft"]
+    
+    try:
+        from src.tuning.progress_helper import TESTED_MODELS_DIR, TESTED_MODELS_FILE
+    except ImportError:
+        # Fallback if import fails
+        from config.config_loader import DATA_DIR
+        TESTED_MODELS_DIR = os.path.join(DATA_DIR, "tested_models")
+        TESTED_MODELS_FILE = os.path.join(DATA_DIR, "tested_models.yaml")
+    
+    # First try to load all trials from individual model files
+    try:
+        # Create a selection for model type filter
+        model_filter = st.selectbox(
+            "Filter by model type:", 
+            ["All Models"] + ACTIVE_MODEL_TYPES,
+            index=0
+        )
         
-    if st.session_state["trial_logs"]:
-        logs = st.session_state["trial_logs"][-max_trials:]
-
-        # Convert to DataFrame for better display
-        df_data = []
-        for log in logs:
-            entry = {
-                "Trial": log.get("trial", log.get("number", "N/A")),
-                "Model": log.get("params", {}).get("model_type", "N/A"),
-                "RMSE": log.get("rmse", 0),
-                "MAPE": log.get("mape", 0),
-                "State": log.get("state", "N/A"),
-                "Time": log.get("timestamp", "N/A"),
-            }
-            df_data.append(entry)
-
-        if df_data:
-            df = pd.DataFrame(df_data)
+        # Get paths to individual model trial files
+        all_trials = []
+        model_types_to_load = ACTIVE_MODEL_TYPES if model_filter == "All Models" else [model_filter]
+        
+        for model_type in model_types_to_load:
+            model_file = os.path.join(TESTED_MODELS_DIR, f"{model_type}_tested_models.yaml")
             
-            # Format numeric columns
-            if "RMSE" in df.columns:
-                df["RMSE"] = pd.to_numeric(df["RMSE"], errors="coerce").round(4)
-            
-            if "MAPE" in df.columns:
-                df["MAPE"] = pd.to_numeric(df["MAPE"], errors="coerce").round(2)
-                df["MAPE"] = df["MAPE"].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "N/A")
-            
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.info("Trial logs contain no valid data.")
-    else:
-        # Try to load trial logs directly from file
-        try:
-            from config.config_loader import TESTED_MODELS_FILE
-            from src.utils.threadsafe import safe_read_yaml
-            
-            if os.path.exists(TESTED_MODELS_FILE):
-                tested_models = safe_read_yaml(TESTED_MODELS_FILE, default=[])
+            # Skip if file doesn't exist
+            if not os.path.exists(model_file):
+                continue
                 
-                if tested_models and isinstance(tested_models, list):
-                    # Use most recent trials
-                    logs = tested_models[-max_trials:]
-                    
-                    # Convert to DataFrame
-                    df_data = []
-                    for log in logs:
-                        entry = {
-                            "Trial": log.get("number", "N/A"),
-                            "Model": log.get("model_type", "Unknown"),
-                            "RMSE": log.get("rmse", 0),
-                            "MAPE": log.get("mape", 0),
-                            "State": log.get("state", "N/A"),
-                            "Time": log.get("timestamp", "N/A"),
-                        }
-                        df_data.append(entry)
-                    
-                    if df_data:
-                        df = pd.DataFrame(df_data)
-                        
-                        # Format numeric columns
-                        if "RMSE" in df.columns:
-                            df["RMSE"] = pd.to_numeric(df["RMSE"], errors="coerce").round(4)
-                        
-                        if "MAPE" in df.columns:
-                            df["MAPE"] = pd.to_numeric(df["MAPE"], errors="coerce").round(2)
-                            df["MAPE"] = df["MAPE"].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "N/A")
-                        
-                        st.dataframe(df, use_container_width=True)
-                        st.info("Loaded trial logs directly from file")
-                        return
-        except Exception as e:
-            st.error(f"Error loading trial logs from file: {e}")
+            try:
+                # Use safe_read_yaml to read the file
+                from src.utils.threadsafe import safe_read_yaml
+                model_trials = safe_read_yaml(model_file, default=[])
+                
+                if model_trials and isinstance(model_trials, list):
+                    # Add trials from this model
+                    all_trials.extend(model_trials)
+            except Exception as e:
+                st.warning(f"Error reading trials for {model_type}: {str(e)}")
         
+        # If no individual model files found, try the main tested_models file
+        if not all_trials:
+            if os.path.exists(TESTED_MODELS_FILE):
+                from src.utils.threadsafe import safe_read_yaml
+                all_trials = safe_read_yaml(TESTED_MODELS_FILE, default=[])
+        
+        # If still nothing, check session state
+        if not all_trials and "trial_logs" in st.session_state and st.session_state["trial_logs"]:
+            all_trials = st.session_state["trial_logs"]
+        
+        # If we have trials, display them
+        if all_trials:
+            # Sort by timestamp if available, otherwise by trial number
+            all_trials.sort(key=lambda x: (x.get("timestamp", ""), x.get("number", 0)))
+            
+            # Take the most recent trials
+            recent_trials = all_trials[-max_trials:]
+            
+            # Convert to DataFrame for display
+            df_data = []
+            for trial in recent_trials:
+                # Extract metrics - handle different formats
+                rmse = trial.get("metrics", {}).get("rmse", trial.get("rmse", "N/A"))
+                mape = trial.get("metrics", {}).get("mape", trial.get("mape", "N/A"))
+                da = trial.get("metrics", {}).get("directional_accuracy", 
+                               trial.get("directional_accuracy", "N/A"))
+                
+                # Create entry for display
+                entry = {
+                    "Trial": trial.get("number", "N/A"),
+                    "Model": trial.get("model_type", "Unknown"),
+                    "RMSE": rmse,
+                    "MAPE": mape,
+                    "Dir. Acc.": da,
+                    "Time": trial.get("timestamp", "N/A")
+                }
+                df_data.append(entry)
+            
+            if df_data:
+                df = pd.DataFrame(df_data)
+                
+                # Format numeric columns
+                if "RMSE" in df.columns:
+                    df["RMSE"] = pd.to_numeric(df["RMSE"], errors="coerce").round(4)
+                
+                if "MAPE" in df.columns:
+                    df["MAPE"] = pd.to_numeric(df["MAPE"], errors="coerce").round(2)
+                    df["MAPE"] = df["MAPE"].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "N/A")
+                    
+                if "Dir. Acc." in df.columns:
+                    df["Dir. Acc."] = pd.to_numeric(df["Dir. Acc."], errors="coerce").round(2)
+                    df["Dir. Acc."] = df["Dir. Acc."].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "N/A")
+                
+                st.dataframe(df, use_container_width=True)
+                
+                # Show total number of trials
+                st.caption(f"Showing {len(df_data)} of {len(all_trials)} total trials")
+                
+                return
+        
+        # If we get here, no trials were found
+        st.info("No trial logs available. Try running some tuning cycles.")
+            
+    except Exception as e:
+        st.error(f"Error displaying model trials: {e}")
         st.info("No trial logs available in session state. Try running some tuning cycles.")
 
 

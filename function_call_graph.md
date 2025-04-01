@@ -1,0 +1,171 @@
+# Function Call Graph
+
+```mermaid
+graph TD
+    %% Main application flow
+    launcher["launcher.py<br>main()"] --> dashboard_core["dashboard_core.py<br>main_dashboard()"]
+    dashboard_core --> init_dashboard["dashboard_state.py<br>init_session_state()"]
+    dashboard_core --> dashboard_ui["dashboard_ui.py<br>create_ui_components()"]
+    dashboard_core --> dashboard_data["dashboard_data.py<br>load_data()"]
+    
+    %% Data acquisition flow
+    dashboard_data --> fetch_data["data.py<br>fetch_data()"]
+    fetch_data --> validate_data["data.py<br>validate_data()"]
+    fetch_data --> coingecko["data.py<br>_download_data_coingecko()"]
+    fetch_data --> alphavantage["data.py<br>_download_data_alphavantage()"]
+    fetch_data --> finnhub["data.py<br>_download_data_finnhub()"]
+    fetch_data --> yfinance["data.py<br>_download_data_cached()"]
+    
+    %% Preprocessing flow
+    fetch_data --> preprocess["preprocessing.py<br>preprocess_data()"]
+    preprocess --> create_features["features.py<br>feature_engineering()"]
+    create_features --> create_sequences["sequence_utils.py<br>create_sequences()"]
+    create_features --> vectorized_indicators["vectorized_indicators.py<br>add_indicators()"]
+    
+    %% Model creation flow
+    dashboard_model["dashboard_model.py<br>create_model()"] --> model_factory["model_factory.py<br>create_model()"]
+    model_factory --> neural_models["model.py<br>build_model_by_type()"]
+    model_factory --> tree_models["model_factory.py<br>_create_tree_models()"]
+    model_factory --> ensemble_model["ensemble_model.py<br>EnhancedEnsembleModel()"]
+    
+    neural_models --> lstm["model.py<br>build_lstm_model()"]
+    neural_models --> rnn["model.py<br>build_rnn_model()"]
+    neural_models --> cnn["cnn_model.py<br>CNNPricePredictor()"]
+    neural_models --> tft["temporal_fusion_transformer.py<br>build_tft_model()"]
+    neural_models --> nbeats["nbeats_model.py<br>build_nbeats_model()"]
+    neural_models --> ltc["ltc_model.py<br>build_ltc_model()"]
+    neural_models --> tabnet["tabnet_model.py<br>TabNetPricePredictor()"]
+    
+    tree_models --> random_forest["model_factory.py<br>_create_random_forest_model()"]
+    tree_models --> xgboost["model_factory.py<br>_create_xgboost_model()"]
+    
+    ensemble_model --> ensemble_utils["ensemble_utils.py<br>create_ensemble_model()"]
+    ensemble_model --> ensemble_weighting["ensemble_weighting.py<br>calculate_weights()"]
+    
+    %% Training flow
+    dashboard_model --> train_model["training/train.py<br>train_model()"]
+    train_model --> trainer["training/trainer.py<br>ModelTrainer.fit()"]
+    trainer --> walk_forward["training/walk_forward.py<br>unified_walk_forward()"]
+    
+    walk_forward --> train_submodels["walk_forward.py<br>train_model_function()"]
+    walk_forward --> calculate_metrics["walk_forward.py<br>calculate_mse/calculate_mape()"]
+    walk_forward --> update_forecast["walk_forward.py<br>update_forecast_in_session_state()"]
+    walk_forward --> get_ensemble_model["walk_forward.py<br>get_ensemble_model()"]
+    
+    walk_forward --> incremental_learning["incremental_learning.py<br>ModelRegistry.register()"]
+    walk_forward --> concept_drift["concept_drift.py<br>MultiDetectorDriftSystem.update_error()"]
+    walk_forward --> confidence_metrics["confidence_metrics.py<br>calculate_confidence()"]
+    
+    concept_drift --> drift_scheduler["drift_scheduler.py<br>DriftTuningScheduler.record()"]
+    drift_scheduler --> market_regime["market_regime.py<br>MarketRegimeManager.get_current_regime()"]
+    
+    %% Tuning flow
+    tuning_launcher["tuning/launcher.py<br>main()"] --> study_manager["study_manager.py<br>StudyManager.run_all_studies()"]
+    study_manager --> create_study["study_manager.py<br>StudyManager.create_study()"]
+    study_manager --> suggest_hyperparameters["study_manager.py<br>suggest_model_hyperparameters()"]
+    study_manager --> objective["study_manager.py<br>create_model_objective()"]
+    objective --> evaluate_model["study_manager.py<br>evaluate_model_with_walkforward()"]
+    evaluate_model --> walk_forward
+    
+    study_manager --> model_evaluation["model_evaluation.py<br>evaluate_models()"]
+    model_evaluation --> walk_forward
+    
+    tuning_coordinator["tuning_coordinator.py<br>run_tuning()"] --> study_manager
+    meta_tuning["meta_tuning.py<br>meta_tune()"] --> tuning_coordinator
+    drift_optimizer["drift_optimizer.py<br>optimize_drift_hyperparameters()"] --> concept_drift
+    
+    %% Dashboard visualization flow
+    dashboard_ui --> dashboard_viz["dashboard_visualization.py<br>create_interactive_price_chart()"]
+    dashboard_viz --> plotly["visualization.py<br>create_plotly_figure()"]
+    
+    dashboard_ui --> pattern_discovery["pattern_discovery/pattern_discovery_tab.py<br>render_tab()"]
+    pattern_discovery --> pattern_management["pattern_discovery/pattern_management.py<br>identify_patterns()"]
+    
+    dashboard_ui --> model_visualizations["model_visualizations.py<br>ModelVisualizationDashboard()"]
+    model_visualizations --> enhanced_weight_viz["enhanced_weight_viz.py<br>plot_weights()"]
+    
+    dashboard_ui --> drift_dashboard["drift_dashboard.py<br>show_drift_visualization()"]
+    dashboard_ui --> xai_integration["xai_integration.py<br>create_xai_explorer()"]
+    
+    %% Utility flows
+    dashboard_core --> gpu_mem_management["gpu_memory_management.py<br>configure_gpu_memory()"]
+    gpu_mem_management --> gpu_mem_manager["gpu_memory_manager.py<br>GPUMemoryManager()"]
+    
+    dashboard_core --> error_handler["dashboard_error.py<br>robust_error_boundary()"]
+    error_handler --> robust_handler["robust_handler.py<br>handle_error()"]
+    
+    dashboard_core --> memory_utils["memory_utils.py<br>adaptive_memory_clean()"]
+    memory_utils --> training_optimizer["training_optimizer.py<br>TrainingOptimizer()"]
+    
+    model_factory --> threadsafe["threadsafe.py<br>FileLock()"]
+    
+    %% Configuration flow
+    dashboard_core --> config_loader["config_loader.py<br>get_config()"]
+    config_loader --> system_config["system_config.json"]
+    config_loader --> user_config["user_config.yaml"]
+    config_loader --> hyperparameter_config["hyperparameter_config.py"]
+    study_manager --> hyperparameter_config
+    
+    %% Style definitions
+    classDef main fill:#f4a460,stroke:#333,stroke-width:2px;
+    classDef data fill:#87cefa,stroke:#333,stroke-width:1px;
+    classDef model fill:#90ee90,stroke:#333,stroke-width:1px;
+    classDef train fill:#ff9999,stroke:#333,stroke-width:1px;
+    classDef tune fill:#ffb6c1,stroke:#333,stroke-width:1px;
+    classDef dash fill:#ffa07a,stroke:#333,stroke-width:1px;
+    classDef util fill:#d3d3d3,stroke:#333,stroke-width:1px;
+    classDef config fill:#ffe4b5,stroke:#333,stroke-width:1px;
+    
+    class launcher,dashboard_core,dashboard_ui,dashboard_model,dashboard_data main;
+    class fetch_data,validate_data,coingecko,alphavantage,finnhub,yfinance,preprocess,create_features,create_sequences,vectorized_indicators data;
+    class model_factory,neural_models,tree_models,ensemble_model,lstm,rnn,cnn,tft,nbeats,ltc,tabnet,random_forest,xgboost,ensemble_utils,ensemble_weighting model;
+    class train_model,trainer,walk_forward,train_submodels,calculate_metrics,update_forecast,get_ensemble_model,incremental_learning,concept_drift,confidence_metrics,drift_scheduler,market_regime train;
+    class tuning_launcher,study_manager,create_study,suggest_hyperparameters,objective,evaluate_model,model_evaluation,tuning_coordinator,meta_tuning,drift_optimizer tune;
+    class dashboard_viz,plotly,pattern_discovery,pattern_management,model_visualizations,enhanced_weight_viz,drift_dashboard,xai_integration dash;
+    class gpu_mem_management,gpu_mem_manager,error_handler,robust_handler,memory_utils,training_optimizer,threadsafe util;
+    class config_loader,system_config,user_config,hyperparameter_config config;
+
+    %% Main function call graph for GPU thread management
+    
+    %% Worker Thread Initialization 
+    StudyManager_run_all_studies["StudyManager.run_all_studies"] --> worker_fn
+    Meta_run_task_thread["TrainingOptimizer._run_task_thread"] --> configure_thread_for_gpu
+    
+    %% GPU Configuration Functions
+    worker_fn --> configure_thread_for_gpu["configure_thread_for_gpu()"]
+    configure_thread_for_gpu --> tf_memory_growth["tf.config.experimental.set_memory_growth"]
+    configure_thread_for_gpu --> set_tf_threads["tf.config.threading.set_*_parallelism_threads"]
+    configure_thread_for_gpu --> get_device_context["DeviceContextManager.get_device_context"]
+    
+    %% Device Context Management
+    get_device_context --> create_device_context["tf.device"]
+    DeviceContextManager --> thread_local_contexts["Thread-local device contexts"]
+    DeviceContextManager --> global_contexts["Global device contexts"]
+    
+    %% Thread-local Storage Management
+    configure_thread_for_gpu --> initialize_thread_local["Initialize thread_local storage"]
+    initialize_thread_local --> store_current_device["Store current device in thread_local"]
+    
+    %% Training Optimizer Interaction
+    configure_thread_for_gpu --> get_training_optimizer
+    get_training_optimizer --> update_optimizer_thread_local["Update optimizer thread_local storage"]
+    
+    %% Task Execution Path in meta_tuning.py
+    run_all_models_parallel["run_all_models_parallel"] --> optimize_task_groups
+    optimize_task_groups --> _run_task_thread
+    _run_task_thread --> _setup_thread_environment["_setup_thread_environment"]
+    _setup_thread_environment --> tf_device_context["tf.device context"]
+    
+    %% Study Manager Execution Path
+    StudyManager_run_all_studies --> _run_model_optimization
+    _run_model_optimization --> _apply_resource_settings
+    _apply_resource_settings --> get_training_optimizer
+    
+    %% Style definitions
+    classDef core fill:#f96,stroke:#333,stroke-width:2px;
+    classDef gpu fill:#bbf,stroke:#333,stroke-width:2px;
+    classDef thread fill:#bfb,stroke:#333,stroke-width:2px;
+    
+    class configure_thread_for_gpu,DeviceContextManager core;
+    class tf_memory_growth,tf_device_context gpu;
+    class worker_fn,_run_task_thread thread;

@@ -17,6 +17,20 @@ import yaml
 # Configure logging
 logger = logging.getLogger("threadsafe")
 
+# Import paths from config_loader
+from config.config_loader import (
+    PROGRESS_FILE,
+    TUNING_STATUS_FILE,
+    TESTED_MODELS_FILE
+)
+
+# Define critical files by extracting filenames from full paths
+CRITICAL_FILES = [
+    os.path.basename(PROGRESS_FILE),
+    os.path.basename(TUNING_STATUS_FILE),
+    os.path.basename(TESTED_MODELS_FILE)
+]
+
 # Global monitoring
 _active_locks = {}
 _locks_lock = threading.Lock()
@@ -24,7 +38,8 @@ _stop_cleanup_event = threading.Event()
 _cleanup_thread = None
 
 # Critical files that need special handling
-CRITICAL_FILES = ["progress.yaml", "tuning_status.txt", "tested_models.yaml"]
+MAX_RETRY_COUNT = 5
+STALE_LOCK_THRESHOLD = 60  # seconds
 
 
 def cleanup_stale_temp_files(directory=None, max_age=3600, pattern=None):
@@ -253,17 +268,9 @@ class FileLockError(Exception):
 
 
 class FileLock:
-    """Cross-platform file locking implementation with improved handling of stale locks."""
+    """Cross-platform file locking with improved handling for contention."""
 
     def __init__(self, filepath: str, timeout: float = 10.0, retry_delay: float = 0.1):
-        """
-        Initialize a FileLock for the given file.
-
-        Args:
-            filepath: Path to the file to lock
-            timeout: Maximum time to wait for the lock (seconds)
-            retry_delay: Delay between lock attempts (seconds)
-        """
         # Store path information
         self.filepath = filepath
         self.lockfile = f"{filepath}.lock"
@@ -285,7 +292,8 @@ class FileLock:
         self._register_lock()
 
     def _register_lock(self):
-        """Register this lock in the global active locks dictionary."""
+        """Register this lock in the global active locks dictionary.
+        Only called after successful lock acquisition."""
         with _locks_lock:
             if self._pid not in _active_locks:
                 _active_locks[self._pid] = []
@@ -299,34 +307,16 @@ class FileLock:
                 _active_locks[self._pid].remove(self)
                 if not _active_locks[self._pid]:  # Remove empty list
                     del _active_locks[self._pid]
-
+                    
     def __enter__(self):
-        logger = logging.getLogger("prediction_model")
-        logger.debug("Attempting to acquire lock: %s", self.lockfile)
-        
-        self.acquire()
-        
-        if self._locked:
-            logger.debug("Lock acquired: %s", self.lockfile)
-        else:
-            logger.warning("Failed to acquire lock after %d seconds: %s", self.timeout, self.lockfile)
-        
+        logger.debug(f"Attempting to acquire lock: {self.lockfile}")
+        if not self.acquire():
+            raise FileLockError(f"Failed to acquire lock for {self.filepath}")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Release the lock when exiting a 'with' block."""
         self.release()
-
-    def __del__(self):
-        """Ensure lock is released when object is garbage collected."""
-        if self._locked:
-            try:
-                logger.warning(f"Lock on {self.filepath} was not explicitly released, cleaning up")
-                self.release()
-            except Exception:
-                pass
-            finally:
-                self._unregister_lock()
 
     def acquire(self):
         """
@@ -334,10 +324,11 @@ class FileLock:
 
         Raises:
             FileLockError: If the lock cannot be acquired
+        
+        Returns:
+            bool: True if lock was acquired successfully
         """
         with self._thread_lock:
-            start_time = time.time()
-            
             # Already locked by this instance
             if self._locked:
                 return True
@@ -345,232 +336,187 @@ class FileLock:
             # Check for and clean stale lock before attempting to acquire
             self._check_and_clean_stale_lock()
             
+            start_time = time.time()
             acquired_handle = False
-            try:
-                while True:
-                    try:
-                        if self._acquire_lock_impl():
-                            acquired_handle = True
-                            self._locked = True
-                            self._lock_time = time.time()
-                            logger.debug(f"Acquired lock for {self.filepath} (PID: {self._pid})")
-                            return True
-                    except Exception as e:
-                        # If timeout exceeded, raise exception
-                        if time.time() - start_time >= self.timeout:
-                            # For critical files, try cleaning one more time before failing
-                            file_path = self.filepath
-                            is_critical = any(critical_file in file_path for critical_file in CRITICAL_FILES)
-                            lock_file_path = self.lockfile
-                            
-                            if is_critical and os.path.exists(lock_file_path):
-                                logger.warning(f"Timeout exceeded for critical file, attempting emergency cleanup: {file_path}")
-                                try:
-                                    lock_age = time.time() - os.path.getmtime(lock_file_path)
-                                    if lock_age > 30:  # More aggressive 30 second threshold for emergency cleanup
-                                        os.remove(lock_file_path)
-                                        logger.warning(f"Emergency removal of stale lock: {lock_file_path}")
-                                        # Try one more time
-                                        if self._acquire_lock_impl():
-                                            acquired_handle = True
-                                            self._locked = True
-                                            self._lock_time = time.time()
-                                            logger.debug(f"Acquired lock after emergency cleanup: {file_path}")
-                                            return True
-                                except Exception as cleanup_e:
-                                    logger.error(f"Emergency cleanup failed: {cleanup_e}")
-                                    
-                            # If we couldn't acquire the lock, make sure to release any resources
-                            if acquired_handle and not self._locked:
-                                try:
-                                    self._release_lock_impl()
-                                except Exception:
-                                    pass
-                                    
-                            raise FileLockError(f"Could not acquire lock for {file_path}: {str(e)}")
-                    
-                    # Random jitter to prevent lock-step retries from multiple processes
-                    jitter = random.uniform(0, self.retry_delay * 0.5)
-                    time.sleep(self.retry_delay + jitter)
-                    
-                    # Check for timeout
-                    if time.time() - start_time >= self.timeout:
-                        # For critical files, one last attempt to clean stale lock
-                        file_path = self.filepath
-                        is_critical = any(critical_file in file_path for critical_file in CRITICAL_FILES)
-                        if is_critical:
-                            self._check_and_clean_stale_lock(force=True)
-                        
-                        raise FileLockError(f"Timeout while waiting for lock on {file_path}")
-                        
-            except Exception:
-                # If anything goes wrong, ensure we clean up any acquired resources
-                if acquired_handle and not self._locked:
-                    try:
-                        self._release_lock_impl()
-                    except Exception:
-                        pass
-                raise
-
-    def _check_and_clean_stale_lock(self, force=False):
-        """
-        Check if the lock file is stale and clean it if needed.
-        Enhanced for more aggressive handling of critical files.
-        """
-        if not self._is_unix:
-            lock_file_path = self.lockfile  # Avoid variable name 'os'
-            if os.path.exists(lock_file_path):
+            
+            # Add retry loop with exponential backoff
+            retries = 0
+            max_retries = MAX_RETRY_COUNT
+            
+            while True:
                 try:
-                    try:
-                        lock_age = time.time() - os.path.getmtime(lock_file_path)
-                    except OSError:
-                        # File might be inaccessible - consider it stale if force is True
-                        lock_age = float('inf') if force else 0
-                        logger.warning(f"Could not check age of lock file: {lock_file_path}")
-
-                    # Use a shorter timeout for critical files
-                    file_path = self.filepath  # Avoid variable name 'os'
-                    is_critical = any(critical_file in file_path for critical_file in CRITICAL_FILES)
-                    max_age = 30 if is_critical else 300  # 30 seconds for critical, 5 minutes otherwise
-
-                    if force or lock_age > max_age:
-                        logger.warning(f"Found stale lock file: {lock_file_path} (Age: {lock_age:.1f}s)")
+                    # Try to acquire the lock
+                    if self._acquire_lock_impl():
+                        acquired_handle = True
+                        self._locked = True
+                        self._lock_time = time.time()
+                        # Only register AFTER successful acquisition
+                        self._register_lock()
+                        logger.debug(f"Lock acquired for {self.filepath} (PID: {self._pid})")
+                        return True
+                except Exception as e:
+                    # Check if we've exceeded our retry limit
+                    retries += 1
+                    if retries >= max_retries:
+                        # For critical files, try emergency cleanup before giving up
+                        if any(critical_file in self.filepath for critical_file in CRITICAL_FILES):
+                            try:
+                                if os.path.exists(self.lockfile):
+                                    logger.warning(f"Emergency cleanup for {self.lockfile}")
+                                    os.remove(self.lockfile)
+                                    # Try one last time
+                                    if self._acquire_lock_impl():
+                                        acquired_handle = True
+                                        self._locked = True
+                                        self._lock_time = time.time()
+                                        # Only register AFTER successful acquisition
+                                        self._register_lock()
+                                        return True
+                            except Exception:
+                                pass
+                        
+                        # If we still couldn't acquire, raise an error
+                        if acquired_handle and not self._locked:
+                            try:
+                                self._release_lock_impl()
+                            except Exception:
+                                pass
+                        
+                        raise FileLockError(f"Could not acquire lock after {max_retries} attempts: {self.filepath}")
+                    
+                    # Calculate exponential backoff with jitter
+                    delay = min(self.retry_delay * (2 ** retries), 1.0) + random.random() * 0.1
+                    time.sleep(delay)
+                    
+                    # Clean stale locks on each retry
+                    if os.path.exists(self.lockfile):
+                        self._check_and_clean_stale_lock(force=retries >= max_retries//2)
+                
+                # Check for timeout
+                if time.time() - start_time >= self.timeout:
+                    if acquired_handle and not self._locked:
                         try:
-                            with open(lock_file_path, "r") as f:
-                                lock_content = f.read().strip()
-                            logger.debug(f"Stale lock content: {lock_content}")
+                            self._release_lock_impl()
                         except Exception:
                             pass
-                            
+                    
+                    # Try emergency cleanup on timeout for critical files
+                    if any(critical_file in self.filepath for critical_file in CRITICAL_FILES):
                         try:
-                            os.remove(lock_file_path)
-                            logger.info(f"Removed stale lock file: {lock_file_path}")
-                        except PermissionError:
-                            logger.warning(f"Permission error removing stale lock: {lock_file_path}")
-                            
-                            # For critical files, try more aggressive cleanup
-                            if is_critical:
-                                try:
-                                    # On Windows, try win32file approach
-                                    if sys.platform == 'win32':
-                                        try:
-                                            import win32file
-                                            handle = win32file.CreateFile(
-                                                lock_file_path,
-                                                win32file.GENERIC_READ,
-                                                win32file.FILE_SHARE_DELETE | win32file.FILE_SHARE_READ | win32file.FILE_SHARE_WRITE,
-                                                None,
-                                                win32file.OPEN_EXISTING,
-                                                0,
-                                                None
-                                            )
-                                            win32file.CloseHandle(handle)
-                                            # Now try to delete it again
-                                            os.remove(lock_file_path)
-                                            logger.info(f"Successfully removed stale lock using win32file: {lock_file_path}")
-                                        except Exception as win_err:
-                                            logger.warning(f"Could not remove stale lock using win32file: {win_err}")
-                                    else:
-                                        # On Unix, try chmod
-                                        os.chmod(lock_file_path, 0o666)
-                                        os.remove(lock_file_path)
-                                        logger.info(f"Successfully removed stale lock with chmod: {lock_file_path}")
-                                except Exception as e2:
-                                    logger.warning(f"All cleanup methods failed for {lock_file_path}: {e2}")
-                        except Exception as e:
-                            logger.error(f"Failed to remove stale lock file: {e}")
+                            if os.path.exists(self.lockfile):
+                                os.remove(self.lockfile)
+                                logger.warning(f"Emergency removal of lock due to timeout: {self.lockfile}")
+                        except Exception:
+                            pass
+                    
+                    raise FileLockError(f"Timeout waiting for lock on {self.filepath}")
+            
+            # We should never reach here, but return False if we somehow do
+            return False
+
+    def _check_and_clean_stale_lock(self, force=False):
+        """Check if the lock file is stale and clean it if needed."""
+        if not os.path.exists(self.lockfile):
+            return
+            
+        try:
+            try:
+                lock_age = time.time() - os.path.getmtime(self.lockfile)
+            except OSError:
+                # File might be inaccessible - consider it stale if force=True
+                lock_age = float('inf') if force else 0
+                logger.warning(f"Could not check age of lock file: {self.lockfile}")
+
+            # Use shorter timeout for critical files
+            is_critical = any(critical_file in self.filepath for critical_file in CRITICAL_FILES)
+            max_age = STALE_LOCK_THRESHOLD if is_critical else 300  # 30 seconds for critical files
+
+            if force or lock_age > max_age:
+                logger.warning(f"Found stale lock file: {self.lockfile} (Age: {lock_age:.1f}s)")
+                try:
+                    os.remove(self.lockfile)
+                    logger.info(f"Removed stale lock file: {self.lockfile}")
                 except Exception as e:
-                    logger.error(f"Error checking lock staleness: {e}")
+                    logger.warning(f"Error removing stale lock: {e}")
+                    
+                    # Try more aggressive approach for critical files
+                    if is_critical:
+                        try:
+                            # Try to change permissions and remove
+                            os.chmod(self.lockfile, 0o666)
+                            os.remove(self.lockfile)
+                            logger.info(f"Removed stale lock file after chmod: {self.lockfile}")
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.error(f"Error checking lock staleness: {e}")
 
     def _acquire_lock_impl(self):
-        """Implementation of platform-specific lock acquisition."""
+        """Platform-specific lock acquisition implementation."""
         if self._is_unix:
             # Use fcntl on Unix systems
             import fcntl
             
             try:
                 # Open or create the file in write mode
-                self._lock_handle = open(self.filepath, "a+")
+                self._lock_handle = open(self.lockfile, "a+")
                 fcntl.flock(self._lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                
+                # Write PID and timestamp to lock file for better debugging
+                self._lock_handle.seek(0)
+                self._lock_handle.truncate()
+                self._lock_handle.write(f"PID: {os.getpid()}, Thread: {threading.current_thread().name}, Time: {time.time()}")
+                self._lock_handle.flush()
+                
                 return True
-            except IOError as e:
-                # Lock is held by another process - log details
-                logger.debug(f"Lock acquisition failed for {self.filepath}: {e}")
+            except IOError:
+                # Lock is held by another process
                 if self._lock_handle:
                     self._lock_handle.close()
                     self._lock_handle = None
                 raise
         else:
-            # Windows implementation
+            # Windows implementation - use file creation exclusivity
             try:
-                lock_file_path = self.lockfile  # Avoid variable name 'os'
-                if os.path.exists(lock_file_path):
-                    # Check lock file age
-                    lock_age = time.time() - os.path.getmtime(lock_file_path)
-                    
-                    # Different staleness thresholds for different file types
-                    file_path = self.filepath  # Avoid variable name 'os'
-                    is_critical = any(critical_file in file_path for critical_file in CRITICAL_FILES)
-                    is_db = file_path.endswith(".db") or ".db." in file_path
-                    
-                    # Configure thresholds based on file type
-                    stale_threshold = 15 if is_critical else (60 if is_db else 30)  # More aggressive timeouts
-                    
-                    if lock_age > stale_threshold:
-                        logger.warning(f"Removing stale lock file: {lock_file_path} (Age: {lock_age:.1f}s)")
-                        os.remove(lock_file_path)
-                    else:
-                        # Try to read the lock file to get info about lock holder
-                        try:
-                            with open(lock_file_path, "r") as f:
-                                lock_info = f.read()
-                            logger.debug(f"Lock file exists: {lock_file_path}\nInfo: {lock_info}")
-                        except Exception:
-                            logger.debug(f"Lock file exists but couldn't read it: {lock_file_path}")
-                        raise IOError(f"Lock file exists and is not stale: {lock_file_path}")
+                # Check if lock file exists
+                if os.path.exists(self.lockfile):
+                    # Need to handle existing lock
+                    raise IOError(f"Lock file exists: {self.lockfile}")
                 
                 # Create lock file with detailed info
-                process_id = self._pid  # Avoid variable name confusion
-                current_time = time.time()
-                timestamp = datetime.now().isoformat()
-                filename = os.path.basename(self.filepath)
-                thread_name = threading.current_thread().name
+                with open(self.lockfile, "w") as f:
+                    f.write(f"PID: {os.getpid()}, Thread: {threading.current_thread().name}, Time: {time.time()}")
+                    f.flush()
+                    os.fsync(f.fileno())  # Ensure file is written to disk
                 
-                # Create parent directory if needed
-                lock_dir = os.path.dirname(lock_file_path)
-                if lock_dir and not os.path.exists(lock_dir):
-                    os.makedirs(lock_dir, exist_ok=True)
-                    
-                with open(lock_file_path, "w") as f:
-                    f.write(f"Locked by process {process_id} at {current_time} on {timestamp}\n")
-                    f.write(f"File: {filename}\n")
-                    f.write(f"Thread: {thread_name}")
                 return True
-            except Exception as e:
-                logger.debug(f"Lock acquisition error for {self.lockfile}: {e}")
+            except Exception:
                 raise
 
     def release(self):
-        """
-        Release the lock.
-
-        Raises:
-            FileLockError: If the lock cannot be released
-        """
+        """Release the lock."""
         with self._thread_lock:
             if not self._locked:
                 return
 
             try:
                 self._release_lock_impl()
-                self._locked = False
+                # Unregister before setting _locked to false for better tracking
                 self._unregister_lock()
+                self._locked = False
                 logger.debug(f"Released lock for {self.filepath} (PID: {self._pid})")
             except Exception as e:
-                raise FileLockError(f"Could not release lock for {self.filepath}: {str(e)}")
+                logger.error(f"Could not release lock for {self.filepath}: {str(e)}")
+                # Try emergency cleanup if release fails
+                try:
+                    if os.path.exists(self.lockfile):
+                        os.remove(self.lockfile)
+                        logger.warning(f"Emergency removal during failed release: {self.lockfile}")
+                except Exception:
+                    pass
 
     def _release_lock_impl(self):
-        """Platform-specific lock release."""
+        """Platform-specific lock release implementation."""
         if self._is_unix:
             # Use fcntl on Unix systems
             import fcntl
@@ -579,43 +525,21 @@ class FileLock:
                 fcntl.flock(self._lock_handle, fcntl.LOCK_UN)
                 self._lock_handle.close()
                 self._lock_handle = None
+                
+                # Try to remove the lock file but don't fail if we can't
+                try:
+                    if os.path.exists(self.lockfile):
+                        os.remove(self.lockfile)
+                except Exception:
+                    pass
         else:
             # Remove lock file on Windows
-            lock_file_path = self.lockfile
-            if os.path.exists(lock_file_path):
-                try:
-                    os.remove(lock_file_path)
-                except PermissionError as e:
-                    logger.warning(f"Permission error removing lock file {lock_file_path}: {e}")
-                except Exception as e:
-                    logger.error(f"Failed to remove lock file {lock_file_path}: {e}")
+            try:
+                if os.path.exists(self.lockfile):
+                    os.remove(self.lockfile)
+            except Exception as e:
+                logger.error(f"Failed to remove lock file {self.lockfile}: {e}")
             self._lock_handle = None
-
-    def is_locked(self):
-        """Check if the file is locked by this instance."""
-        return self._locked
-
-    def break_lock(self):
-        """
-        Forcibly break an existing lock.
-        Use with caution as it might cause data corruption if the lock is actively used.
-        """
-        logger.warning(f"Forcibly breaking lock on {self.filepath}")
-        try:
-            if self._is_unix and self._lock_handle:
-                import fcntl
-                fcntl.flock(self._lock_handle, fcntl.LOCK_UN)
-                self._lock_handle.close()
-                self._lock_handle = None
-            else:
-                lock_file_path = self.lockfile
-                if os.path.exists(lock_file_path):
-                    os.remove(lock_file_path)
-            self._locked = False
-            return True
-        except Exception as e:
-            logger.error(f"Failed to break lock on {self.filepath}: {e}")
-            return False
 
 
 def emergency_cleanup_for_file(filepath: str) -> bool:
@@ -705,6 +629,24 @@ def safe_read_yaml(filepath: str, default: Any = None, max_retries: int = 5) -> 
     Returns:
         Parsed YAML data or default value
     """
+    # Special case for tuning_status.txt file
+    if filepath.endswith("tuning_status.txt"):
+        try:
+            # Read as text file with key: value format instead of YAML
+            result = {}
+            if os.path.exists(filepath):
+                with open(filepath, "r") as f:
+                    for line in f:
+                        if ":" in line:
+                            parts = line.strip().split(":", 1)
+                            if len(parts) == 2:
+                                key, value = parts
+                                result[key.strip()] = value.strip()
+            return result or default
+        except Exception as e:
+            logger.error(f"Error reading tuning status file: {e}")
+            return {} if default is None else default
+    
     # Special handling for critical files - use shorter timeout
     file_path = filepath  # Avoid variable name 'os'
     is_critical = any(critical_file in file_path for critical_file in CRITICAL_FILES)
@@ -1051,3 +993,56 @@ class AtomicFileWriter:
         except Exception as e:
             logger.error(f"Error writing YAML to {self.filepath}: {e}")
             return False
+
+
+class AtomicMultiFileUpdate:
+    """Ensures multiple files are updated in a coordinated, atomic way."""
+    
+    def __init__(self, file_paths, timeout=10.0):
+        self.file_paths = file_paths
+        self.timeout = timeout
+        self.locks = []
+        self.temp_files = {}
+        
+    def __enter__(self):
+        # Sort file paths to prevent deadlocks
+        sorted_paths = sorted(self.file_paths)
+        
+        # Acquire locks in sorted order
+        for path in sorted_paths:
+            lock = FileLock(path, timeout=self.timeout)
+            lock.acquire()
+            self.locks.append(lock)
+            
+            # Create temp file for each path
+            temp_path = f"{path}.tmp.{int(time.time() * 1000)}"
+            self.temp_files[path] = temp_path
+            
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            # If no exception, commit all changes
+            for path, temp_path in self.temp_files.items():
+                if os.path.exists(temp_path):
+                    os.replace(temp_path, path)
+        else:
+            # If exception, clean up temp files
+            for temp_path in self.temp_files.values():
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+        
+        # Release all locks in reverse order
+        for lock in reversed(self.locks):
+            lock.release()
+    
+    def write_yaml(self, path, data):
+        """Write YAML data to the temp file for a path"""
+        if path not in self.temp_files:
+            raise ValueError(f"Path {path} not in managed files")
+            
+        temp_path = self.temp_files[path]
+        with open(temp_path, 'w') as f:
+            yaml.safe_dump(data, f)
+        
+        return True

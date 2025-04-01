@@ -2,7 +2,7 @@
 --- PYLINT RESULTS ---
 
 -------------------------------------------------------------------
-Your code has been rated at 10.00/10 (previous run: 9.34/10, +0.66)
+Your code has been rated at 10.00/10 (previous run: 9.35/10, +0.65)
 
 
 
@@ -13,8 +13,8 @@ c:\Users\clubs\Desktop\Prediction Model\config\__init__.py:37:5: F401 '.config_l
 c:\Users\clubs\Desktop\Prediction Model\config\__init__.py:37:5: F401 '.config_loader.TIMEFRAMES' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\config\advanced_loss_config.py:62:21: F841 local variable 'quantile_vals' is assigned to but never used
 c:\Users\clubs\Desktop\Prediction Model\config\logger_config.py:12:1: F401 'pathlib.Path' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py:180:29: F541 f-string is missing placeholders
-c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py:287:15: F541 f-string is missing placeholders
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py:184:29: F541 f-string is missing placeholders
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_core.py:291:15: F541 f-string is missing placeholders
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_data.py:35:9: F401 'src.data.sequence_utils.numba_mape' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_data.py:35:9: F401 'src.data.sequence_utils.numba_mse' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_data.py:35:9: F401 'src.data.sequence_utils.vectorized_sequence_creation' imported but unused
@@ -28,15 +28,24 @@ c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_data.p
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_data.py:1068:17: F811 redefinition of unused 'VMILIndicator' from line 59
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py:14:1: F401 'typing.Union' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_error.py:42:1: F401 'src.utils.threadsafe.AtomicFileWriter' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:30:1: F401 'optuna' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:31:1: F401 'yaml' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:46:1: F401 'numpy as np' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:52:1: F401 'config.config_loader.N_STARTUP_TRIALS' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:52:1: F401 'config.config_loader.BEST_PARAMS_FILE' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:81:5: F401 'src.tuning.meta_tuning.create_progress_callback' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:82:5: F401 'src.training.callbacks.StopStudyCallback' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:83:5: F401 'src.tuning.progress_helper.read_progress_from_yaml' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:83:5: F401 'src.tuning.progress_helper.set_stop_requested' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:316:9: F811 redefinition of unused 'set_stop_requested' from line 83
-c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:345:13: F401 'json' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:505:13: F811 redefinition of unused 'yaml' from line 31
-c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:597:5: F811 redefinition of unused 'np' from line 46
-c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:895:9: F811 redefinition of unused 'read_progress_from_yaml' from line 83
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:92:5: F401 'src.utils.gpu_memory_manager.adaptive_memory_clean' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:227:9: F811 redefinition of unused 'N_STARTUP_TRIALS' from line 52
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:280:13: F841 local variable 'progress_bar' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:382:9: F811 redefinition of unused 'set_stop_requested' from line 83
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:419:13: F401 'json' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:463:13: F811 redefinition of unused 'set_stop_requested' from line 83
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:627:13: F811 redefinition of unused 'yaml' from line 31
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:719:5: F811 redefinition of unused 'np' from line 46
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:876:9: F811 redefinition of unused 'read_progress_from_yaml' from line 83
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_shutdown.py:13:1: F401 'datetime.datetime' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_state.py:11:1: F401 'typing.Optional' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_state.py:11:1: F401 'typing.Union' imported but unused
@@ -48,9 +57,9 @@ c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py:
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py:183:1: F401 'numpy as np' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py:275:5: F811 redefinition of unused 'read_tuning_status' from line 251
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py:275:5: F401 'src.tuning.progress_helper.get_individual_model_progress' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py:1076:5: F811 redefinition of unused 'get_individual_model_progress' from line 275
-c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py:1101:5: F841 local variable 'main_progress' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py:1198:9: F811 redefinition of unused 'get_individual_model_progress' from line 275
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py:1086:5: F811 redefinition of unused 'get_individual_model_progress' from line 275
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py:1111:5: F841 local variable 'main_progress' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_ui.py:1208:9: F811 redefinition of unused 'get_individual_model_progress' from line 275
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_visualization.py:33:1: F401 'typing.Union' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_visualization.py:1019:9: F841 local variable 'last_data' is assigned to but never used
 c:\Users\clubs\Desktop\Prediction Model\src\dashboard\drift_dashboard.py:6:1: F401 'os' imported but unused
@@ -119,21 +128,25 @@ c:\Users\clubs\Desktop\Prediction Model\src\models\ensemble_weighting.py:689:9: 
 c:\Users\clubs\Desktop\Prediction Model\src\models\ltc_model.py:18:5: F401 'optuna' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\models\ltc_model.py:851:5: F841 local variable 'sample_prediction' is assigned to but never used
 c:\Users\clubs\Desktop\Prediction Model\src\models\ltc_model.py:960:5: F811 redefinition of unused 'np' from line 11
-c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:47:5: F401 'optuna' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:209:9: F841 local variable 'batch_size' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:878:1: F811 redefinition of unused 'extract_tree_structure' from line 811
-c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:921:1: F811 redefinition of unused 'record_tree_snapshot' from line 846
-c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:954:1: F811 redefinition of unused 'train_neural_network' from line 859
-c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:974:1: F811 redefinition of unused 'train_tree_based_model' from line 869
-c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:984:9: F841 local variable 'step_size' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:1102:1: F811 redefinition of unused 'build_model_by_type' from line 488
+c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:27:1: F401 'src.utils.gpu_memory_manager.GPUMemoryManager' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:49:5: F401 'optuna' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:211:9: F841 local variable 'batch_size' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:880:1: F811 redefinition of unused 'extract_tree_structure' from line 813
+c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:923:1: F811 redefinition of unused 'record_tree_snapshot' from line 848
+c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:956:1: F811 redefinition of unused 'train_neural_network' from line 861
+c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:976:1: F811 redefinition of unused 'train_tree_based_model' from line 871
+c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:986:9: F841 local variable 'step_size' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\models\model.py:1104:1: F811 redefinition of unused 'build_model_by_type' from line 490
 c:\Users\clubs\Desktop\Prediction Model\src\models\model_factory.py:23:5: F401 'src.utils.gpu_memory_management.configure_gpu_memory' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\models\model_factory.py:23:5: F401 'src.utils.gpu_memory_management.configure_mixed_precision' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\models\nbeats_model.py:589:9: F841 local variable 'activity_regularizer' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\models\nbeats_model.py:599:9: F841 local variable 'activity_regularizer' is assigned to but never used
 c:\Users\clubs\Desktop\Prediction Model\src\models\tabnet_model.py:41:5: F401 'torch' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\models\tabnet_model.py:1003:9: F841 local variable 'y_pred' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\models\tabnet_model.py:1021:9: F841 local variable 'loaded_pred' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\models\tabnet_model.py:1047:9: F841 local variable 'ensemble_model' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\models\tabnet_model.py:51:1: F401 'src.models.model.place_on_device' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\models\tabnet_model.py:1023:9: F841 local variable 'y_pred' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\models\tabnet_model.py:1041:9: F841 local variable 'loaded_pred' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\models\tabnet_model.py:1067:9: F841 local variable 'ensemble_model' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\models\temporal_fusion_transformer.py:8:1: F811 redefinition of unused 'tf' from line 1
+c:\Users\clubs\Desktop\Prediction Model\src\models\temporal_fusion_transformer.py:10:1: F401 'src.models.model.place_on_device' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\training\concept_drift.py:8:1: F401 'pandas as pd' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\training\concept_drift.py:9:1: F401 'typing.List' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\training\concept_drift.py:9:1: F401 'typing.Optional' imported but unused
@@ -172,15 +185,16 @@ c:\Users\clubs\Desktop\Prediction Model\src\training\train.py:23:5: F811 redefin
 c:\Users\clubs\Desktop\Prediction Model\src\training\train.py:248:13: F811 redefinition of unused 'create_sequences' from line 119
 c:\Users\clubs\Desktop\Prediction Model\src\training\train.py:258:13: F841 local variable 'history' is assigned to but never used
 c:\Users\clubs\Desktop\Prediction Model\src\training\trainer.py:52:9: F841 local variable 'batch_size' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:34:5: F401 'src.training.incremental_learning.ModelRegistry' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:41:1: F811 redefinition of unused 'setup_tf_environment' from line 17
-c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:88:1: F401 'pandas as pd' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:97:5: F401 'src.models.model_factory.BaseModel' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:110:5: F401 'src.training.trainer.ModelTrainer' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:112:5: F401 'src.utils.training_optimizer.TrainingOptimizer' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:735:24: F541 f-string is missing placeholders
-c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:739:21: F541 f-string is missing placeholders
-c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:1446:29: F541 f-string is missing placeholders
+c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:13:1: F401 'time' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:31:5: F401 'src.training.incremental_learning.ModelRegistry' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:100:1: F401 'pandas as pd' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:109:5: F401 'src.models.model_factory.BaseModel' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:122:5: F401 'src.training.trainer.ModelTrainer' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:124:5: F401 'src.utils.training_optimizer.TrainingOptimizer' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:699:13: F811 redefinition of unused 'time' from line 13
+c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:782:24: F541 f-string is missing placeholders
+c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:786:21: F541 f-string is missing placeholders
+c:\Users\clubs\Desktop\Prediction Model\src\training\walk_forward.py:1493:29: F541 f-string is missing placeholders
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\drift_optimizer.py:6:1: F401 'numpy as np' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\drift_optimizer.py:8:1: F401 'time' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\drift_optimizer.py:9:1: F401 'datetime.datetime' imported but unused
@@ -188,6 +202,8 @@ c:\Users\clubs\Desktop\Prediction Model\src\tuning\drift_optimizer.py:10:1: F401
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\drift_optimizer.py:10:1: F401 'typing.Any' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\ensemble_tuning.py:73:5: F841 local variable 'build_model_by_type' is assigned to but never used
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\hyperparameter_integration.py:163:9: F841 local variable 'registry' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\tuning\launcher.py:8:1: F401 'time' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\tuning\launcher.py:10:1: F401 'datetime.datetime' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:15:1: F401 'platform' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:88:1: F401 'src.utils.gpu_memory_management.get_gpu_utilization' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:101:1: F401 'src.tuning.study_manager.StudyManager' imported but unused
@@ -199,31 +215,23 @@ c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:133:1: F401 's
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:133:1: F401 'src.utils.threadsafe.safe_write_yaml' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:897:9: F841 local variable 'result' is assigned to but never used
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:908:29: F541 f-string is missing placeholders
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1032:9: F841 local variable 'study' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1108:1: F811 redefinition of unused 'check_sqlite_availability' from line 805
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1129:1: F811 redefinition of unused 'verify_directories' from line 834
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1159:1: F811 redefinition of unused 'initialize_tuning_environment' from line 871
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1166:1: F811 redefinition of unused 'StopStudyCallback' from line 110
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1488:5: F841 local variable 'params' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1625:1: F811 redefinition of unused 'tune_for_combo' from line 923
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1726:9: F841 local variable 'study' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1915:34: F541 f-string is missing placeholders
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:2045:1: F811 redefinition of unused 'tune_for_combo' from line 1625
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:2154:9: F841 local variable 'study' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:2229:1: F811 redefinition of unused 'create_progress_callback' from line 1334
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:2409:1: F811 redefinition of unused 'ensemble_with_walkforward_objective' from line 1471
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:2426:5: F841 local variable 'params' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:2439:1: F811 redefinition of unused 'calculate_combined_metrics' from line 1501
+c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1048:9: F841 local variable 'study' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1126:1: F811 redefinition of unused 'check_sqlite_availability' from line 805
+c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1147:1: F811 redefinition of unused 'verify_directories' from line 834
+c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1177:1: F811 redefinition of unused 'initialize_tuning_environment' from line 871
+c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1184:1: F811 redefinition of unused 'StopStudyCallback' from line 110
+c:\Users\clubs\Desktop\Prediction Model\src\tuning\meta_tuning.py:1506:5: F841 local variable 'params' is assigned to but never used
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\progress_helper.py:18:1: F401 'sys' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\progress_helper.py:22:1: F401 'traceback' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\progress_helper.py:24:1: F401 'typing.List' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\progress_helper.py:24:1: F401 'typing.Union' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\progress_helper.py:27:1: F401 'numpy as np' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\tuning\progress_helper.py:604:13: F841 local variable 'startup_trials' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\tuning\progress_helper.py:768:29: F541 f-string is missing placeholders
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\study_manager.py:34:1: F811 redefinition of unused 'traceback' from line 20
 c:\Users\clubs\Desktop\Prediction Model\src\tuning\study_manager.py:36:1: F401 'numpy as np' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\study_manager.py:792:9: F401 'collections.defaultdict' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\study_manager.py:974:13: F841 local variable 'metrics' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\tuning\study_manager.py:981:33: F541 f-string is missing placeholders
+c:\Users\clubs\Desktop\Prediction Model\src\tuning\study_manager.py:803:9: F401 'collections.defaultdict' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\tuning\study_manager.py:985:13: F841 local variable 'metrics' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\tuning\study_manager.py:992:33: F541 f-string is missing placeholders
 c:\Users\clubs\Desktop\Prediction Model\src\utils\env_setup.py:22:1: F401 'sys' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\utils\env_setup.py:29:1: F401 'src.utils.gpu_memory_management.configure_gpu_memory' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\utils\env_setup.py:104:9: F841 local variable 'optimizer' is assigned to but never used
@@ -237,9 +245,12 @@ c:\Users\clubs\Desktop\Prediction Model\src\utils\gpu_memory_management.py:463:9
 c:\Users\clubs\Desktop\Prediction Model\src\utils\gpu_memory_management.py:582:5: F401 'GPUtil' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\utils\gpu_memory_management.py:897:1: F811 redefinition of unused 'get_memory_info' from line 366
 c:\Users\clubs\Desktop\Prediction Model\src\utils\gpu_memory_manager.py:20:1: F401 'src.utils.memory_utils.adaptive_memory_clean' imported but unused
-c:\Users\clubs\Desktop\Prediction Model\src\utils\gpu_memory_manager.py:620:29: F841 local variable 'gradients' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\utils\gpu_memory_manager.py:995:5: F841 local variable 'memory_profile' is assigned to but never used
-c:\Users\clubs\Desktop\Prediction Model\src\utils\gpu_memory_manager.py:1045:5: F841 local variable 'report' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\utils\gpu_memory_manager.py:244:13: F401 'numpy as np' imported but unused
+c:\Users\clubs\Desktop\Prediction Model\src\utils\gpu_memory_manager.py:277:25: F841 local variable 'result' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\utils\gpu_memory_manager.py:738:29: F841 local variable 'gradients' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\utils\gpu_memory_manager.py:1113:5: F841 local variable 'memory_profile' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\utils\gpu_memory_manager.py:1163:5: F841 local variable 'report' is assigned to but never used
+c:\Users\clubs\Desktop\Prediction Model\src\utils\gpu_memory_manager.py:1265:9: F401 'src.utils.training_optimizer.get_training_optimizer' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\utils\threadsafe.py:12:1: F401 'pathlib.Path' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\utils\threadsafe.py:13:1: F401 'typing.List' imported but unused
 c:\Users\clubs\Desktop\Prediction Model\src\utils\threadsafe.py:13:1: F401 'typing.Optional' imported but unused
@@ -259,18 +270,18 @@ Prediction Model is not a valid Python package name
 
 
 --- BANDIT RESULTS ---
-Working... ---------------------------------------- 100% 0:00:18
-Run started:2025-03-21 03:38:40.393055
+Working... ---------------------------------------- 100% 0:00:15
+Run started:2025-03-25 20:12:18.621426
 
 Test results:
 >> Issue: [B301:blacklist] Pickle and modules that wrap it can be unsafe when used to deserialize untrusted data, possible security issue.
    Severity: Medium   Confidence: High
    CWE: CWE-502 (https://cwe.mitre.org/data/definitions/502.html)
    More Info: https://bandit.readthedocs.io/en/1.8.3/blacklists/blacklist_calls.html#b301-pickle
-   Location: c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:402:31
-401	                    with open(model_path, "rb") as f:
-402	                        return pickle.load(f)
-403	                except Exception as pickle_error:
+   Location: c:\Users\clubs\Desktop\Prediction Model\src\dashboard\dashboard\dashboard_model.py:524:31
+523	                    with open(model_path, "rb") as f:
+524	                        return pickle.load(f)
+525	                except Exception as pickle_error:
 
 --------------------------------------------------
 >> Issue: [B113:request_without_timeout] Call to requests without timeout
@@ -297,20 +308,20 @@ Test results:
    Severity: Medium   Confidence: High
    CWE: CWE-502 (https://cwe.mitre.org/data/definitions/502.html)
    More Info: https://bandit.readthedocs.io/en/1.8.3/plugins/b614_pytorch_load.html
-   Location: c:\Users\clubs\Desktop\Prediction Model\src\models\cnn_model.py:666:16
-665	        # Load the state dictionary
-666	        state = torch.load(path, map_location=device)
-667	
+   Location: c:\Users\clubs\Desktop\Prediction Model\src\models\cnn_model.py:673:16
+672	        # Load the state dictionary
+673	        state = torch.load(path, map_location=device)
+674	
 
 --------------------------------------------------
 >> Issue: [B301:blacklist] Pickle and modules that wrap it can be unsafe when used to deserialize untrusted data, possible security issue.
    Severity: Medium   Confidence: High
    CWE: CWE-502 (https://cwe.mitre.org/data/definitions/502.html)
    More Info: https://bandit.readthedocs.io/en/1.8.3/blacklists/blacklist_calls.html#b301-pickle
-   Location: c:\Users\clubs\Desktop\Prediction Model\src\models\tabnet_model.py:420:24
-419	            with open(path, "rb") as f:
-420	                model = pickle.load(f)
-421	
+   Location: c:\Users\clubs\Desktop\Prediction Model\src\models\tabnet_model.py:438:24
+437	            with open(path, "rb") as f:
+438	                model = pickle.load(f)
+439	
 
 --------------------------------------------------
 >> Issue: [B301:blacklist] Pickle and modules that wrap it can be unsafe when used to deserialize untrusted data, possible security issue.
@@ -355,21 +366,21 @@ Test results:
 --------------------------------------------------
 
 Code scanned:
-	Total lines of code: 45728
+	Total lines of code: 45904
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
 
 Run metrics:
 	Total issues (by severity):
 		Undefined: 0
-		Low: 139
+		Low: 140
 		Medium: 7
 		High: 2
 	Total issues (by confidence):
 		Undefined: 0
 		Low: 1
 		Medium: 0
-		High: 147
+		High: 148
 Files skipped (0):
 [main]	INFO	profile include tests: None
 [main]	INFO	profile exclude tests: None

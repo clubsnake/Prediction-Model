@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mermaid Diagram Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .controls {
+            margin-bottom: 20px;
+        }
+        select, button, input {
+            padding: 8px;
+            margin-right: 10px;
+        }
+        #diagram {
+            border: 1px solid #ddd;
+            padding: 20px;
+            background-color: white;
+            overflow: auto;
+            max-width: 100%;
+        }
+        .mermaid {
+            font-size: 14px;
+        }
+        .file-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f8f8;
+            border-radius: 5px;
+        }
+        .instructions {
+            background-color: #fffbea;
+            padding: 10px;
+            margin-top: 20px;
+            border-left: 4px solid #ffcc00;
+        }
+    </style>
+</head>
+<body>
+    <h1>Mermaid Diagram Viewer</h1>
+    
+    <div class="file-section">
+        <h2>Load Diagram File</h2>
+        <p>Select a .mmd file to view:</p>
+        <input type="file" id="fileInput" accept=".mmd,.md" />
+        
+        <div class="instructions">
+            <p><strong>Note:</strong> You need to select the diagram file manually:</p>
+            <ol>
+                <li>Click the "Choose File" button above</li>
+                <li>Navigate to <code>c:\Users\clubs\Desktop\Prediction Model</code></li>
+                <li>Select either <code>architecture.mmd</code> or <code>function_call_graph.mmd</code></li>
+            </ol>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <button id="zoomIn">Zoom In</button>
+        <button id="zoomOut">Zoom Out</button>
+        <button id="resetZoom">Reset Zoom</button>
+    </div>
+    
+    <div id="diagram" style="transform-origin: 0 0;">
+        <div class="mermaid" id="mermaidDiv"></div>
+    </div>
+    
+    <script>
+        // Initialize mermaid with more specific configuration
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'default',
+            securityLevel: 'loose',
+            flowchart: {
+                useMaxWidth: false,
+                htmlLabels: true
+            },
+            fontSize: 16
+        });
+        
+        let scale = 1.0;
+        const diagram = document.getElementById('diagram');
+        const mermaidDiv = document.getElementById('mermaidDiv');
+        const fileInput = document.getElementById('fileInput');
+        
+        // Load diagram from selected file
+        fileInput.addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                let content = e.target.result;
+                
+                // Extract Mermaid code from Markdown file
+                const mermaidMatch = content.match(/```mermaid\s+([\s\S]+?)```/);
+                if (mermaidMatch && mermaidMatch[1]) {
+                    content = mermaidMatch[1].trim();
+                } else {
+                    // Remove filepath comment if present (for .mmd files)
+                    content = content.replace(/\/\/ filepath:.*\n/, '');
+                }
+                
+                mermaidDiv.textContent = content;
+                
+                // Render the diagram
+                try {
+                    mermaid.init(undefined, '.mermaid');
+                } catch (err) {
+                    console.error("Error rendering diagram:", err);
+                    mermaidDiv.textContent = `Error rendering diagram: ${err.message}`;
+                }
+            };
+            
+            reader.onerror = function() {
+                mermaidDiv.textContent = "Error reading file";
+            };
+            
+            reader.readAsText(file);
+        });
+        
+        // Zoom controls
+        document.getElementById('zoomIn').addEventListener('click', () => {
+            scale += 0.1;
+            diagram.style.transform = `scale(${scale})`;
+        });
+        
+        document.getElementById('zoomOut').addEventListener('click', () => {
+            scale = Math.max(0.1, scale - 0.1);
+            diagram.style.transform = `scale(${scale})`;
+        });
+        
+        document.getElementById('resetZoom').addEventListener('click', () => {
+            scale = 1.0;
+            diagram.style.transform = `scale(${scale})`;
+        });
+    </script>
+</body>
+</html>
